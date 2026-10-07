@@ -47,14 +47,16 @@ pub fn remove(file: &Path) {
     let _ = fs::remove_file(file);
 }
 
-/// A recovered project if its file exists and is newer than the project file.
+/// A recovered project if its file exists and is not older than the project file.
 pub fn find(file: &Path, project: Option<&Path>) -> Option<Project> {
     let recovered = fs::metadata(file).and_then(|m| m.modified()).ok()?;
     if let Some(p) = project {
         let saved = fs::metadata(p)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        if saved >= recovered {
+        // Saving removes the recovery file, so one that is left is unsaved work;
+        // only a project file changed later (e.g. by a git pull) wins over it.
+        if saved > recovered {
             return None;
         }
     }
