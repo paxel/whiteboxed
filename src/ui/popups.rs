@@ -24,6 +24,7 @@ pub fn show(
     editor: &Editor,
     popup: &mut Popup,
     anchor: Pos2,
+    serial: u64,
     focus: &mut bool,
 ) -> Option<Action> {
     let (title, salt) = match popup {
@@ -37,10 +38,13 @@ pub fn show(
         Popup::Restore(_) => ("Unsaved changes found", "restore"),
     };
     let mut action = None;
+    // Every opening gets its own window id: egui 0.35 keeps a window where it was
+    // shown before and ignores `current_pos` for title-bar windows.
     egui::Window::new(title)
-        .id(Id::new(("popup", salt)))
+        .id(Id::new(("popup", salt, serial)))
         .collapsible(false)
         .resizable(false)
+        .default_width(300.0)
         .default_pos(anchor)
         .show(ctx, |ui| {
             action = body(ui, editor, popup, focus);

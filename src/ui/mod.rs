@@ -73,6 +73,9 @@ pub struct App {
     leave: Option<Leave>,
     allow_close: bool,
     shown_title: String,
+    /// Popup kind and anchor shown last frame, to place a newly opened popup.
+    shown_popup: Option<(std::mem::Discriminant<Popup>, Pos2)>,
+    popup_serial: u64,
 }
 
 impl eframe::App for App {
@@ -95,6 +98,8 @@ impl App {
             leave: None,
             allow_close: false,
             shown_title: String::new(),
+            shown_popup: None,
+            popup_serial: 0,
         }
     }
 
@@ -696,9 +701,22 @@ impl App {
             return;
         }
         let Some(mut popup) = self.editor.popup.take() else {
+            self.shown_popup = None;
             return;
         };
-        let action = popups::show(ctx, &self.editor, &mut popup, self.anchor, &mut self.focus);
+        let shown = (std::mem::discriminant(&popup), self.anchor);
+        if self.shown_popup != Some(shown) {
+            self.popup_serial += 1;
+        }
+        self.shown_popup = Some(shown);
+        let action = popups::show(
+            ctx,
+            &self.editor,
+            &mut popup,
+            self.anchor,
+            self.popup_serial,
+            &mut self.focus,
+        );
         self.editor.popup = Some(popup);
         match action {
             Some(Action::Confirm) => self.editor.confirm(),

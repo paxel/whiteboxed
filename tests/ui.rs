@@ -156,3 +156,42 @@ fn breadcrumb_navigates_back_to_the_context() -> TestResult {
     assert_eq!(h.state().editor.diagram, None);
     Ok(())
 }
+
+#[test]
+fn a_popup_opens_at_each_new_click() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    let db = e
+        .project
+        .add_block(None, &BlockSpec::new("DB", BlockKind::Database))?;
+    e.project
+        .move_block(db, whiteboxed::model::Cell::new(2, 2))?;
+    let mut h = harness(e);
+    h.run();
+    let name_field_at = |h: &mut Harness<'_, App>,
+                         block: BlockId,
+                         side_x: fn(&whiteboxed::geom::Rect) -> f32|
+     -> Result<Pos2, Box<dyn std::error::Error>> {
+        let r = h
+            .state_mut()
+            .editor
+            .layout()
+            .block(block)
+            .ok_or("block")?
+            .rect;
+        let at = screen(h, Pos::new(side_x(&r), r.center().y))?;
+        press(h, at, PointerButton::Primary);
+        h.run();
+        let pos = h.get_by_label("Name").rect().center();
+        h.key_press(Key::Escape);
+        h.run();
+        Ok(pos)
+    };
+    let first = name_field_at(&mut h, shop, |r| r.max.x - 1.0)?;
+    let second = name_field_at(&mut h, db, |r| r.min.x + 1.0)?;
+    assert!(
+        // egui keeps the popup on screen, so it moves less than the click did.
+        second.x > first.x + 100.0 && second.y > first.y + 50.0,
+        "popup stayed at {first:?}, now {second:?}"
+    );
+    Ok(())
+}
