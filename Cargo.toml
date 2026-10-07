@@ -7,12 +7,17 @@ license = "MIT"
 repository = "https://github.com/paxel/whiteboxed"
 
 [dependencies]
+directories = "6"
+eframe = "0.35"
+egui = "0.35"
 epaint_default_fonts = "0.35"
 resvg = { version = "0.48", default-features = false, features = ["text"] }
+rfd = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
 ttf-parser = "0.25"
 
 [dev-dependencies]
+egui_kittest = "0.35"
 tempfile = "3"

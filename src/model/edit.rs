@@ -250,18 +250,23 @@ impl Project {
     }
 
     /// Connects the open end of a stub to `target` in `diagram`. The relation then
-    /// belongs to `diagram`; it no longer leaves that level.
+    /// belongs to `diagram`; it no longer leaves that level. `target_side` pins the
+    /// side of `target` the line arrives at (when the user clicked one).
     pub fn connect_stub(
         &mut self,
         rel: RelationId,
         diagram: DiagramId,
         target: BlockId,
+        target_side: Option<Side>,
         placement: Placement,
     ) -> ModelResult<()> {
         let near = self.stub_anchor_in(rel, diagram)?;
         self.check_pair(near.block, target)?;
         self.place_partner(near.block, near.side, target, placement)?;
-        let target_side = self.partner_side(near.block, near.side, target)?;
+        let target_side = match target_side {
+            Some(side) => side,
+            None => self.partner_side(near.block, near.side, target)?,
+        };
         let relation = self
             .relations
             .get_mut(&rel)

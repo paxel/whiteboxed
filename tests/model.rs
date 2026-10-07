@@ -210,7 +210,7 @@ fn connecting_a_bubbled_stub_moves_it_into_that_diagram() -> TestResult {
     let repo = p.add_block(Some(order), &component("Repo"))?;
     let rel = p.add_stub(repo, Side::Right, Direction::Out, "events")?;
     assert_eq!(p.stub_anchor_in(rel, Some(shop))?.block, order);
-    p.connect_stub(rel, Some(shop), bus, Placement::Move)?;
+    p.connect_stub(rel, Some(shop), bus, None, Placement::Move)?;
     let r = p.relation(rel)?;
     assert_eq!(r.owner, Some(shop));
     let near: Vec<_> = r.a.anchors.iter().map(|a| a.block).collect();
