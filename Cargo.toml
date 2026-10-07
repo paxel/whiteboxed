@@ -1,0 +1,9 @@
+[package]
+name = "whiteboxed"
+version = "0.1.0"
+edition = "2024"
+description = "WYSIWYG editor for arc42 building-block views"
+license = "MIT"
+repository = "https://github.com/paxel/whiteboxed"
+
+[dependencies]
