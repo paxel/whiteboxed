@@ -1,0 +1,318 @@
+use whiteboxed::model::{
+    BlockId, BlockKind, BlockSpec, Cell, Direction, End, ModelError, Placement, Project,
+    RelationId, Side,
+};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+fn component(name: &str) -> BlockSpec {
+    BlockSpec::new(name, BlockKind::Component)
+}
+
+fn cell(p: &Project, id: BlockId) -> Result<Cell, ModelError> {
+    Ok(p.block(id)?.cell)
+}
+
+fn sides(p: &Project, rel: RelationId) -> Result<(Side, Side), Box<dyn std::error::Error>> {
+    let r = p.relation(rel)?;
+    let a = r.a.anchors.first().ok_or("a open")?.side;
+    let b = r.b.anchors.first().ok_or("b open")?.side;
+    Ok((a, b))
+}
+
+#[test]
+fn first_box_lands_in_the_origin_cell() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    assert_eq!(cell(&p, shop)?, Cell::new(0, 0));
+    assert_eq!(p.block(shop)?.parent, None);
+    Ok(())
+}
+
+#[test]
+fn names_are_unique_per_diagram_only() -> TestResult {
+    let mut p = Project::new();
+    let order = p.add_block(None, &component("Order"))?;
+    let billing = p.add_block(None, &component("Billing"))?;
+    assert_eq!(
+        p.add_block(None, &component(" order ")),
+        Err(ModelError::DuplicateName("order".into()))
+    );
+    p.add_block(Some(order), &component("Repository"))?;
+    p.add_block(Some(billing), &component("Repository"))?;
+    assert_eq!(
+        p.add_block(None, &component("  ")),
+        Err(ModelError::EmptyName)
+    );
+    Ok(())
+}
+
+#[test]
+fn neighbours_only_exist_in_the_context_view_and_never_open() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &BlockSpec::new("User", BlockKind::Person))?;
+    let shop = p.add_block(None, &component("Shop"))?;
+    assert_eq!(
+        p.add_block(
+            Some(shop),
+            &BlockSpec::new("Payment", BlockKind::ExternalSystem)
+        ),
+        Err(ModelError::NeighbourBelowContext("external system"))
+    );
+    assert_eq!(
+        p.add_block(Some(user), &component("Brain")),
+        Err(ModelError::NotDrillable("person"))
+    );
+    let db = p.add_block(Some(shop), &BlockSpec::new("DB", BlockKind::Database))?;
+    p.add_block(Some(db), &component("Shard"))?;
+    assert_eq!(p.level(Some(db)), 2);
+    Ok(())
+}
+
+#[test]
+fn connect_new_places_the_partner_on_the_clicked_side() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, " calls ")?;
+    assert_eq!(cell(&p, b)?, Cell::new(1, 0));
+    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Left));
+    assert_eq!(p.relation(rel)?.text, "calls");
+    let (c, _) = p.connect_new(a, Side::Top, &component("C"), Direction::Out, "")?;
+    assert_eq!(cell(&p, c)?, Cell::new(0, -1));
+    Ok(())
+}
+
+#[test]
+fn taken_cell_puts_the_new_box_next_to_it_in_the_same_column() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    p.connect_new(a, Side::Right, &component("C"), Direction::Out, "")?;
+    let (b, _) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    assert_eq!(cell(&p, b)?, Cell::new(1, 1));
+    let (d, _) = p.connect_new(a, Side::Right, &component("D"), Direction::Out, "")?;
+    assert_eq!(cell(&p, d)?, Cell::new(1, -1));
+    Ok(())
+}
+
+#[test]
+fn connect_existing_moves_the_partner_to_the_clicked_side() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, _) = p.connect_new(a, Side::Left, &component("B"), Direction::Out, "")?;
+    let (c, _) = p.connect_new(a, Side::Bottom, &component("C"), Direction::Out, "")?;
+    // C is below A; connecting C from A's right moves C to A's right.
+    assert!(p.conflicts(a, Side::Right, c)?.len() == 1);
+    let rel = p.connect_existing(a, Side::Right, c, Direction::Bi, "", Placement::Move)?;
+    assert_eq!(cell(&p, c)?, Cell::new(1, 0));
+    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Left));
+    // B was not involved and stays.
+    assert_eq!(cell(&p, b)?, Cell::new(-1, 0));
+    Ok(())
+}
+
+#[test]
+fn a_partner_already_on_that_side_does_not_move() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let b = p.add_block(None, &component("B"))?;
+    p.move_block(b, Cell::new(3, 2))?;
+    assert!(p.conflicts(a, Side::Right, b)?.is_empty());
+    let rel = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Move)?;
+    assert_eq!(cell(&p, b)?, Cell::new(3, 2));
+    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Left));
+    Ok(())
+}
+
+#[test]
+fn moving_into_a_conflict_resides_the_old_relation() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let (c, bc) = p.connect_new(b, Side::Right, &component("C"), Direction::Out, "")?;
+    // C at (2,0) connects B on its top: B moves above C. B->C (C right of B) breaks;
+    // A->B still holds because B stays right of A.
+    let conflicts = p.conflicts(c, Side::Top, b)?;
+    assert_eq!(conflicts, vec![bc]);
+    p.connect_existing(c, Side::Top, b, Direction::Out, "", Placement::Move)?;
+    assert_eq!(cell(&p, b)?, Cell::new(2, -1));
+    // B->C keeps its connection but now leaves B on the side facing C.
+    assert_eq!(sides(&p, bc)?, (Side::Bottom, Side::Top));
+    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    Ok(())
+}
+
+#[test]
+fn keep_leaves_the_partner_and_faces_it_back() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, _) = p.connect_new(a, Side::Left, &component("B"), Direction::Out, "")?;
+    let rel = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep)?;
+    assert_eq!(cell(&p, b)?, Cell::new(-1, 0));
+    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Right));
+    Ok(())
+}
+
+#[test]
+fn connect_existing_rejects_self_and_other_diagrams() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let inner = p.add_block(Some(a), &component("Inner"))?;
+    assert_eq!(
+        p.connect_existing(a, Side::Right, a, Direction::Out, "", Placement::Move),
+        Err(ModelError::SelfRelation)
+    );
+    assert_eq!(
+        p.connect_existing(a, Side::Right, inner, Direction::Out, "", Placement::Move),
+        Err(ModelError::DifferentDiagrams)
+    );
+    Ok(())
+}
+
+#[test]
+fn move_block_swaps_with_the_occupant() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let b = p.add_block(None, &component("B"))?;
+    p.move_block(a, Cell::new(1, 0))?;
+    assert_eq!(cell(&p, a)?, Cell::new(1, 0));
+    assert_eq!(cell(&p, b)?, Cell::new(0, 0));
+    Ok(())
+}
+
+#[test]
+fn stubs_bubble_up_to_the_context_view() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let order = p.add_block(Some(shop), &component("Order"))?;
+    let repo = p.add_block(Some(order), &component("Repo"))?;
+    let rel = p.add_stub(repo, Side::Bottom, Direction::Out, "events")?;
+    let r = p.relation(rel)?;
+    assert_eq!(r.owner, None);
+    let chain: Vec<_> = r.a.anchors.iter().map(|a| (a.block, a.side)).collect();
+    assert_eq!(
+        chain,
+        vec![
+            (shop, Side::Bottom),
+            (order, Side::Bottom),
+            (repo, Side::Bottom)
+        ]
+    );
+    assert!(r.b.is_open());
+    Ok(())
+}
+
+#[test]
+fn connecting_a_bubbled_stub_moves_it_into_that_diagram() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let order = p.add_block(Some(shop), &component("Order"))?;
+    let bus = p.add_block(Some(shop), &BlockSpec::new("Bus", BlockKind::Queue))?;
+    let repo = p.add_block(Some(order), &component("Repo"))?;
+    let rel = p.add_stub(repo, Side::Right, Direction::Out, "events")?;
+    assert_eq!(p.stub_anchor_in(rel, Some(shop))?.block, order);
+    p.connect_stub(rel, Some(shop), bus, Placement::Move)?;
+    let r = p.relation(rel)?;
+    assert_eq!(r.owner, Some(shop));
+    let near: Vec<_> = r.a.anchors.iter().map(|a| a.block).collect();
+    assert_eq!(near, vec![order, repo]);
+    assert_eq!(r.b.anchors.first().map(|a| a.block), Some(bus));
+    // Bus moved to the right of Order.
+    assert!(cell(&p, order)?.sees_on(Side::Right, cell(&p, bus)?));
+    Ok(())
+}
+
+#[test]
+fn attach_and_remove_line_inside_a_whitebox() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let b1 = p.add_block(Some(b), &component("B1"))?;
+    p.attach(rel, End::B, b, b1, Side::Left)?;
+    let blocks: Vec<_> = p.relation(rel)?.b.anchors.iter().map(|x| x.block).collect();
+    assert_eq!(blocks, vec![b, b1]);
+    // Deleting the line inside B only detaches; A->B stays.
+    p.remove_line(rel, Some(b))?;
+    let blocks: Vec<_> = p.relation(rel)?.b.anchors.iter().map(|x| x.block).collect();
+    assert_eq!(blocks, vec![b]);
+    // Deleting it on its own level removes it.
+    p.remove_line(rel, None)?;
+    assert!(p.relation(rel).is_err());
+    Ok(())
+}
+
+#[test]
+fn attach_requires_a_box_inside_the_whitebox() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let a1 = p.add_block(Some(a), &component("A1"))?;
+    assert_eq!(
+        p.attach(rel, End::B, b, a1, Side::Left),
+        Err(ModelError::DifferentDiagrams)
+    );
+    assert_eq!(
+        p.attach(rel, End::B, a, a1, Side::Left),
+        Err(ModelError::NotOnChain)
+    );
+    Ok(())
+}
+
+#[test]
+fn deleting_a_box_removes_content_and_relations_but_detaches_inherited_ends() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let b1 = p.add_block(Some(b), &component("B1"))?;
+    let (b2, inner) = p.connect_new(b1, Side::Right, &component("B2"), Direction::Out, "")?;
+    p.add_block(Some(b1), &component("Deep"))?;
+    p.attach(ab, End::B, b, b1, Side::Left)?;
+    p.delete_block(b1)?;
+    assert!(p.relation(inner).is_err());
+    assert_eq!(p.blocks.len(), 3); // A, B, B2
+    assert!(p.block(b2).is_ok());
+    let blocks: Vec<_> = p.relation(ab)?.b.anchors.iter().map(|x| x.block).collect();
+    assert_eq!(blocks, vec![b]);
+    p.delete_block(b)?;
+    assert!(p.relation(ab).is_err());
+    assert_eq!(p.blocks.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn editing_a_box_validates_like_creating_it() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    p.add_block(None, &component("B"))?;
+    p.add_block(Some(a), &component("A1"))?;
+    assert_eq!(
+        p.edit_block(a, &component("b")),
+        Err(ModelError::DuplicateName("b".into()))
+    );
+    assert_eq!(
+        p.edit_block(a, &BlockSpec::new("A", BlockKind::Person)),
+        Err(ModelError::KindHasContent("person"))
+    );
+    p.edit_block(
+        a,
+        &BlockSpec::new("Alpha", BlockKind::Database).tagged("legacy"),
+    )?;
+    let block = p.block(a)?;
+    assert_eq!(block.name, "Alpha");
+    assert_eq!(block.kind, BlockKind::Database);
+    assert_eq!(block.tag, p.tag_by_name("Legacy"));
+    Ok(())
+}
+
+#[test]
+fn tags_are_project_wide_with_palette_colours() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A").tagged("legacy"))?;
+    let inner = p.add_block(Some(a), &component("Inner").tagged("LEGACY"))?;
+    let other = p.add_block(None, &component("B").tagged("new"))?;
+    assert_eq!(p.tags.len(), 2);
+    assert_eq!(p.block(a)?.tag, p.block(inner)?.tag);
+    assert_ne!(p.block(a)?.tag, p.block(other)?.tag);
+    let blank = p.add_block(None, &component("C").tagged("  "))?;
+    assert_eq!(p.block(blank)?.tag, None);
+    Ok(())
+}
