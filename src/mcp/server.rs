@@ -168,7 +168,12 @@ impl Server {
                         wake,
                         stop: stop.clone(),
                     };
+                    // Browsers always send an Origin header, MCP clients do not: refuse
+                    // every request that carries one, so no web page can talk to the
+                    // endpoint even if it learnt the token. Host validation (loopback
+                    // only) against DNS rebinding is on by default.
                     let config = StreamableHttpServerConfig::default()
+                        .enforce_origin_validation()
                         .with_cancellation_token(stop.child_token());
                     let service: StreamableHttpService<Handler, LocalSessionManager> =
                         StreamableHttpService::new(

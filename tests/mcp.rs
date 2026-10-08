@@ -118,6 +118,26 @@ fn the_endpoint_needs_the_token() -> TestResult {
     );
     let ok = post(f.server.addr, &format!("/mcp?token={TOKEN}"), &init, &[])?;
     assert_eq!(ok.status, 200);
+    // A browser page (it sends Origin) is refused even with the right token.
+    let auth = format!("Bearer {TOKEN}");
+    let from_web = post(
+        f.server.addr,
+        "/mcp",
+        &init,
+        &[("Authorization", &auth), ("Origin", "https://evil.example")],
+    )?;
+    assert_eq!(from_web.status, 403);
+    // Only loopback host names are served (DNS rebinding).
+    let mut s = std::net::TcpStream::connect(f.server.addr)?;
+    let body = init.to_string();
+    write!(
+        s,
+        "POST /mcp HTTP/1.1\r\nHost: attacker.example\r\nAuthorization: {auth}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )?;
+    let mut raw = String::new();
+    s.read_to_string(&mut raw)?;
+    assert!(raw.starts_with("HTTP/1.1 403"), "{raw}");
     Ok(())
 }
 
