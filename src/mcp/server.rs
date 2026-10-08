@@ -1,6 +1,7 @@
-//! The MCP endpoint: Streamable HTTP on 127.0.0.1, guarded by the access token. It
-//! runs on its own thread with a tokio runtime; every tool call is handed to the UI
-//! thread, which owns the editor, and the answer comes back over a oneshot channel.
+//! The MCP endpoint: Streamable HTTP on 127.0.0.1 (or the address the user chose),
+//! guarded by the access token. It runs on its own thread with a tokio runtime; every
+//! tool call is handed to the UI thread, which owns the editor, and the answer comes
+//! back over a oneshot channel.
 
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
@@ -25,6 +26,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+use super::listen::Endpoint;
 use crate::api::{self, ApiError, Output};
 
 /// How long a call waits for the UI thread (which may be paused while minimised).
@@ -156,7 +158,19 @@ impl Server {
         calls: Sender<Call>,
         wake: Wake,
     ) -> std::io::Result<Server> {
-        let listener = TcpListener::bind(("127.0.0.1", port))?;
+        Server::start_at(&Endpoint::local(), port, token, calls, wake)
+    }
+
+    /// Like [`Server::start`], on the address of `endpoint`, accepting its hosts.
+    pub fn start_at(
+        endpoint: &Endpoint,
+        port: u16,
+        token: String,
+        calls: Sender<Call>,
+        wake: Wake,
+    ) -> std::io::Result<Server> {
+        let listener = TcpListener::bind((endpoint.bind, port))?;
+        let hosts = endpoint.hosts.clone();
         listener.set_nonblocking(true)?;
         let addr = listener.local_addr()?;
         let cancel = CancellationToken::new();
@@ -179,9 +193,10 @@ impl Server {
                     };
                     // Browsers always send an Origin header, MCP clients do not: refuse
                     // every request that carries one, so no web page can talk to the
-                    // endpoint even if it learnt the token. Host validation (loopback
-                    // only) against DNS rebinding is on by default.
+                    // endpoint even if it learnt the token. The Host header must name
+                    // this endpoint, against DNS rebinding.
                     let config = StreamableHttpServerConfig::default()
+                        .with_allowed_hosts(hosts)
                         .enforce_origin_validation()
                         .with_cancellation_token(stop.child_token());
                     let service: StreamableHttpService<Handler, LocalSessionManager> =

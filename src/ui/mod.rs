@@ -378,7 +378,7 @@ impl App {
                     if on {
                         self.ai.start(ui.ctx());
                     } else {
-                        self.ai.stop();
+                        self.ai.turn_off();
                     }
                 }
                 ui.checkbox(&mut self.ai.follow, "Follow AI");

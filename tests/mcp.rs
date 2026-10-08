@@ -323,3 +323,52 @@ fn stopping_with_a_call_in_flight_is_quick_and_frees_the_port() -> TestResult {
     assert!(again.is_ok(), "the port is free again");
     Ok(())
 }
+
+/// Status of an initialize request sent with this Host header and the token.
+fn status_for_host(addr: SocketAddr, host: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let body = rpc(
+        1,
+        "initialize",
+        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}),
+    )
+    .to_string();
+    let mut s = TcpStream::connect(addr)?;
+    write!(
+        s,
+        "POST /mcp HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )?;
+    let mut raw = String::new();
+    s.read_to_string(&mut raw)?;
+    Ok(raw.chars().take(12).collect())
+}
+
+#[test]
+fn containers_get_in_only_when_docker_access_is_chosen() -> TestResult {
+    use whiteboxed::mcp::listen::{DOCKER_HOST, Endpoint};
+    // This computer only: a container's Host header is refused.
+    let f = start()?;
+    let port = f.server.addr.port();
+    assert_eq!(
+        status_for_host(f.server.addr, &format!("{DOCKER_HOST}:{port}"))?,
+        "HTTP/1.1 403"
+    );
+    // Docker access (as Docker Desktop forwards it to 127.0.0.1): accepted.
+    let (tx, _rx) = mpsc::channel::<Call>();
+    let docker = Endpoint {
+        bind: "127.0.0.1".parse()?,
+        hosts: vec!["127.0.0.1".into(), DOCKER_HOST.into()],
+        client_host: DOCKER_HOST.into(),
+    };
+    let server = Server::start_at(&docker, 0, TOKEN.into(), tx, Arc::new(|| {}))?;
+    let port = server.addr.port();
+    assert_eq!(
+        status_for_host(server.addr, &format!("{DOCKER_HOST}:{port}"))?,
+        "HTTP/1.1 200"
+    );
+    assert_eq!(
+        status_for_host(server.addr, "attacker.example")?,
+        "HTTP/1.1 403"
+    );
+    Ok(())
+}

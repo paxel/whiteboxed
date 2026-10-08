@@ -507,6 +507,7 @@ fn ai_dir(port: u16) -> Result<tempfile::TempDir, Box<dyn std::error::Error>> {
         &whiteboxed::mcp::settings::AiSettings {
             port,
             token: "tok-123".into(),
+            listen: whiteboxed::mcp::listen::Listen::Local,
         },
     )?;
     Ok(dir)
@@ -1052,5 +1053,43 @@ fn the_export_dialog_writes_the_files_and_remembers_the_choice() -> TestResult {
         .ok_or("not remembered")?;
     assert_eq!(remembered.text, Some(whiteboxed::doc::DocFormat::Markdown));
     assert_eq!(remembered.folder, target.to_string_lossy());
+    Ok(())
+}
+
+#[test]
+fn the_ai_dialog_chooses_who_may_connect() -> TestResult {
+    use whiteboxed::mcp::listen::Listen;
+    let dir = ai_dir(0)?;
+    let mut h = ai_harness(Editor::new(None), &dir);
+    h.run();
+    let ctx = h.ctx.clone();
+    h.state_mut().ai.start(&ctx);
+    h.run();
+    assert!(h.state().ai.is_on());
+    if cfg!(target_os = "linux") && !std::path::Path::new("/sys/class/net/docker0").exists() {
+        h.get_by_label("Docker containers on this computer").click();
+        h.run();
+        assert!(h.query_by_label_contains("No Docker bridge").is_some());
+        assert!(!h.state().ai.is_on());
+    }
+    // The port comes first, the address below it.
+    h.get_all_by_role(egui::accesskit::Role::TextInput)
+        .last()
+        .ok_or("address field")?
+        .click();
+    h.run();
+    h.event(Event::Text("127.0.0.1".into()));
+    h.run();
+    button(&h, "Use this address").click();
+    h.run();
+    assert!(h.state().ai.is_on());
+    assert!(
+        h.query_by_label_contains("Only the token keeps them out")
+            .is_some()
+    );
+    let saved = whiteboxed::mcp::settings::load_or_create(dir.path())?;
+    assert_eq!(saved.listen, Listen::Custom("127.0.0.1".into()));
+    let cmd = h.state_mut().ai.claude_command().ok_or("command")?;
+    assert!(cmd.contains("http://127.0.0.1:"), "{cmd}");
     Ok(())
 }

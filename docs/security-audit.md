@@ -8,7 +8,9 @@ architecture model?** It also covers the files the app reads and writes, its
 dependencies and its build pipeline.
 
 Version audited: `0.1.0` (unreleased), branch `summer`; findings fixed up to commit
-`5c1a625`.
+`5c1a625`. Updated for `0.2.0` (S15, S16): the dependency tree is unchanged since
+`0.1.0`, so the tool results below still apply; the Security workflow re-checks them
+on every push.
 
 ## Summary
 
@@ -28,6 +30,8 @@ Version audited: `0.1.0` (unreleased), branch `summer`; findings fixed up to com
 | S12 | The token can leak through the client side                     | Low      | Documented |
 | S13 | CI actions were pinned by tag, not by commit                   | Low      | Fixed      |
 | S14 | Many open MCP sessions use memory                              | Info     | Accepted   |
+| S15 | AI access can listen beyond this computer (0.2.0)              | Medium   | Mitigated  |
+| S16 | `batch` could hide a forbidden call among allowed ones (0.2.0) | Low      | Fixed      |
 
 No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 `Cargo.lock`. whiteboxed itself contains no `unsafe` code and now forbids it.
@@ -37,9 +41,10 @@ No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 | Who                                    | Can reach                                                        | Needs                             |
 |----------------------------------------|------------------------------------------------------------------|-----------------------------------|
 | The user                               | Everything                                                       | —                                 |
-| An AI client the user registered       | The 17 MCP tools                                                 | The token                         |
+| An AI client the user registered       | The 18 MCP tools                                                 | The token                         |
 | Another program or user on the machine | `127.0.0.1:<port>` while AI access is on                         | The token                         |
-| An AI agent in a container             | The host's loopback, only with host networking or a port forward | The token                         |
+| An AI agent in a container             | The Docker bridge, only if the user chose "Docker containers"    | The token                         |
+| Another machine on the network         | Only an address the user typed under "Other address"             | The token                         |
 | A web page in the user's browser       | `127.0.0.1:<port>` (browsers allow it)                           | Refused by Origin and Host checks |
 | A project file from someone else       | The YAML parser and the layout                                   | The user opening it               |
 
@@ -198,6 +203,46 @@ deliberate change: resolve the new tag with
 `CHANNEL_PAT` is limited to the tap and bucket repositories, and pull requests from
 forks get no secrets.
 
+### S15 AI access can listen beyond this computer — Medium, mitigated
+
+Added in 0.2.0 so that an AI client in a Docker container can connect. The AI dialog
+offers three choices under **Who may connect**:
+
+- **This computer only** (default): binds `127.0.0.1`, accepts the `Host` names
+  `localhost`, `127.0.0.1` and `::1`. Nothing changed against 0.1.0.
+- **Docker containers on this computer**: on Linux binds only the address of the
+  `docker0` bridge (read from `/proc/net/route` and `/proc/net/fib_trie`, no new
+  dependency, no `unsafe`); with Docker Desktop (macOS, Windows), which forwards
+  `host.docker.internal` to the host's loopback, it stays on `127.0.0.1`. Accepted
+  `Host` names: the bridge address and `host.docker.internal`. Every container on the
+  bridge can reach the port, so the token is the barrier.
+- **Other address**: binds the typed IP address. Every machine that reaches it can
+  try the token; the dialog says so in orange.
+
+Before 0.2.0 a container that reached the port (host networking or a forward) was
+still refused, because its `Host: host.docker.internal` was not on the allowlist.
+That is why the Docker choice exists and why loopback mode still refuses that name.
+
+Mitigations: the token (244 bits) is required in every mode; browser requests are
+refused by `Origin` in every mode; the `Host` allowlist is never empty, so DNS
+rebinding stays blocked; exports still need the user's approval per folder (S1); the
+choice is stored per user (`ai.yaml`), never in a project, and access is off at every
+start. Tests: `src/mcp/listen.rs` (bridge lookup, allowlists per mode) and
+`tests/mcp.rs` (`host.docker.internal` refused in loopback mode, accepted in Docker
+mode, other hosts refused).
+
+Residual risk: on "Other address" the endpoint speaks plain HTTP, so the token
+crosses the network unencrypted. Use it only on a network you trust, or tunnel it.
+
+### S16 `batch` could hide a forbidden call — Low, fixed
+
+The `batch` tool (0.2.0) runs other tools in one undo step. It refuses before running
+anything when a step is `batch` (no nesting, no unbounded recursion), `export_docs`
+(writes files, needs per-folder approval that a rollback cannot take back) or
+`render_diagram`. At most 200 steps. Every step goes through the same handler and
+validation as a single call; a failing step rolls the model, the undo stack and the
+last-AI note back to the state before the batch (tests in `tests/api.rs`).
+
 ### S14 Many MCP sessions use memory — Info, accepted
 
 Each initialised MCP session lives in memory until it ends. Only token holders can
@@ -205,10 +250,10 @@ open sessions, so this is not reachable without the token.
 
 ## Verified safe
 
-- The endpoint binds `127.0.0.1` only and is off until switched on; it is off again
-  after every start.
+- The endpoint binds `127.0.0.1` unless the user chooses otherwise (S15) and is off
+  until switched on; it is off again after every start.
 - Requests without the token, with a wrong token, with a browser `Origin`, or with a
-  non-loopback `Host` are refused (tests in `tests/mcp.rs`).
+  `Host` outside the chosen mode's allowlist are refused (tests in `tests/mcp.rs`).
 - Calls that time out or arrive while AI access is turned off are never run later
   (`8b20196`); turning access off answers waiting calls and frees the port at once.
 - Every tool call goes through the same validation as the GUI and is one undo step;

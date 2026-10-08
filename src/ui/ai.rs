@@ -8,6 +8,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use egui::{Context, RichText, Ui};
 
 use crate::editor::{AiAction, Editor};
+use crate::mcp::listen::Listen;
 use crate::mcp::server::{Call, Server};
 use crate::mcp::settings::{self, AiSettings};
 
@@ -21,6 +22,10 @@ pub struct Ai {
     pub dialog: bool,
     error: Option<String>,
     port_text: String,
+    /// The address typed for "Other address".
+    address_text: String,
+    /// The user turned access on (even if the endpoint could not start).
+    wanted: bool,
     seen: Option<AiAction>,
 }
 
@@ -38,6 +43,8 @@ impl Ai {
             dialog: false,
             error: None,
             port_text: String::new(),
+            address_text: String::new(),
+            wanted: false,
             seen: None,
         }
     }
@@ -61,6 +68,9 @@ impl Ai {
             match settings::load_or_create(&dir) {
                 Ok(s) => {
                     self.port_text = s.port.to_string();
+                    if let Listen::Custom(a) = &s.listen {
+                        self.address_text = a.clone();
+                    }
                     self.settings = Some(s);
                 }
                 Err(e) => self.error = Some(format!("Cannot store the access token: {e}")),
@@ -72,6 +82,7 @@ impl Ai {
     /// Opens the endpoint. A taken port shows up as an error in the dialog.
     pub fn start(&mut self, ctx: &Context) {
         self.dialog = true;
+        self.wanted = true;
         let Some(s) = self.settings() else {
             if self.error.is_none() {
                 self.error = Some("AI access needs a user data directory.".into());
@@ -79,8 +90,16 @@ impl Ai {
             return;
         };
         self.stop();
+        let endpoint = match s.listen.endpoint() {
+            Ok(e) => e,
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        };
         let wake_ctx = ctx.clone();
-        match Server::start(
+        match Server::start_at(
+            &endpoint,
             s.port,
             s.token.clone(),
             self.calls.clone(),
@@ -92,11 +111,17 @@ impl Ai {
             }
             Err(e) => {
                 self.error = Some(format!(
-                    "Port {} cannot be used ({e}). Choose another port.",
-                    s.port
+                    "{}:{} cannot be used ({e}). Choose another port or address.",
+                    endpoint.bind, s.port
                 ));
             }
         }
+    }
+
+    /// Turns access off at the user's request.
+    pub fn turn_off(&mut self) {
+        self.wanted = false;
+        self.stop();
     }
 
     pub fn stop(&mut self) {
@@ -124,8 +149,17 @@ impl Ai {
     /// The command that registers whiteboxed in Claude Code.
     pub fn claude_command(&mut self) -> Option<String> {
         let s = self.settings()?;
+        let host = s
+            .listen
+            .endpoint()
+            .map_or_else(|_| "127.0.0.1".to_owned(), |e| e.client_host);
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host
+        };
         Some(format!(
-            "claude mcp add --transport http whiteboxed http://127.0.0.1:{}/mcp --header \"Authorization: Bearer {}\"",
+            "claude mcp add --transport http whiteboxed http://{host}:{}/mcp --header \"Authorization: Bearer {}\"",
             s.port, s.token
         ))
     }
@@ -135,7 +169,7 @@ impl Ai {
         match settings::save(&dir, &settings) {
             Ok(()) => {
                 self.settings = Some(settings);
-                if self.is_on() {
+                if self.wanted {
                     self.start(ctx);
                 }
             }
@@ -196,7 +230,7 @@ impl Ai {
         match action {
             Some(DialogAction::Toggle) => {
                 if self.is_on() {
-                    self.stop();
+                    self.turn_off();
                 } else {
                     self.start(ctx);
                 }
@@ -204,6 +238,12 @@ impl Ai {
             Some(DialogAction::Port(port)) => {
                 if let Some(mut s) = self.settings() {
                     s.port = port;
+                    self.save(ctx, s);
+                }
+            }
+            Some(DialogAction::Listen(listen)) => {
+                if let Some(mut s) = self.settings() {
+                    s.listen = listen;
                     self.save(ctx, s);
                 }
             }
@@ -289,6 +329,8 @@ impl Ai {
                 }
             }
         });
+        ui.add_space(6.0);
+        self.listen_rows(ui, &mut action);
         ui.label(
             RichText::new(
                 "A new token or port means registering again: run claude mcp remove \
@@ -302,8 +344,70 @@ impl Ai {
     }
 }
 
+impl Ai {
+    /// Who may connect: this computer, Docker containers, or another address.
+    fn listen_rows(&mut self, ui: &mut Ui, action: &mut Option<DialogAction>) {
+        let current = self
+            .settings
+            .as_ref()
+            .map(|s| s.listen.clone())
+            .unwrap_or_default();
+        ui.label("Who may connect");
+        if ui
+            .radio(current == Listen::Local, "This computer only")
+            .clicked()
+            && current != Listen::Local
+        {
+            *action = Some(DialogAction::Listen(Listen::Local));
+        }
+        if ui
+            .radio(
+                current == Listen::Docker,
+                "Docker containers on this computer",
+            )
+            .clicked()
+            && current != Listen::Docker
+        {
+            *action = Some(DialogAction::Listen(Listen::Docker));
+        }
+        ui.horizontal(|ui| {
+            let custom = matches!(current, Listen::Custom(_));
+            let picked = ui.radio(custom, "Other address").clicked();
+            ui.add(egui::TextEdit::singleline(&mut self.address_text).desired_width(140.0));
+            let typed = !self.address_text.trim().is_empty();
+            let use_it = ui
+                .add_enabled(typed, egui::Button::new("Use this address"))
+                .clicked();
+            if use_it || (picked && !custom && typed) {
+                *action = Some(DialogAction::Listen(Listen::Custom(
+                    self.address_text.trim().to_owned(),
+                )));
+            }
+        });
+        let warn = |ui: &mut Ui, text: &str| {
+            ui.label(RichText::new(text).color(egui::Color32::from_rgb(0xb0, 0x60, 0x00)));
+        };
+        match current {
+            Listen::Local => {}
+            Listen::Docker => warn(
+                ui,
+                "Containers reach whiteboxed as host.docker.internal; on Linux start them \
+                 with --add-host=host.docker.internal:host-gateway. Run the command above \
+                 inside the container. The token is still needed.",
+            ),
+            Listen::Custom(_) => warn(
+                ui,
+                "Every machine that can reach this address can try to connect. Only the \
+                 token keeps them out, so keep it secret and generate a new one if it \
+                 leaked.",
+            ),
+        }
+    }
+}
+
 enum DialogAction {
     Toggle,
+    Listen(Listen),
     Port(u16),
     NewToken,
     Copy(String),

@@ -14,6 +14,9 @@ const FILE: &str = "ai.yaml";
 pub struct AiSettings {
     pub port: u16,
     pub token: String,
+    /// Where the endpoint listens; this computer only unless the user chose more.
+    #[serde(default)]
+    pub listen: super::listen::Listen,
 }
 
 /// The per-user directory the settings live in.
@@ -43,6 +46,7 @@ pub fn load_or_create(dir: &Path) -> io::Result<AiSettings> {
     let settings = AiSettings {
         port: DEFAULT_PORT,
         token: new_token(),
+        listen: super::listen::Listen::Local,
     };
     save(dir, &settings)?;
     Ok(settings)
@@ -81,6 +85,7 @@ mod tests {
         let changed = AiSettings {
             port: 9000,
             token: new_token(),
+            listen: super::super::listen::Listen::Custom("10.0.0.5".into()),
         };
         save(dir.path(), &changed)?;
         assert_eq!(load_or_create(dir.path())?, changed);

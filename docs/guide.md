@@ -258,6 +258,14 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
   or as `?token=<token>` in the URL. The token is made once per user and stored in
   your user data directory (`whiteboxed/ai.yaml`), never in a project. **Generate new
   token** in the dialog replaces it; clients then need the new one.
+- **Who may connect.** **This computer only** (the default) listens on `127.0.0.1`.
+  **Docker containers on this computer** lets an AI client in a container connect as
+  `http://host.docker.internal:<port>/mcp`; on Linux start the container with
+  `--add-host=host.docker.internal:host-gateway`, and whiteboxed listens on the Docker
+  bridge only. **Other address** listens on an IP address you type: every machine
+  that reaches it can try to connect, and only the token keeps them out. The command
+  in the dialog uses the matching address. See the
+  [security audit](security-audit.md) (S15).
 - **Port.** 7342 unless you choose another in the dialog. A port that is taken shows an
   error instead of silently moving.
 - **Same rules as a click.** Every tool call goes through the same checks as the GUI

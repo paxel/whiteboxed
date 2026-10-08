@@ -314,6 +314,7 @@ fn doc_screenshot_ai_access() -> TestResult {
         &whiteboxed::mcp::settings::AiSettings {
             port: 7342,
             token: "5e7c2a91d04b4f3c8a1e6b0d9f27c4a85b3e1f60c7d24a9e8b16f05c3d72a4e1".into(),
+            listen: whiteboxed::mcp::listen::Listen::Local,
         },
     )?;
     let (p, shop) = shop()?;

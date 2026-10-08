@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- AI access can be opened to Docker containers (listening on the Docker bridge, reachable as host.docker.internal) or to an address you type, with a warning; this computer only stays the default and the token is always needed.
 - The AI's get_diagram lists problems worth tidying: crossing lines, overlapping labels and labels that do not fit.
 - An AI batch tool: several editing calls run as one undo step, all or nothing. A failing step changes nothing and is named in the error; later steps can address boxes that earlier steps created.
 - A relation that enters a whitebox can land on several boxes inside: connecting it again from another box (or attaching it again through the AI) fans the line out from one frame point. Deleting a branch, or the AI's delete_relation with detach_in and landing, removes only that landing.
