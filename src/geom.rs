@@ -53,6 +53,19 @@ impl Rect {
         p.x >= self.min.x && p.x <= self.max.x && p.y >= self.min.y && p.y <= self.max.y
     }
 
+    /// Whether the two rects share more than an edge.
+    pub fn overlaps(&self, other: &Rect) -> bool {
+        self.min.x < other.max.x
+            && other.min.x < self.max.x
+            && self.min.y < other.max.y
+            && other.min.y < self.max.y
+    }
+
+    /// Whether `other` lies completely inside this rect.
+    pub fn holds(&self, other: &Rect) -> bool {
+        self.contains(other.min) && self.contains(other.max)
+    }
+
     pub fn expand(&self, by: f32) -> Rect {
         Rect {
             min: Pos::new(self.min.x - by, self.min.y - by),

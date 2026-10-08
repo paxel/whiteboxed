@@ -275,7 +275,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | Tool                 | Does                                                              |
 |----------------------|-------------------------------------------------------------------|
 | `get_model`          | The whole project as JSON                                         |
-| `get_diagram`        | One diagram: boxes, cells, lines, open and unassigned ends        |
+| `get_diagram`        | One diagram: boxes, cells, lines, open ends, and its problems     |
 | `render_diagram`     | One diagram as PNG, as you see it                                 |
 | `add_box`            | A box without relation, or with `band: true` a cross-cutting band |
 | `connect_new`        | A new box on one side of a box, connected                         |
@@ -292,6 +292,10 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts and index into a folder you allowed           |
 | `batch`              | Several editing calls as one undo step, all or nothing            |
+
+The problems `get_diagram` lists are lines that cross (both relations and where),
+labels on top of each other, and labels that do not fit inside the frame or the
+picture. The AI can then tidy the diagram with `move_box`.
 
 Boxes are addressed by id or by their path of names from the context view, as a list
 (`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare

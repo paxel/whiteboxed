@@ -602,13 +602,14 @@ fn add_box_can_make_a_band() -> TestResult {
     )?;
     assert_eq!(out["band"], true);
     assert!(out.get("cell").is_none());
+    let refused = call(
+        &mut e,
+        "connect_existing",
+        json!({"from": "Web Shop", "side": "bottom", "to": "Logging", "direction": "out"}),
+    );
     assert!(
-        call(
-            &mut e,
-            "connect_existing",
-            json!({"from": "Web Shop", "side": "bottom", "target": "Logging", "direction": "out"}),
-        )
-        .is_err()
+        matches!(&refused, Err(ApiError::Rejected(m)) if m.contains("bands have no lines")),
+        "{refused:?}"
     );
     let out = call(&mut e, "edit_box", json!({"box": "Logging", "band": false}))?;
     assert!(out.get("band").is_none());
@@ -718,5 +719,35 @@ fn a_failing_step_changes_nothing_and_is_named() -> TestResult {
             matches!(refused, Err(ApiError::Rejected(m)) if m.contains("cannot run in a batch"))
         );
     }
+    Ok(())
+}
+
+#[test]
+fn get_diagram_lists_crossing_lines_as_problems() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let clean = call(&mut e, "get_diagram", json!({}))?;
+    for kind in ["crossings", "overlapping_labels", "cut_off_labels"] {
+        assert_eq!(clean["problems"][kind], json!([]), "{kind}");
+    }
+    // A box in the middle with lines from left to right and from top to bottom.
+    let mut steps = Vec::new();
+    for (name, col, row) in [
+        ("L", 0, 1),
+        ("R", 2, 1),
+        ("T", 1, 0),
+        ("B", 1, 2),
+        ("M", 1, 1),
+    ] {
+        steps.push(json!({"tool": "add_box", "args": {"diagram": "Web Shop", "name": name, "kind": "component"}}));
+        steps.push(json!({"tool": "move_box", "args": {"box": ["Web Shop", name], "col": col, "row": row}}));
+    }
+    steps.push(json!({"tool": "connect_existing", "args": {"from": "Web Shop/L", "side": "right", "to": "Web Shop/R", "placement": "keep"}}));
+    steps.push(json!({"tool": "connect_existing", "args": {"from": "Web Shop/T", "side": "bottom", "to": "Web Shop/B", "placement": "keep"}}));
+    call(&mut e, "batch", json!({ "steps": steps }))?;
+    let d = call(&mut e, "get_diagram", json!({"diagram": "Web Shop"}))?;
+    let crossings = d["problems"]["crossings"].as_array().ok_or("crossings")?;
+    assert!(!crossings.is_empty(), "{d}");
+    assert_eq!(crossings[0]["relations"].as_array().map(Vec::len), Some(2));
     Ok(())
 }

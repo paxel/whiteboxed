@@ -160,7 +160,7 @@ pub fn scene(layout: &Layout) -> Scene {
         line_shapes(&mut shapes, line, &jumps, &crossed);
     }
     // Labels stay inside the frame of a whitebox, or inside the picture.
-    let label_area = layout.frame.unwrap_or(layout.bounds).expand(-8.0);
+    let label_area = label_area(layout);
     for line in &layout.lines {
         label_shapes(&mut shapes, line, label_area);
     }
@@ -464,6 +464,31 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
             align: Align::Left,
         });
     }
+}
+
+/// Where relation labels have to stay: inside the frame of a whitebox, or inside the
+/// picture.
+pub fn label_area(layout: &Layout) -> Rect {
+    layout.frame.unwrap_or(layout.bounds).expand(-8.0)
+}
+
+/// The box each line's label takes, as drawn: line index and rect.
+pub fn label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
+    let area = label_area(layout);
+    let mut out = Vec::new();
+    for (li, line) in layout.lines.iter().enumerate() {
+        let mut shapes = Vec::new();
+        label_shapes(&mut shapes, line, area);
+        // The text's paper background is the only rect a label draws.
+        let rect = shapes.iter().find_map(|s| match s {
+            Shape::Rect { rect, .. } => Some(*rect),
+            _ => None,
+        });
+        if let Some(rect) = rect {
+            out.push((li, rect));
+        }
+    }
+    out
 }
 
 /// Distance between wrapped label lines.

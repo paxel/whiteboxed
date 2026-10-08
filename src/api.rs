@@ -472,7 +472,8 @@ Concerns that every part of a level uses (logging, security, monitoring) are \
 add_box with band: true; bands have no relations. \
 3. Give every box a one or two sentence responsibility and every diagram a motivation \
 (why it is split this way). \
-4. Check the result with render_diagram and tidy it with move_box when lines cross. \
+4. Check the result with render_diagram and the problems that get_diagram lists, and \
+tidy it with move_box. \
 5. Finish with export_docs into the repository's documentation folder; the user is \
 asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
@@ -489,7 +490,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "get_diagram",
-            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs) and relations from the level above that no box handles yet (dangling).",
+            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs), relations from the level above that no box handles yet (dangling), and problems worth tidying with move_box: crossing lines, overlapping and cut-off labels.",
             schema: schema::<DiagramArgs>(),
         },
         ToolInfo {
@@ -1203,5 +1204,41 @@ pub fn diagram_json(project: &Project, d: DiagramId) -> Value {
             "text": l.text,
         })).collect::<Vec<_>>(),
         "dangling": view::dangling_count(&v),
+        "problems": problems(&layout::layout(project, &v)),
+    })
+}
+
+/// What makes a diagram hard to read: lines that cross, labels on top of each other,
+/// and labels that do not fit where they belong.
+fn problems(l: &layout::Layout) -> Value {
+    let rel = |li: usize| l.lines.get(li).map(|g| g.relation.0);
+    let crossings: Vec<Value> = layout::crossings(l)
+        .iter()
+        .map(|c| {
+            json!({
+                "relations": [rel(c.horizontal), rel(c.vertical)],
+                "at": {"x": c.at.x.round(), "y": c.at.y.round()},
+            })
+        })
+        .collect();
+    let labels = scene::label_rects(l);
+    let mut overlapping = Vec::new();
+    for (i, (a, ra)) in labels.iter().enumerate() {
+        for (b, rb) in &labels[i + 1..] {
+            if rel(*a) != rel(*b) && ra.overlaps(rb) {
+                overlapping.push(json!({"relations": [rel(*a), rel(*b)]}));
+            }
+        }
+    }
+    let area = scene::label_area(l);
+    let cut_off: Vec<Value> = labels
+        .iter()
+        .filter(|(_, r)| !area.holds(r))
+        .map(|(li, _)| json!({"relation": rel(*li)}))
+        .collect();
+    json!({
+        "crossings": crossings,
+        "overlapping_labels": overlapping,
+        "cut_off_labels": cut_off,
     })
 }

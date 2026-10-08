@@ -756,3 +756,23 @@ fn a_fanned_out_relation_enters_through_one_port_with_one_label() -> TestResult 
     assert_eq!(landings, vec![Some(ui), Some(api)]);
     Ok(())
 }
+
+#[test]
+fn label_rects_overlap_and_fit_like_the_drawing() -> TestResult {
+    let a = Rect::from_min_size(Pos::new(0.0, 0.0), 10.0, 10.0);
+    assert!(a.overlaps(&Rect::from_min_size(Pos::new(5.0, 5.0), 10.0, 10.0)));
+    assert!(
+        !a.overlaps(&Rect::from_min_size(Pos::new(10.0, 0.0), 10.0, 10.0)),
+        "edges touch only"
+    );
+    assert!(a.holds(&Rect::from_min_size(Pos::new(1.0, 1.0), 2.0, 2.0)));
+    assert!(!a.holds(&Rect::from_min_size(Pos::new(9.0, 1.0), 2.0, 2.0)));
+    let (p, _) = sample()?;
+    let l = render(&p, None);
+    let labels = scene::label_rects(&l);
+    let texts = l.lines.iter().filter(|g| !g.text.is_empty()).count();
+    assert_eq!(labels.len(), texts);
+    let area = scene::label_area(&l);
+    assert!(labels.iter().all(|(_, r)| area.holds(r)));
+    Ok(())
+}
