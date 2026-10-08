@@ -169,6 +169,7 @@ impl Project {
             direction,
             text,
             style: None,
+            short: String::new(),
         });
         Ok((new, rel))
     }
@@ -232,6 +233,7 @@ impl Project {
             direction,
             text,
             style: None,
+            short: String::new(),
         }))
     }
 
@@ -260,6 +262,7 @@ impl Project {
             direction,
             text,
             style: None,
+            short: String::new(),
         }))
     }
 
@@ -391,6 +394,22 @@ impl Project {
             .ok_or(ModelError::UnknownRelation)?;
         relation.style = style;
         Ok(())
+    }
+
+    /// Sets the short label a relation shows instead of its text (empty: none).
+    pub fn set_relation_short(&mut self, rel: RelationId, short: &str) -> ModelResult<()> {
+        check_name_text(short)?;
+        let relation = self
+            .relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?;
+        relation.short = short.trim().to_owned();
+        Ok(())
+    }
+
+    /// Sets when relation texts become numbers (see [`Project::label_limit`]).
+    pub fn set_label_limit(&mut self, limit: Option<u32>) {
+        self.label_limit = limit;
     }
 
     /// Sets the project's line style.

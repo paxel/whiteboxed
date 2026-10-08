@@ -307,6 +307,8 @@ pub struct Relation {
     pub text: String,
     /// Overrides the project's line style for this relation.
     pub style: Option<LineStyle>,
+    /// What the diagram shows instead of a long text; empty uses the text.
+    pub short: String,
 }
 
 /// How the bends of relation lines are drawn.
@@ -416,7 +418,7 @@ impl Cell {
 }
 
 /// A whole project: every level of every whitebox.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     pub blocks: BTreeMap<BlockId, Block>,
     pub relations: BTreeMap<RelationId, Relation>,
@@ -425,7 +427,27 @@ pub struct Project {
     pub motivation: String,
     /// Line style for relations without their own.
     pub line_style: LineStyle,
+    /// Relation texts longer than this many characters (without a short label)
+    /// become numbers with a legend; 0 numbers every text, `None` never shortens.
+    pub label_limit: Option<u32>,
     pub next_id: u64,
+}
+
+/// The label limit a new project starts with.
+pub const DEFAULT_LABEL_LIMIT: Option<u32> = Some(24);
+
+impl Default for Project {
+    fn default() -> Self {
+        Project {
+            blocks: BTreeMap::new(),
+            relations: BTreeMap::new(),
+            tags: BTreeMap::new(),
+            motivation: String::new(),
+            line_style: LineStyle::default(),
+            label_limit: DEFAULT_LABEL_LIMIT,
+            next_id: 0,
+        }
+    }
 }
 
 impl Project {

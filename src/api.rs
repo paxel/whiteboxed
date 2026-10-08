@@ -219,6 +219,9 @@ pub struct ConnectNewArgs {
     /// The interface, e.g. "REST", "orders via browser".
     #[serde(default)]
     pub text: Option<String>,
+    /// Shown on the line instead of a long text; the full text goes to the legend.
+    #[serde(default)]
+    pub short_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -233,6 +236,9 @@ pub struct ConnectExistingArgs {
     pub direction: Option<ApiDirection>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Shown on the line instead of a long text; the full text goes to the legend.
+    #[serde(default)]
+    pub short_label: Option<String>,
     /// What to do when moving `to` breaks the side of its other relations.
     #[serde(default)]
     pub placement: Option<ApiPlacement>,
@@ -247,6 +253,9 @@ pub struct AddStubArgs {
     pub direction: Option<ApiDirection>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Shown on the line instead of a long text; the full text goes to the legend.
+    #[serde(default)]
+    pub short_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -299,6 +308,9 @@ pub struct EditRelationArgs {
     pub direction: Option<ApiDirection>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Shown on the line instead of a long text; the full text goes to the legend.
+    #[serde(default)]
+    pub short_label: Option<String>,
     /// How this line bends; project_default follows the project setting.
     #[serde(default)]
     pub line_style: Option<ApiLineStyle>,
@@ -620,6 +632,9 @@ fn connect_new(editor: &mut Editor, a: ConnectNewArgs) -> ApiResult<Output> {
     let text = a.text.unwrap_or_default();
     let (id, rel) = editor.apply_ai(|p| {
         let (id, rel) = p.connect_new(from, a.side.into(), &s, direction(a.direction), &text)?;
+        if let Some(short) = &a.short_label {
+            p.set_relation_short(rel, short)?;
+        }
         if let Some(r) = &a.responsibility {
             p.set_responsibility(id, r)?;
         }
@@ -641,14 +656,18 @@ fn connect_existing(editor: &mut Editor, a: ConnectExistingArgs) -> ApiResult<Ou
     let to = resolve(&editor.project, &a.to)?;
     let text = a.text.unwrap_or_default();
     let rel = editor.apply_ai(|p| {
-        p.connect_existing(
+        let rel = p.connect_existing(
             from,
             a.side.into(),
             to,
             direction(a.direction),
             &text,
             placement(a.placement),
-        )
+        )?;
+        if let Some(short) = &a.short_label {
+            p.set_relation_short(rel, short)?;
+        }
+        Ok(rel)
     })?;
     let summary = format!(
         "connected {} and {}",
@@ -662,8 +681,13 @@ fn connect_existing(editor: &mut Editor, a: ConnectExistingArgs) -> ApiResult<Ou
 fn add_stub(editor: &mut Editor, a: AddStubArgs) -> ApiResult<Output> {
     let from = resolve(&editor.project, &a.from)?;
     let text = a.text.unwrap_or_default();
-    let rel =
-        editor.apply_ai(|p| p.add_stub(from, a.side.into(), direction(a.direction), &text))?;
+    let rel = editor.apply_ai(|p| {
+        let rel = p.add_stub(from, a.side.into(), direction(a.direction), &text)?;
+        if let Some(short) = &a.short_label {
+            p.set_relation_short(rel, short)?;
+        }
+        Ok(rel)
+    })?;
     let summary = format!("left an open end on {}", name(&editor.project, from));
     note(editor, summary, parent(&editor.project, from), Some(from));
     Ok(Output::Json(relation_json(&editor.project, rel)))
@@ -732,8 +756,10 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     let text = a.text.unwrap_or_else(|| r.text.clone());
     let owner = r.owner;
     let style = a.line_style.map_or(r.style, ApiLineStyle::style);
+    let short = a.short_label.unwrap_or_else(|| r.short.clone());
     editor.apply_ai(|p| {
         p.edit_relation(rel, d, &text)?;
+        p.set_relation_short(rel, &short)?;
         p.set_relation_style(rel, style)
     })?;
     note(editor, "edited a relation".to_owned(), owner, None);
@@ -1014,6 +1040,7 @@ fn relation_json(project: &Project, rel: RelationId) -> Value {
         "direction": r.direction.label(),
         "text": r.text,
         "line_style": r.style.map(|s| format!("{s:?}").to_lowercase()),
+        "short_label": r.short,
     })
 }
 

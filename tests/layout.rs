@@ -257,3 +257,100 @@ fn line_styles_round_the_bends_but_keep_the_ends() {
     // The 4 px step only gets half its length as radius: it stays a step.
     assert!(round.iter().all(|p| p.y <= 100.0 || p.x >= 102.0));
 }
+
+#[test]
+fn long_texts_become_numbers_and_short_labels_win() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let long = "OTLP traces (gRPC) / Prometheus scrape /metrics";
+    let (_, r1) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        long,
+    )?;
+    let (_, r2) = p.connect_new(
+        a,
+        Side::Bottom,
+        &spec("C", BlockKind::Component),
+        Direction::Out,
+        "REST",
+    )?;
+    let (_, r3) = p.connect_new(
+        a,
+        Side::Left,
+        &spec("D", BlockKind::Component),
+        Direction::Out,
+        long,
+    )?;
+    p.set_relation_short(r3, "telemetry")?;
+    let l = render(&p, None);
+    let shown = |r| {
+        l.lines
+            .iter()
+            .find(|g| g.relation == r)
+            .map(|g| g.text.clone())
+    };
+    assert_eq!(shown(r1).as_deref(), Some("[1]"));
+    assert_eq!(shown(r2).as_deref(), Some("REST"));
+    assert_eq!(shown(r3).as_deref(), Some("telemetry"));
+    let keys: Vec<_> = l.legend.iter().map(|e| e.key.as_str()).collect();
+    assert_eq!(keys, vec!["[1]", "telemetry"]);
+    assert_eq!(l.legend[0].lines.join(" "), long);
+    // The legend sits below the diagram, inside the image.
+    let at = l.legend_at.ok_or("legend position")?;
+    let grid_bottom = l.cells.iter().map(|(_, r)| r.max.y).fold(0.0, f32::max);
+    assert!(at.y > grid_bottom);
+    assert!(l.bounds.max.y > at.y + 2.0 * whiteboxed::layout::LEGEND_LINE);
+    // Off: full texts everywhere; 0: every text is a number.
+    p.set_label_limit(None);
+    let l = render(&p, None);
+    assert!(l.lines.iter().any(|g| g.text == long));
+    assert_eq!(l.legend.len(), 1, "only the short label is explained");
+    p.set_label_limit(Some(0));
+    let l = render(&p, None);
+    let rest = l.lines.iter().find(|g| g.relation == r2).ok_or("rest")?;
+    assert!(rest.text.starts_with('['));
+    assert_eq!(rest.full_text, "REST");
+    Ok(())
+}
+
+#[test]
+fn long_legend_entries_wrap_to_the_diagram_width() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let essay = "word ".repeat(400);
+    p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        &essay,
+    )?;
+    let l = render(&p, None);
+    let entry = l.legend.first().ok_or("entry")?;
+    assert!(entry.lines.len() > 3);
+    let widest = entry
+        .lines
+        .iter()
+        .map(|t| whiteboxed::text::width(t, whiteboxed::layout::LABEL_SIZE))
+        .fold(0.0, f32::max);
+    assert!(widest <= l.bounds.width());
+    Ok(())
+}
+
+/// Writes a diagram with shortened texts and a legend to `target/legend.png`.
+#[test]
+#[ignore]
+fn render_legend_png() -> TestResult {
+    let mut p = Project::new();
+    let api = p.add_block(None, &spec("HTTP API", BlockKind::Component))?;
+    p.connect_new(api, Side::Bottom, &spec("Application Services", BlockKind::Component), Direction::Out, "use cases")?;
+    let (_, r) = p.connect_new(api, Side::Right, &spec("Telemetry", BlockKind::Component), Direction::Out, "tracing spans, request metrics and the /metrics endpoint for Prometheus")?;
+    p.set_relation_short(r, "telemetry")?;
+    p.connect_new(api, Side::Left, &spec("Web UI", BlockKind::Ui), Direction::In, "fetch JSON, SSE/WS updates for the live dashboard")?;
+    let png = export::to_png(&scene::scene(&render(&p, None)), 1.0)?;
+    std::fs::write("target/legend.png", png)?;
+    Ok(())
+}

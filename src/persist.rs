@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, LineStyle,
+    Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint, LineStyle,
     MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation, RelationId, Rgb, Side,
     Tag, TagId,
 };
@@ -35,6 +35,9 @@ struct FileDto {
     /// Written only when it differs from the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     line_style: Option<LineStyle>,
+    /// Written only when it differs from the default; `never` turns shortening off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    label_limit: Option<LimitDto>,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
@@ -84,6 +87,21 @@ struct RelationDto {
     text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     style: Option<LineStyle>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    short: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(untagged)]
+enum LimitDto {
+    Chars(u32),
+    Never(Never),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum Never {
+    Never,
 }
 
 fn anchors_dto(end: &Endpoint) -> Vec<AnchorDto> {
@@ -113,6 +131,12 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
         format: FORMAT,
         motivation: project.motivation.clone(),
         line_style: (project.line_style != LineStyle::default()).then_some(project.line_style),
+        label_limit: (project.label_limit != DEFAULT_LABEL_LIMIT).then_some(
+            match project.label_limit {
+                Some(n) => LimitDto::Chars(n),
+                None => LimitDto::Never(Never::Never),
+            },
+        ),
         tags: project
             .tags
             .iter()
@@ -147,6 +171,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 direction: r.direction,
                 text: r.text.clone(),
                 style: r.style,
+                short: r.short.clone(),
             })
             .collect(),
     };
@@ -164,6 +189,11 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     let mut project = Project::new();
     project.motivation = dto.motivation;
     project.line_style = dto.line_style.unwrap_or_default();
+    project.label_limit = match dto.label_limit {
+        None => DEFAULT_LABEL_LIMIT,
+        Some(LimitDto::Chars(n)) => Some(n),
+        Some(LimitDto::Never(_)) => None,
+    };
     let mut ids = BTreeSet::new();
     let mut fresh = |id: u64| {
         if ids.insert(id) {
@@ -208,6 +238,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 direction: r.direction,
                 text: r.text,
                 style: r.style,
+                short: r.short,
             },
         );
     }

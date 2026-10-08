@@ -73,6 +73,8 @@ pub struct ConnectForm {
     pub filter: String,
     pub direction: Direction,
     pub text: String,
+    /// Optional short label shown on the line instead of `text`.
+    pub short: String,
 }
 
 /// An open end that was clicked and is waiting for a box.
@@ -90,6 +92,7 @@ pub enum Pending {
         target: BlockId,
         direction: Direction,
         text: String,
+        short: String,
     },
     Stub {
         rel: RelationId,
@@ -108,6 +111,7 @@ pub enum Popup {
         text: String,
         /// `None` follows the project's line style.
         style: Option<LineStyle>,
+        short: String,
     },
     Conflict {
         pending: Pending,
@@ -439,6 +443,7 @@ impl Editor {
             filter: String::new(),
             direction: Direction::Out,
             text: String::new(),
+            short: String::new(),
         }));
     }
 
@@ -468,6 +473,7 @@ impl Editor {
                 direction: r.direction,
                 text: r.text.clone(),
                 style: r.style,
+                short: r.short.clone(),
             });
         }
     }
@@ -588,10 +594,12 @@ impl Editor {
                 direction,
                 text,
                 style,
+                short,
             } => {
                 if self
                     .apply(|p| {
                         p.edit_relation(rel, direction, &text)?;
+                        p.set_relation_short(rel, &short)?;
                         p.set_relation_style(rel, style)
                     })
                     .is_some()
@@ -623,21 +631,27 @@ impl Editor {
             side,
             direction,
             ref text,
+            ref short,
             ..
         } = form;
         match form.mode {
             ConnectMode::New => {
                 let spec = form.block.spec();
-                if let Some((id, _)) =
-                    self.apply(|p| p.connect_new(from, side, &spec, direction, text))
-                {
+                if let Some((id, _)) = self.apply(|p| {
+                    let (id, rel) = p.connect_new(from, side, &spec, direction, text)?;
+                    p.set_relation_short(rel, short)?;
+                    Ok((id, rel))
+                }) {
                     self.selected = Some(id);
                     self.popup = None;
                 }
             }
             ConnectMode::Stub => {
                 if self
-                    .apply(|p| p.add_stub(from, side, direction, text))
+                    .apply(|p| {
+                        let rel = p.add_stub(from, side, direction, text)?;
+                        p.set_relation_short(rel, short)
+                    })
                     .is_some()
                 {
                     self.popup = None;
@@ -651,6 +665,7 @@ impl Editor {
                     target,
                     direction,
                     text: text.clone(),
+                    short: short.clone(),
                 }),
                 Some(Target::Dangling(rel, end)) => {
                     let Some(owner) = self.diagram else { return };
@@ -731,8 +746,13 @@ impl Editor {
                 target,
                 direction,
                 text,
+                short,
             } => self
-                .apply(|p| p.connect_existing(from, side, target, direction, &text, placement))
+                .apply(|p| {
+                    let rel =
+                        p.connect_existing(from, side, target, direction, &text, placement)?;
+                    p.set_relation_short(rel, &short)
+                })
                 .is_some(),
             Pending::Stub { rel, target } => self
                 .apply(|p| p.connect_stub(rel, diagram, target, None, placement))
@@ -777,6 +797,14 @@ impl Editor {
 
     pub fn set_motivation(&mut self, diagram: DiagramId, text: &str) {
         self.apply(|p| p.set_motivation(diagram, text));
+    }
+
+    /// Changes when relation texts become numbers (one undo step).
+    pub fn set_label_limit(&mut self, limit: Option<u32>) {
+        self.apply(|p| {
+            p.set_label_limit(limit);
+            Ok(())
+        });
     }
 
     /// Changes the project's line style (one undo step).

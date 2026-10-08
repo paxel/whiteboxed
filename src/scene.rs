@@ -2,7 +2,10 @@
 //! both draw exactly this list, so what you see is what you export.
 
 use crate::geom::{Pos, Rect};
-use crate::layout::{KIND_SIZE, LABEL_SIZE, Layout, LineGeom, LineKind, NAME_SIZE, kind_caption};
+use crate::layout::{
+    KIND_SIZE, LABEL_SIZE, LEGEND_LINE, Layout, LegendEntry, LineGeom, LineKind, NAME_SIZE,
+    kind_caption,
+};
 use crate::model::{BlockKind, LineStyle, Rgb, Side};
 use crate::text;
 
@@ -146,6 +149,9 @@ pub fn scene(layout: &Layout) -> Scene {
     }
     for line in &layout.lines {
         label_shapes(&mut shapes, line);
+    }
+    if let Some(at) = layout.legend_at {
+        legend_shapes(&mut shapes, at, &layout.legend);
     }
     Scene {
         bounds: layout.bounds,
@@ -471,4 +477,43 @@ pub fn shaped(points: &[Pos], style: LineStyle) -> Vec<Pos> {
     }
     out.push(points[n - 1]);
     out
+}
+
+/// The legend below the diagram: "Legend", then one entry per shortened text.
+fn legend_shapes(shapes: &mut Vec<Shape>, at: Pos, entries: &[LegendEntry]) {
+    shapes.push(Shape::Text {
+        pos: Pos::new(at.x, at.y + LEGEND_LINE / 2.0),
+        text: "Legend".into(),
+        size: LABEL_SIZE,
+        color: MUTED,
+        align: Align::Left,
+    });
+    let key_width = entries
+        .iter()
+        .map(|e| text::width(&e.key, LABEL_SIZE))
+        .fold(0.0, f32::max)
+        + 12.0;
+    let mut y = at.y + LEGEND_LINE * 1.5;
+    for entry in entries {
+        shapes.push(Shape::Text {
+            pos: Pos::new(at.x, y + LEGEND_LINE / 2.0),
+            text: entry.key.clone(),
+            size: LABEL_SIZE,
+            color: INK,
+            align: Align::Left,
+        });
+        for line in &entry.lines {
+            shapes.push(Shape::Text {
+                pos: Pos::new(at.x + key_width, y + LEGEND_LINE / 2.0),
+                text: line.clone(),
+                size: LABEL_SIZE,
+                color: INK,
+                align: Align::Left,
+            });
+            y += LEGEND_LINE;
+        }
+        if entry.lines.is_empty() {
+            y += LEGEND_LINE;
+        }
+    }
 }

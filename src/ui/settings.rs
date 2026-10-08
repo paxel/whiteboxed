@@ -34,6 +34,7 @@ impl Settings {
         }
         let mut open = true;
         let mut style = editor.project.line_style;
+        let mut limit = editor.project.label_limit;
         let mut make_default = false;
         egui::Window::new("Project settings")
             .open(&mut open)
@@ -51,6 +52,23 @@ impl Settings {
                     ui.radio_value(&mut style, s, s.label());
                 }
                 ui.add_space(10.0);
+                ui.label(RichText::new("Long relation texts").strong());
+                ui.label(
+                    RichText::new(
+                        "Without a short label, longer texts become [1], [2] … with the full \
+                         text in a legend below the diagram.",
+                    )
+                    .weak(),
+                );
+                let mut shorten = limit.is_some();
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut shorten, "Shorten texts longer than");
+                    let mut n = limit.unwrap_or(24);
+                    ui.add_enabled(shorten, egui::DragValue::new(&mut n).range(0..=200));
+                    ui.label("characters (0: number every text)");
+                    limit = shorten.then_some(n);
+                });
+                ui.add_space(10.0);
                 if ui.button("Use as my default for new projects").clicked() {
                     make_default = true;
                 }
@@ -60,6 +78,9 @@ impl Settings {
             });
         if style != editor.project.line_style {
             editor.set_line_style(style);
+        }
+        if limit != editor.project.label_limit {
+            editor.set_label_limit(limit);
         }
         if make_default {
             self.prefs.line_style = editor.project.line_style;

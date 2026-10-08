@@ -67,6 +67,8 @@ pub struct LineGeom {
     /// Where the line crosses the whitebox frame, with the partner outside.
     pub frame_port: Option<(Pos, Side, String)>,
     pub style: LineStyle,
+    /// The relation's full text; `text` is what the line shows.
+    pub full_text: String,
 }
 
 impl LineGeom {
@@ -88,7 +90,22 @@ pub struct Layout {
     pub bounds: Rect,
     /// The grid: cell -> rect, for drag-and-drop targets.
     pub cells: Vec<(crate::model::Cell, Rect)>,
+    /// Shortened relation texts: key on the line (`[2]` or a short label) and the
+    /// full text, already wrapped into lines.
+    pub legend: Vec<LegendEntry>,
+    /// Where the legend is drawn (below the diagram), if there is one.
+    pub legend_at: Option<Pos>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegendEntry {
+    pub key: String,
+    pub lines: Vec<String>,
+}
+
+pub const LEGEND_LINE: f32 = 17.0;
+const LEGEND_GAP: f32 = 18.0;
+const LEGEND_MIN_WIDTH: f32 = 420.0;
 
 impl Layout {
     pub fn block(&self, id: BlockId) -> Option<&BlockGeom> {
@@ -295,6 +312,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     let offsets = lane_offsets(&routes);
 
     let mut lines = Vec::new();
+    let (shown, legend_keys) = shown_labels(view, project.label_limit);
     for (li, line) in view.lines.iter().enumerate() {
         let pa = port_at.get(&(li, End::A)).copied();
         let pb = port_at.get(&(li, End::B)).copied();
@@ -345,6 +363,39 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         }
     }
 
+    for (li, geom) in lines.iter_mut().enumerate() {
+        if let Some(text) = shown.get(li) {
+            geom.text = text.clone();
+        }
+    }
+    // The legend goes below everything, as wide as the diagram (or a readable
+    // minimum), with long texts wrapped.
+    let legend_width = bounds.width().max(LEGEND_MIN_WIDTH) - 2.0 * PAD;
+    let legend: Vec<LegendEntry> = legend_keys
+        .into_iter()
+        .map(|(key, full)| {
+            let indent = text::width(&format!("{key}  "), LABEL_SIZE);
+            LegendEntry {
+                lines: wrap(&full, (legend_width - indent).max(120.0), LABEL_SIZE),
+                key,
+            }
+        })
+        .collect();
+    let (bounds, legend_at) = if legend.is_empty() {
+        (bounds, None)
+    } else {
+        let rows: usize = legend.iter().map(|e| e.lines.len().max(1)).sum();
+        let at = Pos::new(PAD, bounds.max.y + LEGEND_GAP);
+        let height = LEGEND_GAP + LEGEND_LINE * (rows as f32 + 1.0) + LEGEND_GAP;
+        (
+            Rect::from_min_size(
+                bounds.min,
+                bounds.width().max(LEGEND_MIN_WIDTH),
+                bounds.height() + height,
+            ),
+            Some(at),
+        )
+    };
     let layout = Layout {
         diagram: view.diagram,
         blocks,
@@ -356,8 +407,67 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             .map(|b| b.name.clone()),
         bounds,
         cells,
+        legend,
+        legend_at,
     };
     (layout, grid)
+}
+
+/// What each line of the view shows, and the legend for whatever was shortened:
+/// a short label if the relation has one, the full text up to `limit` characters,
+/// otherwise a number `[n]` (numbered in relation order).
+fn shown_labels(view: &DiagramView, limit: Option<u32>) -> (Vec<String>, Vec<(String, String)>) {
+    let mut shown = Vec::new();
+    let mut legend: Vec<(String, String)> = Vec::new();
+    let mut numbers: BTreeMap<RelationId, String> = BTreeMap::new();
+    let mut seen = BTreeSet::new();
+    for line in &view.lines {
+        let full = line.text.trim();
+        let too_long = |n: u32| !full.is_empty() && full.chars().count() > n as usize;
+        let label = if !line.short.is_empty() {
+            if !full.is_empty() && full != line.short && seen.insert(line.relation) {
+                legend.push((line.short.clone(), full.to_owned()));
+            }
+            line.short.clone()
+        } else if limit.is_some_and(too_long) {
+            let next = numbers.len() + 1;
+            let key = numbers
+                .entry(line.relation)
+                .or_insert_with(|| format!("[{next}]"))
+                .clone();
+            if seen.insert(line.relation) {
+                legend.push((key.clone(), full.to_owned()));
+            }
+            key
+        } else {
+            full.to_owned()
+        };
+        shown.push(label);
+    }
+    (shown, legend)
+}
+
+/// Splits `text` into lines no wider than `width` at `size`, at spaces where possible.
+fn wrap(text: &str, width: f32, size: f32) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.lines() {
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            let candidate = if line.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{line} {word}")
+            };
+            if !line.is_empty() && text::width(&candidate, size) > width {
+                lines.push(std::mem::take(&mut line));
+                line = word.to_owned();
+            } else {
+                line = candidate;
+            }
+        }
+        lines.push(line);
+    }
+    lines
 }
 
 /// The caption under a box name, e.g. `«database»`.
@@ -658,6 +768,7 @@ fn build_line(
         tip_dir,
         frame_port: None,
         style: line.style,
+        full_text: line.text.clone(),
     }
 }
 

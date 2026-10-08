@@ -625,6 +625,15 @@ impl App {
             .flatten()
             .map(|p| (p, hit_at(p)));
 
+        // The full text of a shortened relation, at the pointer.
+        let full = resp.hover_pos().and_then(|p| match hit_at(p) {
+            Hit::Line(rel) => layout
+                .lines
+                .iter()
+                .find(|l| l.relation == rel && l.text != l.full_text)
+                .map(|l| l.full_text.clone()),
+            _ => None,
+        });
         if let Some((b, cell)) = moved {
             self.editor.move_block(b, cell);
         }
@@ -638,6 +647,10 @@ impl App {
             self.anchor = p;
             self.context = Some(h);
         }
+        let resp = match full {
+            Some(text) => resp.on_hover_text_at_pointer(text),
+            None => resp,
+        };
         resp.context_menu(|ui| self.context_menu(ui));
 
         if layout.blocks.is_empty() {

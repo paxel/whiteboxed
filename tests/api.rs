@@ -494,3 +494,30 @@ fn edit_relation_sets_and_clears_the_line_style() -> TestResult {
     assert_eq!(e.project.relation(rel)?.style, Some(LineStyle::Square));
     Ok(())
 }
+
+#[test]
+fn short_labels_come_with_the_relation_tools() -> TestResult {
+    let mut e = Editor::new(None);
+    call(&mut e, "add_box", json!({"name": "A", "kind": "component"}))?;
+    let b = call(
+        &mut e,
+        "connect_new",
+        json!({"from": "A", "side": "right", "name": "B", "kind": "component", "text": "a very long description of the call", "short_label": "calls"}),
+    )?;
+    let rel = b["relation"].as_u64().ok_or("relation")?;
+    let r = e.project.relation(whiteboxed::model::RelationId(rel))?;
+    assert_eq!(r.short, "calls");
+    let out = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "short_label": ""}),
+    )?;
+    assert_eq!(out["short_label"], "");
+    let too_long = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "short_label": "x".repeat(200)}),
+    );
+    assert!(too_long.is_err());
+    Ok(())
+}

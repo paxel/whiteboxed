@@ -107,6 +107,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             {
                 direction_row(ui, &mut form.direction);
                 text_row(ui, &mut form.text, false);
+                short_row(ui, &mut form.short);
             }
             if pick {
                 return Some(Action::Pick);
@@ -117,10 +118,12 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             direction,
             text,
             style,
+            short,
             ..
         } => {
             direction_row(ui, direction);
             text_row(ui, text, std::mem::take(focus));
+            short_row(ui, short);
             style_row(ui, style, editor.project.line_style);
             ok_cancel(ui, "Save")
         }
@@ -282,6 +285,17 @@ fn target_list(
             }
         });
     allow_pick && ui.button("Pick in diagram").clicked()
+}
+
+fn short_row(ui: &mut Ui, short: &mut String) {
+    ui.horizontal(|ui| {
+        ui.label("Short label");
+        ui.add(
+            egui::TextEdit::singleline(short)
+                .hint_text("optional, shown on the line instead of the text")
+                .desired_width(220.0),
+        );
+    });
 }
 
 fn style_row(ui: &mut Ui, style: &mut Option<LineStyle>, project: LineStyle) {

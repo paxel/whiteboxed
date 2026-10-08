@@ -26,6 +26,8 @@ pub struct ViewLine {
     pub text: String,
     /// The relation's own line style, or the project's.
     pub style: LineStyle,
+    /// The relation's short label (empty: none).
+    pub short: String,
 }
 
 impl ViewLine {
@@ -68,6 +70,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 direction: rel.direction,
                 text: rel.text.clone(),
                 style: rel.style.unwrap_or(project.line_style),
+                short: rel.short.clone(),
             });
             continue;
         }
@@ -103,6 +106,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 direction: rel.direction,
                 text: rel.text.clone(),
                 style: rel.style.unwrap_or(project.line_style),
+                short: rel.short.clone(),
             });
         }
     }

@@ -162,3 +162,21 @@ fn line_styles_are_saved_only_when_not_default() -> TestResult {
     assert_eq!(persist::from_yaml(&yaml)?, p);
     Ok(())
 }
+
+#[test]
+fn label_limits_and_short_labels_survive_the_file() -> TestResult {
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("label_limit"));
+    let rel = *p.relations.keys().next().ok_or("relation")?;
+    p.set_relation_short(rel, "web")?;
+    p.set_label_limit(Some(10));
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("label_limit: 10"));
+    assert!(yaml.contains("short: web"));
+    assert_eq!(persist::from_yaml(&yaml)?, p);
+    p.set_label_limit(None);
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("label_limit: never"));
+    assert_eq!(persist::from_yaml(&yaml)?, p);
+    Ok(())
+}
