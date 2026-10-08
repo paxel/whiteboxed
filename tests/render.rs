@@ -170,10 +170,24 @@ fn hovering_a_border_highlights_that_side() -> TestResult {
     h.run();
     let img = h.render()?;
     let accent = Rgb(0x1e, 0x88, 0xe5);
+    // The highlight is a 5 px line on the edge; anti-aliasing blends single pixels
+    // with the outline, so look for the accent anywhere across the line.
+    let found = (-4..=4).any(|dx| {
+        (-2..=2).any(|dy| close(pixel(&img, edge + egui::vec2(dx as f32, dy as f32)), accent))
+    });
     let got = pixel(&img, edge);
+    let view = h.state().view().ok_or("no view")?;
+    let layout = h.state_mut().editor.layout().clone();
+    let under = whiteboxed::hit::hit(
+        &h.state().editor.project,
+        &layout,
+        view.diagram(edge),
+        view.zoom,
+    );
     assert!(
-        close(got, accent),
-        "expected the accent on the hovered side, got {got}"
+        found,
+        "expected the accent on the hovered side, got {got} at the edge ({under:?}, zoom {})",
+        view.zoom
     );
     Ok(())
 }
