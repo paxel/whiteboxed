@@ -422,3 +422,23 @@ fn the_relation_popup_sets_the_sides_of_this_diagram() -> TestResult {
     assert_eq!(r.a.anchors.first().map(|x| x.side), Some(Side::Right));
     Ok(())
 }
+
+#[test]
+fn the_project_name_titles_the_window_the_file_and_the_export() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    assert_eq!(e.title(), "whiteboxed \u{2013} untitled");
+    assert_eq!(e.suggested_file_name(), "architecture.yaml");
+    add_first(&mut e, "Web Shop")?;
+    assert_eq!(e.title(), "whiteboxed \u{2013} Web Shop *");
+    e.set_project_name("Shop/Backend");
+    assert_eq!(e.display_name(), "Shop/Backend");
+    assert_eq!(e.suggested_file_name(), "Shop_Backend.yaml");
+    e.undo();
+    assert_eq!(e.display_name(), "Web Shop");
+    e.redo();
+    e.export_all(dir.path(), DocFormat::Markdown)?;
+    let index = std::fs::read_to_string(dir.path().join("index.md"))?;
+    assert!(index.starts_with("# Shop/Backend"), "{index}");
+    Ok(())
+}

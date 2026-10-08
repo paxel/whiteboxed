@@ -432,6 +432,8 @@ pub struct Project {
     pub blocks: BTreeMap<BlockId, Block>,
     pub relations: BTreeMap<RelationId, Relation>,
     pub tags: BTreeMap<TagId, Tag>,
+    /// The project's name as set by the user; empty: see [`Project::display_name`].
+    pub name: String,
     /// The explanation of the context view.
     pub motivation: String,
     /// Line style for relations without their own.
@@ -451,6 +453,7 @@ impl Default for Project {
             blocks: BTreeMap::new(),
             relations: BTreeMap::new(),
             tags: BTreeMap::new(),
+            name: String::new(),
             motivation: String::new(),
             line_style: LineStyle::default(),
             label_limit: DEFAULT_LABEL_LIMIT,
@@ -462,6 +465,23 @@ impl Default for Project {
 impl Project {
     pub fn new() -> Self {
         Project::default()
+    }
+
+    /// The project's name: the one set by the user, or else [`Project::auto_name`].
+    pub fn display_name(&self) -> Option<String> {
+        if self.name.is_empty() {
+            self.auto_name()
+        } else {
+            Some(self.name.clone())
+        }
+    }
+
+    /// The name of the system: the first box of the context view that is neither a
+    /// person nor an external system. It follows that box's renames.
+    pub fn auto_name(&self) -> Option<String> {
+        self.blocks_in(None)
+            .find(|(_, b)| b.kind.can_drill())
+            .map(|(_, b)| b.name.clone())
     }
 
     pub fn block(&self, id: BlockId) -> ModelResult<&Block> {

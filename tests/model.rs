@@ -514,3 +514,31 @@ fn add_block_at_takes_the_cell_or_the_next_free_one() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn the_project_is_named_after_its_system_until_named_by_hand() -> TestResult {
+    let mut p = Project::new();
+    assert_eq!(p.display_name(), None);
+    let user = p.add_block(None, &BlockSpec::new("Customer", BlockKind::Person))?;
+    // People and external systems do not name the project.
+    assert_eq!(p.display_name(), None);
+    let (shop, _) = p.connect_new(
+        user,
+        Side::Right,
+        &component("Web Shop"),
+        Direction::Out,
+        "",
+    )?;
+    p.connect_new(shop, Side::Right, &component("Billing"), Direction::Out, "")?;
+    assert_eq!(p.display_name().as_deref(), Some("Web Shop"));
+    p.edit_block(shop, &component("Shop"))?;
+    assert_eq!(p.display_name().as_deref(), Some("Shop"));
+    p.set_name("  Sanshain ")?;
+    assert_eq!(p.display_name().as_deref(), Some("Sanshain"));
+    p.edit_block(shop, &component("Store"))?;
+    assert_eq!(p.display_name().as_deref(), Some("Sanshain"));
+    assert_eq!(p.set_name("a\nb"), Err(ModelError::ControlCharacter));
+    p.set_name("")?;
+    assert_eq!(p.display_name().as_deref(), Some("Store"));
+    Ok(())
+}

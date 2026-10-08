@@ -14,6 +14,9 @@ pub struct Settings {
     dir: Option<PathBuf>,
     pub prefs: Prefs,
     note: Option<String>,
+    /// The project name as typed; it goes into the project when the field is left.
+    name: String,
+    naming: bool,
 }
 
 impl Settings {
@@ -25,6 +28,8 @@ impl Settings {
             dir,
             prefs,
             note: None,
+            name: String::new(),
+            naming: false,
         }
     }
 
@@ -36,6 +41,10 @@ impl Settings {
         let mut style = editor.project.line_style;
         let mut limit = editor.project.label_limit;
         let mut make_default = false;
+        if !self.naming {
+            self.name = editor.project.name.clone();
+        }
+        let mut name_done = false;
         egui::Window::new("Project settings")
             .open(&mut open)
             .collapsible(false)
@@ -44,6 +53,26 @@ impl Settings {
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
+                ui.label(RichText::new("Project name").strong());
+                ui.label(
+                    RichText::new(
+                        "Shown in the window title, offered as the file name and used as the \
+                         title of the exported documentation.",
+                    )
+                    .weak(),
+                );
+                let hint = match editor.project.auto_name() {
+                    Some(n) => format!("{n} (from the context view)"),
+                    None => "the first system box of the context view".to_owned(),
+                };
+                let field = ui.add(
+                    egui::TextEdit::singleline(&mut self.name)
+                        .hint_text(hint)
+                        .desired_width(f32::INFINITY),
+                );
+                self.naming = field.has_focus();
+                name_done = field.lost_focus();
+                ui.add_space(10.0);
                 ui.label(RichText::new("Line style").strong());
                 ui.label(
                     RichText::new("How relation lines bend. A relation can override it.").weak(),
@@ -76,6 +105,10 @@ impl Settings {
                     ui.label(RichText::new(note).weak());
                 }
             });
+        if (name_done || !open) && self.name.trim() != editor.project.name {
+            editor.set_project_name(&self.name);
+            self.naming = false;
+        }
         if style != editor.project.line_style {
             editor.set_line_style(style);
         }

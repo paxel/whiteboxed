@@ -135,6 +135,10 @@ There is nothing to position by pixel.
 
 ![Project settings: line style and when texts get shortened](screenshots/project-settings.png)
 
+- **Project name**: shown in the window title, offered as the file name on the first
+  save and used as the title of the exported documentation. Until you type one, the
+  project is named after the first box of the context view that is not a person or an
+  external system, and follows its renames. Empty the field to go back to that.
 - **Line style**: how relation lines bend. A relation can override it in its
   **Edit…** dialog.
 - **Shorten texts longer than … characters**: from which length a text moves to the
@@ -333,7 +337,7 @@ relations:
 ```
 
 Project-wide settings sit at the top of the file and are only written when they
-differ from the defaults: `line_style` (`square`, `round6`, `round12`, `curved`;
+differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
 default `round12`) and `label_limit` (default 24; `never` turns shortening off).
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,

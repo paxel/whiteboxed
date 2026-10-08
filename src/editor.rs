@@ -263,25 +263,37 @@ impl Editor {
             .2
     }
 
-    /// The project's name for people: the file name without extension, or
-    /// "untitled" before the first save.
+    /// The project's name for people: its own name (see [`Project::display_name`]),
+    /// else the file name without extension, or "untitled" before the first save.
     pub fn display_name(&self) -> String {
+        self.project
+            .display_name()
+            .or_else(|| self.file_stem())
+            .unwrap_or_else(|| "untitled".into())
+    }
+
+    fn file_stem(&self) -> Option<String> {
         self.path
             .as_ref()
             .and_then(|p| p.file_stem())
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".into())
     }
 
     pub fn title(&self) -> String {
-        let name = self
-            .path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".into());
         let star = if self.dirty { " *" } else { "" };
-        format!("whiteboxed \u{2013} {name}{star}")
+        format!("whiteboxed \u{2013} {}{star}", self.display_name())
+    }
+
+    /// The file name offered on the first save: the project's name, if it has one.
+    pub fn suggested_file_name(&self) -> String {
+        match self.project.display_name() {
+            Some(name) => format!("{}.yaml", safe_file_name(&name)),
+            None => "architecture.yaml".into(),
+        }
+    }
+
+    pub fn set_project_name(&mut self, name: &str) {
+        self.apply(|p| p.set_name(name));
     }
 
     /// Names from the context view down to the current diagram.
@@ -938,10 +950,11 @@ impl Editor {
             write_file(&dir.join(format!("{name}.{ext}")), text)?;
             entries.push((*diagram, name));
         }
-        let title = self.path.as_ref().and_then(|p| p.file_stem()).map_or_else(
-            || "Architecture".to_owned(),
-            |s| s.to_string_lossy().into_owned(),
-        );
+        let title = self
+            .project
+            .display_name()
+            .or_else(|| self.file_stem())
+            .unwrap_or_else(|| "Architecture".to_owned());
         let index = doc::index_doc(&self.project, &title, &entries, format);
         write_file(&dir.join(format!("index.{ext}")), index)?;
         Ok(diagrams.len())
@@ -955,18 +968,21 @@ impl Editor {
                 parts.push(b.name.clone());
             }
         }
-        parts
-            .join(" - ")
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || " -_.".contains(c) {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect()
+        safe_file_name(&parts.join(" - "))
     }
+}
+
+/// `name` with everything but letters, digits, spaces and `-_.` replaced by `_`.
+fn safe_file_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || " -_.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// Writes a file, but never through a symlink: an export must not land elsewhere.

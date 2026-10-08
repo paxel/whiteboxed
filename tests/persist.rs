@@ -180,3 +180,14 @@ fn label_limits_and_short_labels_survive_the_file() -> TestResult {
     assert_eq!(persist::from_yaml(&yaml)?, p);
     Ok(())
 }
+
+#[test]
+fn the_project_name_is_saved_only_when_set() -> TestResult {
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("name: Sanshain"));
+    p.set_name("Sanshain")?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.starts_with("format: 1\nname: Sanshain\n"), "{yaml}");
+    assert_eq!(persist::from_yaml(&yaml)?.name, "Sanshain");
+    Ok(())
+}

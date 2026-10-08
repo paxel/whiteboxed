@@ -29,6 +29,9 @@ pub enum PersistError {
 #[derive(Serialize, Deserialize)]
 struct FileDto {
     format: u32,
+    /// The project's name, when set by the user.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    name: String,
     /// Explanation of the context view.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     motivation: String,
@@ -129,6 +132,7 @@ fn endpoint(anchors: Vec<AnchorDto>) -> Endpoint {
 pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
     let dto = FileDto {
         format: FORMAT,
+        name: project.name.clone(),
         motivation: project.motivation.clone(),
         line_style: (project.line_style != LineStyle::default()).then_some(project.line_style),
         label_limit: (project.label_limit != DEFAULT_LABEL_LIMIT).then_some(
@@ -187,6 +191,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         )));
     }
     let mut project = Project::new();
+    project.name = dto.name.trim().to_owned();
     project.motivation = dto.motivation;
     project.line_style = dto.line_style.unwrap_or_default();
     project.label_limit = match dto.label_limit {

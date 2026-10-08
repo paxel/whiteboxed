@@ -672,8 +672,9 @@ fn escape_keeps_editing_and_enter_saves_before_quitting() -> TestResult {
     let mut h = harness(e);
     h.run();
     request_close(&mut h);
+    // The project is named after its system box, not after the file.
     assert!(
-        h.query_by_label("Save changes to \u{201c}shop\u{201d}?")
+        h.query_by_label("Save changes to \u{201c}Shop\u{201d}?")
             .is_some()
     );
     h.key_press(Key::Escape);
@@ -875,5 +876,30 @@ fn a_new_box_outside_the_view_is_scrolled_into_it() -> TestResult {
         canvas.contains(min) && canvas.contains(max),
         "{min:?}..{max:?} not in {canvas:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn project_settings_name_the_project() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Project settings\u{2026}").click();
+    h.run();
+    h.get_by_role(egui::accesskit::Role::TextInput).click();
+    h.run();
+    h.event(Event::Text("Sanshain".into()));
+    h.run();
+    assert_eq!(
+        h.state().editor.project.name,
+        "",
+        "typing alone does not change it"
+    );
+    h.key_press(Key::Tab);
+    h.run();
+    assert_eq!(h.state().editor.project.name, "Sanshain");
+    assert_eq!(h.state().editor.title(), "whiteboxed \u{2013} Sanshain *");
     Ok(())
 }

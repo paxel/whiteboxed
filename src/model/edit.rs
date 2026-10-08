@@ -485,6 +485,13 @@ impl Project {
         self.label_limit = limit;
     }
 
+    /// Sets the project's name; empty takes it from the context view again.
+    pub fn set_name(&mut self, name: &str) -> ModelResult<()> {
+        check_name_text(name)?;
+        self.name = name.trim().to_owned();
+        Ok(())
+    }
+
     /// Sets the project's line style.
     pub fn set_line_style(&mut self, style: LineStyle) {
         self.line_style = style;

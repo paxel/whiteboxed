@@ -1111,7 +1111,7 @@ impl App {
         self.commit_draft();
         let Some(mut path) = rfd::FileDialog::new()
             .add_filter("whiteboxed project", &["yaml", "yml"])
-            .set_file_name("architecture.yaml")
+            .set_file_name(self.editor.suggested_file_name())
             .save_file()
         else {
             return false;

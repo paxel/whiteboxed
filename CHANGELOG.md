@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A project name in Project settings, taken from the system box of the context view until you set one. It titles the window, the unsaved-changes question and the exported documentation, and is offered as the file name on the first save.
 - Zoom buttons in the lower right corner of the canvas (−, the zoom level with a click for 100 %, +, Fit), Ctrl+= / Ctrl+− / Ctrl+0, and zoom entries in the View menu. The view no longer jumps back to fit the whole diagram after every change; new boxes outside it are scrolled into view.
 - Boxes without a relation can be added anywhere: right-click empty space > Add box here puts the box in that cell, and + Box in the menu bar puts it in the next free cell.
 - Short labels for relations; long texts without one appear as [1], [2] … with the full text in a legend below the diagram (in the app, the export and as a tooltip). When texts get shortened is set in Project settings.
