@@ -7,6 +7,8 @@ boxes and relations; the app does the layout. For step-by-step recipes see
 
 ## The window
 
+![The window: menu, breadcrumb, structure tree, tags, canvas and status bar](screenshots/context.png)
+
 - **Menu bar**: File (new, open, save, export), Edit (undo, redo), View (fit, up one
   level).
 - **Breadcrumb** under the menu: where you are, e.g. `Context › Web Shop › Orders`.
@@ -28,6 +30,8 @@ boxes and relations; the app does the layout. For step-by-step recipes see
 
 A box is a blackbox on its own level. Opening it shows its whitebox: a frame with the
 box's name, the boxes inside it, and every relation that reaches the box from outside.
+
+![The whitebox of Web Shop at level 1](screenshots/whitebox.png)
 
 ## Box types
 
