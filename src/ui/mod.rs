@@ -36,11 +36,18 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
     };
     let mut app = App::new(editor, dir);
     app.editor.message = message;
+    if cfg!(target_os = "linux") {
+        std::thread::spawn(crate::launcher::register);
+    }
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("whiteboxed")
+        .with_app_id(APP_ID)
+        .with_inner_size([1280.0, 800.0]);
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(crate::launcher::ICON) {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("whiteboxed")
-            .with_app_id(APP_ID)
-            .with_inner_size([1280.0, 800.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(

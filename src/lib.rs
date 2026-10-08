@@ -4,6 +4,7 @@ pub mod editor;
 pub mod export;
 pub mod geom;
 pub mod hit;
+pub mod launcher;
 pub mod layout;
 pub mod model;
 pub mod persist;

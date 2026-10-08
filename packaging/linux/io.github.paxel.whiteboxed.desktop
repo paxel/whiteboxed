@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=whiteboxed
+GenericName=Architecture Diagram Editor
+Comment=Draw arc42 building-block views
+Exec=whiteboxed %f
+Icon=whiteboxed
+Terminal=false
+Categories=Development;Graphics;
+# The running window carries this app id (with_app_id in src/ui/mod.rs). On Wayland
+# the compositor finds this entry by its file name, which is why the file is called
+# io.github.paxel.whiteboxed.desktop; on X11 it matches the window class below.
+StartupWMClass=io.github.paxel.whiteboxed
+# Claims the file for the app's own menu registration (src/launcher.rs), which
+# refreshes launchers carrying this key and never touches ones without it.
+X-Whiteboxed-Managed=true
