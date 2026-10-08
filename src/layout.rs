@@ -23,6 +23,8 @@ pub const LANE: f32 = 8.0;
 const EMPTY_W: f32 = 520.0;
 const EMPTY_H: f32 = 360.0;
 const BEND: i64 = 60;
+/// Cost of crossing a line routed earlier: worth a detour of about 150 px.
+const CROSS: i64 = 1500;
 
 pub const DEFAULT_FILL: Rgb = Rgb(0xff, 0xff, 0xff);
 pub const NEIGHBOUR_FILL: Rgb = Rgb(0xe6, 0xe6, 0xe6);
@@ -111,6 +113,60 @@ impl Layout {
     pub fn block(&self, id: BlockId) -> Option<&BlockGeom> {
         self.blocks.iter().find(|b| b.id == id)
     }
+}
+
+/// Where two lines of different relations cross.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Crossing {
+    /// Index into `Layout::lines` of the line running horizontally there.
+    pub horizontal: usize,
+    /// Index into `Layout::lines` of the line running vertically there.
+    pub vertical: usize,
+    pub at: Pos,
+}
+
+/// Every point where a horizontal segment of one relation crosses a vertical
+/// segment of another, away from both segments' ends.
+pub fn crossings(layout: &Layout) -> Vec<Crossing> {
+    let mut out = Vec::new();
+    for (hl, h) in layout.lines.iter().enumerate() {
+        for (vl, v) in layout.lines.iter().enumerate() {
+            if h.relation == v.relation {
+                continue;
+            }
+            for at in cross_points(&h.points, &v.points) {
+                out.push(Crossing {
+                    horizontal: hl,
+                    vertical: vl,
+                    at,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Where a horizontal segment of `h` crosses a vertical segment of `v`, away from
+/// both segments' ends.
+fn cross_points(h: &[Pos], v: &[Pos]) -> Vec<Pos> {
+    let inside = |c: f32, a: f32, b: f32| c > a.min(b) + 0.5 && c < a.max(b) - 0.5;
+    let mut out = Vec::new();
+    for hw in h.windows(2) {
+        let (hp, hq) = (hw[0], hw[1]);
+        if (hp.y - hq.y).abs() >= 0.01 {
+            continue;
+        }
+        for vw in v.windows(2) {
+            let (vp, vq) = (vw[0], vw[1]);
+            if (vp.x - vq.x).abs() >= 0.01 {
+                continue;
+            }
+            if inside(vp.x, hp.x, hq.x) && inside(hp.y, vp.y, vq.y) {
+                out.push(Pos::new(vp.x, hp.y));
+            }
+        }
+    }
+    out
 }
 
 /// A port on a side: sort key, relation, line index and which end.
@@ -405,13 +461,46 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     }
 
     // Route every line that has two ports.
+    // Lines avoid crossing the ones routed before them.
     let mut routes: BTreeMap<usize, Vec<Chan>> = BTreeMap::new();
+    // Every line starts with only its stems known; then each line is routed against
+    // all the others, twice, so the first lines also see the later ones.
+    let both = |li: usize| Some((*port_at.get(&(li, End::A))?, *port_at.get(&(li, End::B))?));
+    let stem = |(p, _, chan): (Pos, Side, Chan)| match chan {
+        Chan::V(v) => (p, Pos::new(grid.vx[v], p.y)),
+        Chan::H(h) => (p, Pos::new(p.x, grid.hy[h])),
+    };
+    let mut segments: Segments = BTreeMap::new();
     for li in 0..view.lines.len() {
-        if let (Some(a), Some(b)) = (port_at.get(&(li, End::A)), port_at.get(&(li, End::B))) {
-            routes.insert(li, route(&grid, (a.0, a.2), (b.0, b.2)));
+        if let Some((a, b)) = both(li) {
+            segments.insert(li, vec![stem(a), stem(b)]);
         }
     }
-    let offsets = lane_offsets(&routes);
+    for _ in 0..2 {
+        for li in 0..view.lines.len() {
+            let Some((a, b)) = both(li) else { continue };
+            let others = obstacles(&grid, &segments, li);
+            let chans = route(&grid, (a.0, a.2), (b.0, b.2), &others);
+            let points = route_points(&grid, &BTreeMap::new(), li, a.0, b.0, &chans);
+            segments.insert(li, points.windows(2).map(|w| (w[0], w[1])).collect());
+            routes.insert(li, chans);
+        }
+    }
+    let mut lanes = lane_order(&routes);
+    let ends: BTreeMap<usize, (Pos, Pos)> = routes
+        .keys()
+        .filter_map(|li| {
+            Some((
+                *li,
+                (
+                    port_at.get(&(*li, End::A))?.0,
+                    port_at.get(&(*li, End::B))?.0,
+                ),
+            ))
+        })
+        .collect();
+    untangle(&grid, &routes, &ends, &mut lanes);
+    let offsets = lane_offsets(&lanes);
 
     let mut lines = Vec::new();
     let (shown, legend_keys) = shown_labels(view, project.label_limit);
@@ -696,8 +785,49 @@ fn axis(sizes: &[f32], gaps: &[f32], empty: f32) -> (Vec<f32>, Vec<(f32, f32)>, 
     (starts, spans, x)
 }
 
-/// Shortest path with few bends over the lattice of gap channels.
-fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan)) -> Vec<Chan> {
+/// Straight segments of routed lines, by line index.
+type Segments = BTreeMap<usize, Vec<(Pos, Pos)>>;
+
+/// What a route should not cross: for every vertical channel the y of the
+/// horizontal segments spanning it, and for every horizontal channel the x of the
+/// vertical ones.
+struct Obstacles {
+    on_v: Vec<Vec<f32>>,
+    on_h: Vec<Vec<f32>>,
+}
+
+/// The segments of every line except `skip`, as obstacles per channel.
+fn obstacles(grid: &Grid, segments: &Segments, skip: usize) -> Obstacles {
+    let mut out = Obstacles {
+        on_v: vec![Vec::new(); grid.vx.len()],
+        on_h: vec![Vec::new(); grid.hy.len()],
+    };
+    let spans = |c: f32, a: f32, b: f32| c > a.min(b) + 0.01 && c < a.max(b) - 0.01;
+    for (li, list) in segments {
+        if *li == skip {
+            continue;
+        }
+        for (p, q) in list {
+            if (p.y - q.y).abs() < 0.01 {
+                for (v, x) in grid.vx.iter().enumerate() {
+                    if spans(*x, p.x, q.x) {
+                        out.on_v[v].push(p.y);
+                    }
+                }
+            } else if (p.x - q.x).abs() < 0.01 {
+                for (h, y) in grid.hy.iter().enumerate() {
+                    if spans(*y, p.y, q.y) {
+                        out.on_h[h].push(p.x);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Shortest path with few bends and few crossings over the lattice of gap channels.
+fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan), others: &Obstacles) -> Vec<Chan> {
     let nv = grid.vx.len();
     let nh = grid.hy.len();
     let s = nv * nh;
@@ -708,6 +838,22 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan)) -> Vec<Chan> {
         Chan::H(_) => p.x,
     };
     let cost = |d: f32| (d.abs() * 10.0).round() as i64;
+    // Crossings when running along `chan` from `from` to `to`: other lines met past
+    // `from`, up to and including `to`.
+    let crossed = |chan: Chan, from: f32, to: f32| -> i64 {
+        let list = match chan {
+            Chan::V(v) => &others.on_v[v],
+            Chan::H(h) => &others.on_h[h],
+        };
+        let met = |c: &&f32| {
+            if to >= from {
+                **c > from + 0.01 && **c <= to + 0.01
+            } else {
+                **c < from - 0.01 && **c >= to - 0.01
+            }
+        };
+        list.iter().filter(met).count() as i64 * CROSS
+    };
 
     // state = node * 2 + axis (0: moved along H, 1: moved along V)
     let mut dist = vec![i64::MAX; node_count * 2];
@@ -730,7 +876,8 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan)) -> Vec<Chan> {
             target_state = Some(state);
             break;
         }
-        let mut edges: Vec<(usize, Chan, f32)> = Vec::new();
+        // (next node, channel, length, crossing cost)
+        let mut edges: Vec<(usize, Chan, f32, i64)> = Vec::new();
         let here = if node == s {
             None
         } else {
@@ -742,46 +889,60 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan)) -> Vec<Chan> {
                 match a.1 {
                     Chan::V(v) => {
                         for h in 0..nh {
-                            edges.push((v * nh + h, a.1, grid.hy[h] - along));
+                            let x = crossed(a.1, along, grid.hy[h]);
+                            edges.push((v * nh + h, a.1, grid.hy[h] - along, x));
                         }
                     }
                     Chan::H(h) => {
                         for v in 0..nv {
-                            edges.push((v * nh + h, a.1, grid.vx[v] - along));
+                            let x = crossed(a.1, along, grid.vx[v]);
+                            edges.push((v * nh + h, a.1, grid.vx[v] - along, x));
                         }
                     }
                 }
                 if a.1 == b.1 {
-                    edges.push((t, a.1, coord(b.1, b.0) - along));
+                    let to = coord(b.1, b.0);
+                    edges.push((t, a.1, to - along, crossed(a.1, along, to)));
                 }
             }
             Some((v, h)) => {
+                let (y, x) = (grid.hy[h], grid.vx[v]);
                 if h + 1 < nh {
-                    edges.push((node + 1, Chan::V(v), grid.hy[h + 1] - grid.hy[h]));
+                    let c = crossed(Chan::V(v), y, grid.hy[h + 1]);
+                    edges.push((node + 1, Chan::V(v), grid.hy[h + 1] - y, c));
                 }
                 if h > 0 {
-                    edges.push((node - 1, Chan::V(v), grid.hy[h] - grid.hy[h - 1]));
+                    let c = crossed(Chan::V(v), y, grid.hy[h - 1]);
+                    edges.push((node - 1, Chan::V(v), y - grid.hy[h - 1], c));
                 }
                 if v + 1 < nv {
-                    edges.push((node + nh, Chan::H(h), grid.vx[v + 1] - grid.vx[v]));
+                    let c = crossed(Chan::H(h), x, grid.vx[v + 1]);
+                    edges.push((node + nh, Chan::H(h), grid.vx[v + 1] - x, c));
                 }
                 if v > 0 {
-                    edges.push((node - nh, Chan::H(h), grid.vx[v] - grid.vx[v - 1]));
+                    let c = crossed(Chan::H(h), x, grid.vx[v - 1]);
+                    edges.push((node - nh, Chan::H(h), x - grid.vx[v - 1], c));
                 }
                 match b.1 {
-                    Chan::V(bv) if bv == v => edges.push((t, b.1, b.0.y - grid.hy[h])),
-                    Chan::H(bh) if bh == h => edges.push((t, b.1, b.0.x - grid.vx[v])),
+                    Chan::V(bv) if bv == v => {
+                        let x = crossed(b.1, grid.hy[h], b.0.y);
+                        edges.push((t, b.1, b.0.y - grid.hy[h], x));
+                    }
+                    Chan::H(bh) if bh == h => {
+                        let x = crossed(b.1, grid.vx[v], b.0.x);
+                        edges.push((t, b.1, b.0.x - grid.vx[v], x));
+                    }
                     _ => {}
                 }
             }
         }
-        for (next, chan, len) in edges {
+        for (next, chan, len, cross) in edges {
             let next_axis = match chan {
                 Chan::V(_) => 1,
                 Chan::H(_) => 0,
             };
             let bend = if next_axis == axis { 0 } else { BEND };
-            let nd = d + cost(len) + bend;
+            let nd = d + cost(len) + bend + cross;
             let ns = next * 2 + next_axis;
             if nd < dist[ns] {
                 dist[ns] = nd;
@@ -804,9 +965,15 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan)) -> Vec<Chan> {
     chans
 }
 
-/// Spreads lines that share a channel side by side.
-fn lane_offsets(routes: &BTreeMap<usize, Vec<Chan>>) -> BTreeMap<(usize, Chan), f32> {
-    let mut users: BTreeMap<Chan, Vec<usize>> = BTreeMap::new();
+/// Lines that share a channel, in the order of their lanes across it.
+type Lanes = BTreeMap<Chan, Vec<usize>>;
+
+/// Above this many routed lines, lanes keep their first order (untangling would
+/// get slow).
+const UNTANGLE_LIMIT: usize = 60;
+
+fn lane_order(routes: &BTreeMap<usize, Vec<Chan>>) -> Lanes {
+    let mut users: Lanes = BTreeMap::new();
     for (li, chans) in routes {
         for chan in chans {
             let list = users.entry(*chan).or_default();
@@ -815,13 +982,107 @@ fn lane_offsets(routes: &BTreeMap<usize, Vec<Chan>>) -> BTreeMap<(usize, Chan), 
             }
         }
     }
+    users
+}
+
+/// Swaps neighbouring lanes wherever that leaves fewer crossings, until nothing
+/// improves.
+fn untangle(
+    grid: &Grid,
+    routes: &BTreeMap<usize, Vec<Chan>>,
+    ends: &BTreeMap<usize, (Pos, Pos)>,
+    lanes: &mut Lanes,
+) {
+    if routes.len() > UNTANGLE_LIMIT {
+        return;
+    }
+    let draw = |offsets: &BTreeMap<(usize, Chan), f32>, li: usize| -> Vec<Pos> {
+        match (ends.get(&li), routes.get(&li)) {
+            (Some((a, b)), Some(chans)) => route_points(grid, offsets, li, *a, *b, chans),
+            _ => Vec::new(),
+        }
+    };
+    let offsets = lane_offsets(lanes);
+    let mut points: BTreeMap<usize, Vec<Pos>> =
+        routes.keys().map(|li| (*li, draw(&offsets, *li))).collect();
+    // Lines whose boxes do not overlap cannot cross.
+    let extent = |p: &[Pos]| {
+        p.iter().fold(
+            (f32::MAX, f32::MAX, f32::MIN, f32::MIN),
+            |(x0, y0, x1, y1), q| (x0.min(q.x), y0.min(q.y), x1.max(q.x), y1.max(q.y)),
+        )
+    };
+    let apart = |a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)| {
+        a.2 < b.0 || b.2 < a.0 || a.3 < b.1 || b.3 < a.1
+    };
+    // Crossings that involve at least one of `users`.
+    let count = |points: &BTreeMap<usize, Vec<Pos>>, users: &[usize]| -> usize {
+        let mut n = 0;
+        for u in users {
+            let q = &points[u];
+            let eq = extent(q);
+            for (li, p) in points {
+                // Pairs within `users` are counted once.
+                if li == u || (users.contains(li) && li < u) || apart(extent(p), eq) {
+                    continue;
+                }
+                n += cross_points(p, q).len() + cross_points(q, p).len();
+            }
+        }
+        n
+    };
+    let chans: Vec<Chan> = lanes.keys().copied().collect();
+    for _ in 0..4 {
+        let mut improved = false;
+        for chan in &chans {
+            let n = lanes.get(chan).map_or(0, Vec::len);
+            for k in 0..n.saturating_sub(1) {
+                // A swap moves only the two lines swapped.
+                let Some(users) = lanes.get(chan).map(|l| vec![l[k], l[k + 1]]) else {
+                    break;
+                };
+                let before = count(&points, &users);
+                if before == 0 {
+                    continue;
+                }
+                if let Some(list) = lanes.get_mut(chan) {
+                    list.swap(k, k + 1);
+                }
+                let offsets = lane_offsets(lanes);
+                let old: Vec<(usize, Vec<Pos>)> = users
+                    .iter()
+                    .map(|li| {
+                        (
+                            *li,
+                            points.insert(*li, draw(&offsets, *li)).unwrap_or_default(),
+                        )
+                    })
+                    .collect();
+                if count(&points, &users) < before {
+                    improved = true;
+                } else {
+                    points.extend(old);
+                    if let Some(list) = lanes.get_mut(chan) {
+                        list.swap(k, k + 1);
+                    }
+                }
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
+}
+
+/// Spreads lines that share a channel side by side, in their lane order.
+fn lane_offsets(lanes: &Lanes) -> BTreeMap<(usize, Chan), f32> {
     let limit = GAP / 2.0 - 12.0;
     let mut out = BTreeMap::new();
-    for (chan, list) in users {
+    for (chan, list) in lanes {
         let n = list.len() as f32;
-        for (k, li) in list.into_iter().enumerate() {
+        for (k, li) in list.iter().copied().enumerate() {
             let off = ((k as f32 - (n - 1.0) / 2.0) * LANE).clamp(-limit, limit);
-            out.insert((li, chan), off);
+            out.insert((li, *chan), off);
         }
     }
     out

@@ -144,8 +144,20 @@ pub fn scene(layout: &Layout) -> Scene {
             });
         }
     }
-    for line in &layout.lines {
-        line_shapes(&mut shapes, line);
+    // Where lines cross, the horizontal one jumps over the vertical one.
+    let crossings = crate::layout::crossings(layout);
+    for (li, line) in layout.lines.iter().enumerate() {
+        let jumps: Vec<Pos> = crossings
+            .iter()
+            .filter(|c| c.horizontal == li)
+            .map(|c| c.at)
+            .collect();
+        let crossed: Vec<Pos> = crossings
+            .iter()
+            .filter(|c| c.horizontal == li || c.vertical == li)
+            .map(|c| c.at)
+            .collect();
+        line_shapes(&mut shapes, line, &jumps, &crossed);
     }
     // Labels stay inside the frame of a whitebox, or inside the picture.
     let label_area = layout.frame.unwrap_or(layout.bounds).expand(-8.0);
@@ -313,10 +325,10 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
         .collect()
 }
 
-fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
+fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos]) {
     let stroke = Stroke::solid(1.5, LINE);
     shapes.push(Shape::Polyline {
-        points: shaped(&line.points, line.style),
+        points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
         stroke,
     });
     let n = line.points.len();
@@ -492,6 +504,12 @@ fn text_bounds(shapes: &[Shape]) -> Option<Rect> {
 /// A routed polyline with its bends drawn in `style`. End segments stay straight, so
 /// arrowheads keep their direction.
 pub fn shaped(points: &[Pos], style: LineStyle) -> Vec<Pos> {
+    shaped_around(points, style, &[])
+}
+
+/// Like [`shaped`], but bends stay clear of the points in `crossed` (where the line
+/// crosses another), so the line runs straight there and a jump fits.
+pub fn shaped_around(points: &[Pos], style: LineStyle, crossed: &[Pos]) -> Vec<Pos> {
     let radius = match style {
         LineStyle::Square => return points.to_vec(),
         LineStyle::Round6 => 6.0,
@@ -508,7 +526,12 @@ pub fn shaped(points: &[Pos], style: LineStyle) -> Vec<Pos> {
         let (d_in, d_out) = (prev.dist(corner), corner.dist(next));
         // Curves reach to the middle of each segment; rounded corners take at most
         // their radius, and never more than half a segment, so short steps stay steps.
-        let r = radius.min(d_in / 2.0).min(d_out / 2.0);
+        let mut r = radius.min(d_in / 2.0).min(d_out / 2.0);
+        for c in crossed {
+            if on_segment(*c, prev, corner) || on_segment(*c, corner, next) {
+                r = r.min(corner.dist(*c) - JUMP_RADIUS - 1.0);
+            }
+        }
         if r < 0.5 {
             out.push(corner);
             continue;
@@ -534,6 +557,59 @@ pub fn shaped(points: &[Pos], style: LineStyle) -> Vec<Pos> {
         }
     }
     out.push(points[n - 1]);
+    out
+}
+
+/// Whether `c` lies on the straight segment from `a` to `b`.
+fn on_segment(c: Pos, a: Pos, b: Pos) -> bool {
+    let within = |v: f32, p: f32, q: f32| v >= p.min(q) - 0.5 && v <= p.max(q) + 0.5;
+    within(c.x, a.x, b.x) && within(c.y, a.y, b.y) && {
+        let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        cross.abs() <= 0.5 * a.dist(b).max(1.0)
+    }
+}
+
+/// Radius of the small arc a line makes where it jumps over another.
+pub const JUMP_RADIUS: f32 = 5.0;
+
+/// Splices a small arc into horizontal stretches at every point in `jumps` that lies
+/// on one, so the line visibly jumps over the line it crosses there.
+pub fn with_jumps(points: Vec<Pos>, jumps: &[Pos]) -> Vec<Pos> {
+    if jumps.is_empty() {
+        return points;
+    }
+    let r = JUMP_RADIUS;
+    let mut out = Vec::with_capacity(points.len());
+    for (i, p) in points.iter().enumerate() {
+        out.push(*p);
+        let Some(q) = points.get(i + 1) else { break };
+        if (p.y - q.y).abs() > 0.01 {
+            continue;
+        }
+        let (lo, hi) = (p.x.min(q.x) + r, p.x.max(q.x) - r);
+        let mut xs: Vec<f32> = jumps
+            .iter()
+            .filter(|j| (j.y - p.y).abs() < 0.5 && j.x > lo && j.x < hi)
+            .map(|j| j.x)
+            .collect();
+        let rightward = q.x >= p.x;
+        xs.sort_by(|a, b| {
+            if rightward {
+                a.total_cmp(b)
+            } else {
+                b.total_cmp(a)
+            }
+        });
+        for x in xs {
+            // Over the top: from the left (180°) through up (270°) to the right, or back.
+            let (from, to) = if rightward {
+                (180.0, 360.0)
+            } else {
+                (0.0, -180.0)
+            };
+            out.extend(arc(Pos::new(x, p.y), r, r, from, to));
+        }
+    }
     out
 }
 

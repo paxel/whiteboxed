@@ -1,6 +1,8 @@
 use whiteboxed::geom::{Pos, Rect};
 use whiteboxed::layout::{self, Layout, LineKind, MIN_H, PORT_SPACING};
-use whiteboxed::model::{BlockId, BlockKind, BlockSpec, Direction, End, Placement, Project, Side};
+use whiteboxed::model::{
+    BlockId, BlockKind, BlockSpec, Cell, Direction, End, LineStyle, Placement, Project, Side,
+};
 use whiteboxed::view::{ViewEnd, dangling_count, diagram_view};
 use whiteboxed::{export, scene};
 
@@ -498,4 +500,110 @@ fn labels_stay_inside_the_frame_and_the_picture() -> TestResult {
         }
     }
     Ok(())
+}
+
+#[test]
+fn lines_avoid_crossings_when_they_can() -> TestResult {
+    // Before crossings counted, these three lines crossed twice.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let gateway = p.add_block(None, &spec("Gateway", k))?;
+    let auth = p.add_block(None, &spec("Auth", k))?;
+    let billing = p.add_block(None, &spec("Billing", k))?;
+    let ledger = p.add_block(None, &spec("Ledger", k))?;
+    p.move_block(gateway, Cell { col: 1, row: 1 })?;
+    p.move_block(auth, Cell { col: 1, row: 0 })?;
+    p.move_block(billing, Cell { col: 3, row: 2 })?;
+    p.move_block(ledger, Cell { col: 2, row: 1 })?;
+    p.connect_existing(
+        auth,
+        Side::Right,
+        ledger,
+        Direction::Out,
+        "a",
+        Placement::Keep,
+    )?;
+    p.connect_existing(
+        gateway,
+        Side::Right,
+        billing,
+        Direction::Out,
+        "b",
+        Placement::Keep,
+    )?;
+    p.connect_existing(
+        billing,
+        Side::Top,
+        ledger,
+        Direction::Out,
+        "c",
+        Placement::Keep,
+    )?;
+    let l = render(&p, None);
+    assert_eq!(l.lines.len(), 3);
+    assert_eq!(layout::crossings(&l), Vec::new());
+    Ok(())
+}
+
+#[test]
+fn unavoidable_crossings_get_a_line_jump() -> TestResult {
+    // A box in the middle: the line from top to bottom has to cross the one from
+    // left to right somewhere.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let cells = [(0, 1), (2, 1), (1, 0), (1, 2), (1, 1)];
+    let mut ids = Vec::new();
+    for (i, (col, row)) in cells.into_iter().enumerate() {
+        let id = p.add_block(None, &spec(&format!("B{i}"), k))?;
+        p.move_block(id, Cell { col, row })?;
+        ids.push(id);
+    }
+    p.connect_existing(
+        ids[0],
+        Side::Right,
+        ids[1],
+        Direction::Out,
+        "lr",
+        Placement::Keep,
+    )?;
+    p.connect_existing(
+        ids[2],
+        Side::Bottom,
+        ids[3],
+        Direction::Out,
+        "tb",
+        Placement::Keep,
+    )?;
+    for style in LineStyle::ALL {
+        p.set_line_style(style);
+        let l = render(&p, None);
+        let crossings = layout::crossings(&l);
+        assert!(!crossings.is_empty(), "{style:?}");
+        let s = scene::scene(&l);
+        for c in crossings {
+            // The horizontal line passes over the crossing point in a small arc.
+            let top = Pos::new(c.at.x, c.at.y - scene::JUMP_RADIUS);
+            let jumped = s.shapes.iter().any(|shape| match shape {
+                scene::Shape::Polyline { points, .. } => points.iter().any(|q| q.dist(top) < 0.5),
+                _ => false,
+            });
+            assert!(jumped, "{style:?}: no jump at {:?}", c.at);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_jump_bulges_over_the_crossing_in_either_direction() {
+    let jumps = [Pos::new(50.0, 10.0)];
+    for (from, to) in [(0.0, 100.0), (100.0, 0.0)] {
+        let out = scene::with_jumps(vec![Pos::new(from, 10.0), Pos::new(to, 10.0)], &jumps);
+        assert_eq!(out.first(), Some(&Pos::new(from, 10.0)));
+        assert_eq!(out.last(), Some(&Pos::new(to, 10.0)));
+        let min_y = out.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        assert!((min_y - (10.0 - scene::JUMP_RADIUS)).abs() < 0.01);
+        // Points keep moving from `from` toward `to`.
+        let xs: Vec<f32> = out.iter().map(|p| p.x).collect();
+        assert!(xs.windows(2).all(|w| (w[1] - w[0]) * (to - from) >= -0.01));
+    }
 }
