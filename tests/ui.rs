@@ -771,3 +771,109 @@ fn the_menu_bar_adds_a_box_in_the_next_free_cell() -> TestResult {
     assert_eq!(billing, Some(Cell::new(1, 0)));
     Ok(())
 }
+
+fn zoom(h: &Harness<'_, App>) -> Result<f32, Box<dyn std::error::Error>> {
+    Ok(h.state().view().ok_or("no view")?.zoom)
+}
+
+fn add_box_at(
+    h: &mut Harness<'_, App>,
+    name: &str,
+    cell: Cell,
+) -> Result<BlockId, Box<dyn std::error::Error>> {
+    let e = &mut h.state_mut().editor;
+    e.start_add_block_at(cell);
+    if let Some(Popup::AddBlock(form, _)) = &mut e.popup {
+        form.name = name.into();
+    }
+    e.confirm();
+    h.run();
+    h.state()
+        .editor
+        .project
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == name)
+        .map(|(id, _)| *id)
+        .ok_or_else(|| "not added".into())
+}
+
+#[test]
+fn zoom_buttons_and_keys_change_the_zoom() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    let fitted = zoom(&h)?;
+    h.get_by_label("+").click();
+    h.run();
+    assert!((zoom(&h)? - fitted * 1.25).abs() < 0.001);
+    let level = format!("{:.0} %", zoom(&h)? * 100.0);
+    h.get_by_label(&level).click();
+    h.run();
+    assert_eq!(zoom(&h)?, 1.0);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+    h.run();
+    assert_eq!(zoom(&h)?, 1.25);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
+    h.run();
+    assert!((zoom(&h)? - 0.8).abs() < 0.001);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num0);
+    h.run();
+    assert_eq!(zoom(&h)?, 1.0);
+    h.get_by_label("Fit").click();
+    h.run();
+    assert_eq!(zoom(&h)?, fitted);
+    Ok(())
+}
+
+#[test]
+fn editing_keeps_the_zoom_and_the_picture_in_place() -> TestResult {
+    let (e, shop) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    // Zoomed out far enough that the new box needs no scrolling.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
+    h.run();
+    let z = zoom(&h)?;
+    let shop_at = |h: &mut Harness<'_, App>| -> Result<Pos2, Box<dyn std::error::Error>> {
+        let r = h
+            .state_mut()
+            .editor
+            .layout()
+            .block(shop)
+            .ok_or("shop")?
+            .rect;
+        screen(h, r.min)
+    };
+    let before = shop_at(&mut h)?;
+    // A box in front of the shop shifts the whole grid; the shop stays where it was.
+    add_box_at(&mut h, "Left", Cell::new(-1, 0))?;
+    assert_eq!(zoom(&h)?, z);
+    let after = shop_at(&mut h)?;
+    assert!((after - before).length() < 0.5, "{before:?} -> {after:?}");
+    Ok(())
+}
+
+#[test]
+fn a_new_box_outside_the_view_is_scrolled_into_it() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    for _ in 0..8 {
+        h.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+    }
+    h.run();
+    let z = zoom(&h)?;
+    let far = add_box_at(&mut h, "Far", Cell::new(3, 2))?;
+    assert_eq!(zoom(&h)?, z, "the zoom stays");
+    let r = h.state_mut().editor.layout().block(far).ok_or("far")?.rect;
+    let (min, max) = (screen(&h, r.min)?, screen(&h, r.max)?);
+    let canvas = h.state().canvas_rect();
+    assert!(
+        canvas.contains(min) && canvas.contains(max),
+        "{min:?}..{max:?} not in {canvas:?}"
+    );
+    Ok(())
+}

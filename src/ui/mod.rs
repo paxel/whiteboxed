@@ -79,7 +79,10 @@ enum Leave {
 pub struct App {
     pub editor: Editor,
     recovery_dir: Option<PathBuf>,
-    view: Option<(DiagramId, geom::Rect, View)>,
+    view: Option<Shown>,
+    /// A zoom step asked for by a key, the menu or the zoom buttons.
+    zoom_request: Option<ZoomStep>,
+    canvas_rect: egui::Rect,
     anchor: Pos2,
     focus: bool,
     context: Option<Hit>,
@@ -110,6 +113,8 @@ impl App {
             editor,
             recovery_dir,
             view: None,
+            zoom_request: None,
+            canvas_rect: egui::Rect::NOTHING,
             anchor: Pos2::new(200.0, 150.0),
             focus: true,
             context: None,
@@ -142,7 +147,12 @@ impl App {
 
     /// The current diagram-to-screen transform, once the canvas was drawn.
     pub fn view(&self) -> Option<View> {
-        self.view.map(|(_, _, v)| v)
+        self.view.as_ref().map(|s| s.view)
+    }
+
+    /// Where the canvas was drawn in the last frame.
+    pub fn canvas_rect(&self) -> egui::Rect {
+        self.canvas_rect
     }
 
     /// Whether the window is about to close (the user confirmed quitting).
@@ -157,6 +167,8 @@ impl App {
     /// Draws the whole window into `ui`.
     pub fn show(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        // Ctrl+= and Ctrl+− zoom the diagram, not the whole window.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
         self.handle_close(&ctx);
         self.shortcuts(&ctx);
         if let Some(action) = self.ai.pump(&mut self.editor)
@@ -233,6 +245,15 @@ impl App {
         }
         if pressed(Modifiers::COMMAND, Key::N) {
             self.new_project();
+        }
+        if !ctx.text_edit_focused() {
+            if pressed(Modifiers::COMMAND, Key::Equals) || pressed(Modifiers::COMMAND, Key::Plus) {
+                self.zoom_request = Some(ZoomStep::In);
+            } else if pressed(Modifiers::COMMAND, Key::Minus) {
+                self.zoom_request = Some(ZoomStep::Out);
+            } else if pressed(Modifiers::COMMAND, Key::Num0) {
+                self.zoom_request = Some(ZoomStep::Actual);
+            }
         }
         if self.picking {
             if pressed(Modifiers::NONE, Key::Escape) {
@@ -330,6 +351,24 @@ impl App {
             ui.menu_button("View", |ui| {
                 if ui.button("Fit to window").clicked() {
                     self.view = None;
+                }
+                if ui
+                    .add(Button::new("Zoom in").shortcut_text("Ctrl+="))
+                    .clicked()
+                {
+                    self.zoom_request = Some(ZoomStep::In);
+                }
+                if ui
+                    .add(Button::new("Zoom out").shortcut_text("Ctrl+\u{2212}"))
+                    .clicked()
+                {
+                    self.zoom_request = Some(ZoomStep::Out);
+                }
+                if ui
+                    .add(Button::new("Actual size (100 %)").shortcut_text("Ctrl+0"))
+                    .clicked()
+                {
+                    self.zoom_request = Some(ZoomStep::Actual);
                 }
                 if ui
                     .add_enabled(self.editor.diagram.is_some(), Button::new("Up one level"))
@@ -577,18 +616,38 @@ impl App {
         let layout = self.editor.layout().clone();
         let diagram = self.editor.diagram;
 
-        let mut view = match self.view {
-            Some((d, bounds, v)) if d == diagram && bounds == layout.bounds => v,
+        self.canvas_rect = rect;
+        // The whole diagram is fitted only when it opens and on Fit; after edits the
+        // view stays, and the picture stays put where the grid shifted under it.
+        let mut view = match &self.view {
+            Some(shown) if shown.diagram == diagram => {
+                let mut v = shown.view;
+                let d = drift(&shown.blocks, &layout);
+                v.origin -= vec2(d.x, d.y) * v.zoom;
+                for b in &layout.blocks {
+                    if !shown.blocks.iter().any(|(id, _)| *id == b.id) {
+                        v.origin += into_view(rect, v.rect(b.rect));
+                    }
+                }
+                v
+            }
             _ => fit(rect, &layout),
         };
+        let wanted = match self.zoom_request.take() {
+            Some(ZoomStep::In) => Some(view.zoom * ZOOM_STEP),
+            Some(ZoomStep::Out) => Some(view.zoom / ZOOM_STEP),
+            Some(ZoomStep::Actual) => Some(1.0),
+            None => None,
+        };
+        if let Some(zoom) = wanted {
+            view = zoomed(view, rect.center(), zoom);
+        }
         if resp.hovered() {
             let (zoom, scroll) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta));
             if zoom != 1.0
                 && let Some(p) = resp.hover_pos()
             {
-                let d = view.diagram(p);
-                view.zoom = (view.zoom * zoom).clamp(0.15, 4.0);
-                view.origin = p - vec2(d.x, d.y) * view.zoom;
+                view = zoomed(view, p, view.zoom * zoom);
             }
             view.origin += scroll;
         }
@@ -615,7 +674,11 @@ impl App {
         {
             moved = Some((b, cell));
         }
-        self.view = Some((diagram, layout.bounds, view));
+        self.view = Some(Shown {
+            diagram,
+            view,
+            blocks: layout.blocks.iter().map(|b| (b.id, b.rect)).collect(),
+        });
         let hit_at = |p: Pos2| hit_with(view, p);
 
         canvas::paint(&painter, view, &scene::scene(&layout));
@@ -665,6 +728,7 @@ impl App {
             None => resp,
         };
         resp.context_menu(|ui| self.context_menu(ui));
+        self.zoom_buttons(ui, rect, view.zoom);
 
         if layout.blocks.is_empty() {
             let button = egui::Rect::from_center_size(rect.center(), vec2(150.0, 40.0));
@@ -674,6 +738,58 @@ impl App {
                 self.focus = true;
                 self.editor.start_add_block();
             }
+        }
+    }
+
+    /// −, the zoom level (click: 100 %), + and Fit in the lower right corner.
+    fn zoom_buttons(&mut self, ui: &mut Ui, canvas: egui::Rect, zoom: f32) {
+        let size = vec2(196.0, 30.0);
+        let at = egui::Rect::from_min_size(canvas.right_bottom() - size - vec2(12.0, 12.0), size);
+        let mut step = None;
+        let mut fit = false;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("\u{2212}")
+                        .on_hover_text("Zoom out (Ctrl+\u{2212}, or Ctrl + mouse wheel)")
+                        .clicked()
+                    {
+                        step = Some(ZoomStep::Out);
+                    }
+                    let level =
+                        Button::new(format!("{:.0} %", zoom * 100.0)).min_size(vec2(52.0, 0.0));
+                    if ui
+                        .add(level)
+                        .on_hover_text("Actual size, 100 % (Ctrl+0)")
+                        .clicked()
+                    {
+                        step = Some(ZoomStep::Actual);
+                    }
+                    if ui
+                        .button("+")
+                        .on_hover_text("Zoom in (Ctrl+=, or Ctrl + mouse wheel)")
+                        .clicked()
+                    {
+                        step = Some(ZoomStep::In);
+                    }
+                    if ui
+                        .button("Fit")
+                        .on_hover_text("Show the whole diagram (View > Fit to window)")
+                        .clicked()
+                    {
+                        fit = true;
+                    }
+                });
+            });
+        });
+        if step.is_some() {
+            self.zoom_request = step;
+            ui.ctx().request_repaint();
+        }
+        if fit {
+            self.view = None;
+            ui.ctx().request_repaint();
         }
     }
 
@@ -1045,12 +1161,85 @@ impl App {
     }
 }
 
+/// What the canvas showed in the last frame.
+struct Shown {
+    diagram: DiagramId,
+    view: View,
+    /// Where each box was, to keep the picture still when the layout shifts.
+    blocks: Vec<(BlockId, geom::Rect)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZoomStep {
+    In,
+    Out,
+    Actual,
+}
+
+const ZOOM_STEP: f32 = 1.25;
+const MIN_ZOOM: f32 = 0.15;
+const MAX_ZOOM: f32 = 4.0;
+
+/// `view` zoomed to `zoom`, keeping the diagram point under `center` where it is.
+fn zoomed(view: View, center: Pos2, zoom: f32) -> View {
+    let d = view.diagram(center);
+    let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+    View {
+        origin: center - vec2(d.x, d.y) * zoom,
+        zoom,
+    }
+}
+
+/// How far more than half of the boxes that `old` and `layout` share have moved: when
+/// a column or row is added in front, everything shifts by the same amount. Zero when
+/// there is no such majority (e.g. two boxes swapped places).
+fn drift(old: &[(BlockId, geom::Rect)], layout: &Layout) -> geom::Pos {
+    let mut votes: Vec<((i32, i32), usize)> = Vec::new();
+    for b in &layout.blocks {
+        if let Some((_, r)) = old.iter().find(|(id, _)| *id == b.id) {
+            let key = (
+                (b.rect.min.x - r.min.x).round() as i32,
+                (b.rect.min.y - r.min.y).round() as i32,
+            );
+            match votes.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, n)) => *n += 1,
+                None => votes.push((key, 1)),
+            }
+        }
+    }
+    let shared: usize = votes.iter().map(|(_, n)| n).sum();
+    votes
+        .into_iter()
+        .find(|(_, n)| 2 * n > shared)
+        .map_or(geom::Pos::new(0.0, 0.0), |((x, y), _)| {
+            geom::Pos::new(x as f32, y as f32)
+        })
+}
+
+/// The shift that brings `r` inside `canvas` (with a margin), or zero.
+fn into_view(canvas: egui::Rect, r: egui::Rect) -> egui::Vec2 {
+    let inner = canvas.shrink(24.0);
+    let along = |lo: f32, hi: f32, min: f32, max: f32| {
+        if lo < min {
+            min - lo
+        } else if hi > max {
+            (max - hi).max(min - lo)
+        } else {
+            0.0
+        }
+    };
+    vec2(
+        along(r.min.x, r.max.x, inner.min.x, inner.max.x),
+        along(r.min.y, r.max.y, inner.min.y, inner.max.y),
+    )
+}
+
 /// A view that shows the whole diagram, never larger than 1:1.
 fn fit(rect: egui::Rect, layout: &Layout) -> View {
     let b = layout.bounds;
     let zoom = (rect.width() / b.width())
         .min(rect.height() / b.height())
-        .clamp(0.15, 1.0);
+        .clamp(MIN_ZOOM, 1.0);
     let c = b.center();
     View {
         origin: rect.center() - vec2(c.x, c.y) * zoom,

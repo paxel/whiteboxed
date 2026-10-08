@@ -10,8 +10,8 @@ next to each diagram and exports them. For step-by-step recipes see
 
 ![The window: menu, breadcrumb, structure tree, tags, canvas, details and status bar](screenshots/context.png)
 
-- **Menu bar**: File (new, open, save, export), Edit (undo, redo), View (fit, up one
-  level), the **undo** and **redo** arrows, and **+ Box**, which adds a box without a
+- **Menu bar**: File (new, open, save, export), Edit (undo, redo), View (fit, zoom,
+  up one level), the **undo** and **redo** arrows, and **+ Box**, which adds a box without a
   relation in the next free cell. An arrow is grey when there is nothing to undo or
   redo.
 - **Breadcrumb** under the menu: where you are, e.g. `Context › Web Shop › Orders`.
@@ -19,7 +19,11 @@ next to each diagram and exports them. For step-by-step recipes see
 - **Structure** (left): every box of the project as a tree. Click a box to show it in
   its diagram, double-click it to open its whitebox.
 - **Tags** (left, below the tree): every tag with its colour.
-- **Canvas** (centre): the current diagram.
+- **Canvas** (centre): the current diagram. The buttons in its lower right corner zoom
+  out (−) and in (+), show the zoom level (click it for 100 %) and fit the whole
+  diagram (**Fit**). Ctrl + mouse wheel zooms at the pointer; dragging empty space
+  pans. A diagram is fitted when you open it; after that the view stays where you put
+  it, and a new box outside it is scrolled into view.
 - **Details** (right): the **responsibility** of the selected box, or the
   **motivation** of the current diagram when nothing is selected. See
   [arc42 texts](#arc42-texts).
@@ -276,7 +280,9 @@ without case. The context view is the default diagram.
 | Ctrl+Shift+S          | Save as                                |
 | Ctrl+O                | Open                                   |
 | Ctrl+N                | New project                            |
-| Ctrl+scroll           | Zoom                                   |
+| Ctrl+= / Ctrl+−       | Zoom in / out                          |
+| Ctrl+0                | Zoom to 100 %                          |
+| Ctrl+scroll           | Zoom at the pointer                    |
 
 ## File format
 
