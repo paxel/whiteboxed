@@ -147,16 +147,29 @@ pub fn scene(layout: &Layout) -> Scene {
     for line in &layout.lines {
         line_shapes(&mut shapes, line);
     }
+    // Labels stay inside the frame of a whitebox, or inside the picture.
+    let label_area = layout.frame.unwrap_or(layout.bounds).expand(-8.0);
     for line in &layout.lines {
-        label_shapes(&mut shapes, line);
+        label_shapes(&mut shapes, line, label_area);
     }
     if let Some(at) = layout.legend_at {
         legend_shapes(&mut shapes, at, &layout.legend);
     }
-    Scene {
-        bounds: layout.bounds,
-        shapes,
-    }
+    // Safety net: the picture grows around any text that still sticks out.
+    let bounds = match text_bounds(&shapes) {
+        Some(t) => Rect {
+            min: Pos::new(
+                layout.bounds.min.x.min(t.min.x - 4.0),
+                layout.bounds.min.y.min(t.min.y - 4.0),
+            ),
+            max: Pos::new(
+                layout.bounds.max.x.max(t.max.x + 4.0),
+                layout.bounds.max.y.max(t.max.y + 4.0),
+            ),
+        },
+        None => layout.bounds,
+    };
+    Scene { bounds, shapes }
 }
 
 fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
@@ -371,7 +384,7 @@ fn arrow_head(from: Pos, to: Pos) -> Shape {
     }
 }
 
-fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
+fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
     if let Some((p, side, partner)) = &line.frame_port {
         let (pos, align) = match side {
             Side::Left => (Pos::new(p.x + 8.0, p.y + 13.0), Align::Left),
@@ -406,29 +419,74 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
             Align::Left,
         ),
     };
-    let w = text::width(&line.text, LABEL_SIZE);
+    // Too wide for the area: wrap; then shift the block so it lies inside the area.
+    let lines = if text::width(&line.text, LABEL_SIZE) > area.width() {
+        crate::layout::wrap(&line.text, area.width(), LABEL_SIZE)
+    } else {
+        vec![line.text.clone()]
+    };
+    let w = lines
+        .iter()
+        .map(|l| text::width(l, LABEL_SIZE))
+        .fold(0.0, f32::max);
+    let h = LABEL_SIZE + 4.0 + (lines.len() as f32 - 1.0) * LINE_HEIGHT;
     let left = match align {
         Align::Left => pos.x,
         Align::Center => pos.x - w / 2.0,
         Align::Right => pos.x - w,
     };
+    let left = left.min(area.max.x - w).max(area.min.x);
+    let top = pos.y - LABEL_SIZE / 2.0 - 2.0;
     shapes.push(Shape::Rect {
-        rect: Rect::from_min_size(
-            Pos::new(left - 3.0, pos.y - LABEL_SIZE / 2.0 - 2.0),
-            w + 6.0,
-            LABEL_SIZE + 4.0,
-        ),
+        rect: Rect::from_min_size(Pos::new(left - 3.0, top), w + 6.0, h),
         radius: 3.0,
         fill: Some(PAPER),
         stroke: None,
     });
-    shapes.push(Shape::Text {
-        pos,
-        text: line.text.clone(),
-        size: LABEL_SIZE,
-        color: INK,
-        align,
-    });
+    for (i, text) in lines.into_iter().enumerate() {
+        shapes.push(Shape::Text {
+            pos: Pos::new(left, pos.y + i as f32 * LINE_HEIGHT),
+            text,
+            size: LABEL_SIZE,
+            color: INK,
+            align: Align::Left,
+        });
+    }
+}
+
+/// Distance between wrapped label lines.
+const LINE_HEIGHT: f32 = LABEL_SIZE + 3.0;
+
+/// The area every text shape covers, so nothing is drawn outside the picture.
+fn text_bounds(shapes: &[Shape]) -> Option<Rect> {
+    shapes
+        .iter()
+        .filter_map(|s| match s {
+            Shape::Text {
+                pos,
+                text: t,
+                size,
+                align,
+                ..
+            } => {
+                let w = text::width(t, *size);
+                let left = match align {
+                    Align::Left => pos.x,
+                    Align::Center => pos.x - w / 2.0,
+                    Align::Right => pos.x - w,
+                };
+                Some(Rect::from_min_size(
+                    Pos::new(left, pos.y - size * 0.7),
+                    w,
+                    size * 1.4,
+                ))
+            }
+            _ => None,
+        })
+        .reduce(|a, b| Rect {
+            min: Pos::new(a.min.x.min(b.min.x), a.min.y.min(b.min.y)),
+            max: Pos::new(a.max.x.max(b.max.x), a.max.y.max(b.max.y)),
+        })
 }
 
 /// A routed polyline with its bends drawn in `style`. End segments stay straight, so

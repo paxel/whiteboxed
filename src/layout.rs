@@ -550,7 +550,7 @@ fn shown_labels(view: &DiagramView, limit: Option<u32>) -> (Vec<String>, Vec<(St
 }
 
 /// Splits `text` into lines no wider than `width` at `size`, at spaces where possible.
-fn wrap(text: &str, width: f32, size: f32) -> Vec<String> {
+pub fn wrap(text: &str, width: f32, size: f32) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in text.lines() {
         let mut line = String::new();

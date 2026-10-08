@@ -451,3 +451,51 @@ fn frame_ends_line_up_with_the_box_that_takes_them() -> TestResult {
     assert_eq!(pts.len(), 2, "straight from the frame into UI: {pts:?}");
     Ok(())
 }
+
+#[test]
+fn labels_stay_inside_the_frame_and_the_picture() -> TestResult {
+    let mut p = Project::new();
+    p.set_label_limit(None);
+    let svc = p.add_block(None, &spec("Service", BlockKind::Component))?;
+    let long = "bind + group lookup against the corporate directory (LDAP/LDAPS) on every login";
+    let (_, rel) = p.connect_new(
+        svc,
+        Side::Right,
+        &spec("Directory", BlockKind::ExternalSystem),
+        Direction::Out,
+        long,
+    )?;
+    let auth = p.add_block(Some(svc), &spec("Auth", BlockKind::Component))?;
+    p.attach(rel, End::A, svc, auth, Side::Right)?;
+    let l = render(&p, Some(svc));
+    let frame = l.frame.ok_or("frame")?;
+    let s = scene::scene(&l);
+    for shape in &s.shapes {
+        if let whiteboxed::scene::Shape::Text {
+            pos,
+            text,
+            size,
+            align,
+            ..
+        } = shape
+        {
+            let w = whiteboxed::text::width(text, *size);
+            let left = match align {
+                whiteboxed::scene::Align::Left => pos.x,
+                whiteboxed::scene::Align::Center => pos.x - w / 2.0,
+                whiteboxed::scene::Align::Right => pos.x - w,
+            };
+            assert!(
+                left >= s.bounds.min.x && left + w <= s.bounds.max.x,
+                "{text} sticks out"
+            );
+            if text.starts_with("bind") || long.contains(text.as_str()) {
+                assert!(
+                    left >= frame.min.x && left + w <= frame.max.x,
+                    "{text} crosses the frame"
+                );
+            }
+        }
+    }
+    Ok(())
+}
