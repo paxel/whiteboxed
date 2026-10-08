@@ -3,7 +3,7 @@
 A WYSIWYG editor for [arc42](https://arc42.org) building-block views — draw.io for
 architects who don't want to push pixels.
 
-> Status: early development, not released yet.
+> Status: early development. Latest release: 0.1.0.
 
 You describe your system as boxes and relations; whiteboxed does the layout. The
 context view is level 0, and every box opens into its whitebox one level deeper, as
@@ -48,8 +48,6 @@ levels cannot drift apart.
   cannot do, findings, dependency checks and how CI enforces them.
 
 ## Install
-
-Once the first version is released:
 
 | OS      | Channel                                                                                        |
 |---------|------------------------------------------------------------------------------------------------|
