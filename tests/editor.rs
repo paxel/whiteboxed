@@ -399,3 +399,26 @@ fn line_styles_change_with_one_undo_step_each() -> TestResult {
     assert_eq!(e.project.line_style, LineStyle::Curved);
     Ok(())
 }
+
+#[test]
+fn the_relation_popup_sets_the_sides_of_this_diagram() -> TestResult {
+    let mut e = Editor::new(None);
+    let a = add_first(&mut e, "A")?;
+    let b = connect_new(&mut e, a, Side::Right, "B", BlockKind::Component)?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    e.start_edit_relation(rel);
+    let Some(Popup::EditRelation { sides, .. }) = &mut e.popup else {
+        return Err("no popup".into());
+    };
+    assert_eq!(sides, &vec![(a, Side::Right), (b, Side::Left)]);
+    sides[0].1 = Side::Bottom;
+    e.confirm();
+    assert!(e.popup.is_none());
+    let r = e.project.relation(rel)?;
+    assert_eq!(r.a.anchors.first().map(|x| x.side), Some(Side::Bottom));
+    // Moving a box faces the partner again.
+    e.move_block(b, Cell::new(1, 1));
+    let r = e.project.relation(rel)?;
+    assert_eq!(r.a.anchors.first().map(|x| x.side), Some(Side::Right));
+    Ok(())
+}

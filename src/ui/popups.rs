@@ -5,7 +5,7 @@
 use egui::{Color32, Context, Id, Key, Pos2, RichText, Ui};
 
 use crate::editor::{BlockForm, ConnectMode, Editor, OpenEnd, Popup, Target};
-use crate::model::{BlockKind, Direction, LineStyle};
+use crate::model::{BlockId, BlockKind, Direction, LineStyle, Side};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -119,12 +119,24 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             text,
             style,
             short,
+            sides,
             ..
         } => {
             direction_row(ui, direction);
             text_row(ui, text, std::mem::take(focus));
             short_row(ui, short);
             style_row(ui, style, editor.project.line_style);
+            for (block, side) in sides.iter_mut() {
+                let name = editor
+                    .project
+                    .blocks
+                    .get(block)
+                    .map_or("the box".to_owned(), |b| b.name.clone());
+                side_row(ui, &name, *block, side);
+            }
+            if !sides.is_empty() {
+                ui.weak("Moving a box sets its sides back to the ones facing its partners.");
+            }
             ok_cancel(ui, "Save")
         }
         Popup::Conflict { pending, broken } => {
@@ -315,6 +327,19 @@ fn style_row(ui: &mut Ui, style: &mut Option<LineStyle>, project: LineStyle) {
                 );
                 for s in LineStyle::ALL {
                     ui.selectable_value(style, Some(s), s.label());
+                }
+            });
+    });
+}
+
+fn side_row(ui: &mut Ui, name: &str, block: BlockId, side: &mut Side) {
+    ui.horizontal(|ui| {
+        ui.label(format!("Side at {name}"));
+        egui::ComboBox::from_id_salt(("relation-side", block))
+            .selected_text(side.label())
+            .show_ui(ui, |ui| {
+                for s in Side::ALL {
+                    ui.selectable_value(side, s, s.label());
                 }
             });
     });

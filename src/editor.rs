@@ -112,6 +112,8 @@ pub enum Popup {
         /// `None` follows the project's line style.
         style: Option<LineStyle>,
         short: String,
+        /// The boxes of this diagram the line touches, with the side it leaves them on.
+        sides: Vec<(BlockId, Side)>,
     },
     Conflict {
         pending: Pending,
@@ -468,12 +470,25 @@ impl Editor {
 
     pub fn start_edit_relation(&mut self, rel: RelationId) {
         if let Some(r) = self.project.relations.get(&rel) {
+            let here = |b: &BlockId| {
+                self.project
+                    .blocks
+                    .get(b)
+                    .is_some_and(|b| b.parent == self.diagram)
+            };
+            let sides = [&r.a, &r.b]
+                .into_iter()
+                .flat_map(|e| e.anchors.iter())
+                .filter(|a| here(&a.block))
+                .map(|a| (a.block, a.side))
+                .collect();
             self.popup = Some(Popup::EditRelation {
                 rel,
                 direction: r.direction,
                 text: r.text.clone(),
                 style: r.style,
                 short: r.short.clone(),
+                sides,
             });
         }
     }
@@ -595,11 +610,15 @@ impl Editor {
                 text,
                 style,
                 short,
+                sides,
             } => {
                 if self
                     .apply(|p| {
                         p.edit_relation(rel, direction, &text)?;
                         p.set_relation_short(rel, &short)?;
+                        for (block, side) in &sides {
+                            p.set_side_at(rel, *block, *side)?;
+                        }
                         p.set_relation_style(rel, style)
                     })
                     .is_some()

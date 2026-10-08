@@ -71,6 +71,8 @@ impl Project {
     }
 
     /// Moves a box to another grid cell; a box already there takes the old cell.
+    /// Lines of the moved boxes then leave them on the sides that face their partners,
+    /// replacing sides set by hand.
     pub fn move_block(&mut self, id: BlockId, cell: Cell) -> ModelResult<()> {
         if !cell.in_grid() {
             return Err(ModelError::OutsideGrid);
@@ -88,6 +90,38 @@ impl Project {
         }
         if let Some(b) = self.blocks.get_mut(&id) {
             b.cell = cell;
+        }
+        let moved: Vec<BlockId> = std::iter::once(id).chain(occupant).collect();
+        self.reface(parent, &moved)
+    }
+
+    /// Gives every line at the `moved` boxes of `diagram` the sides that face its
+    /// partner: the partner box, or the frame side a line from outside enters at.
+    fn reface(&mut self, diagram: DiagramId, moved: &[BlockId]) -> ModelResult<()> {
+        let at_moved = |e: &Endpoint| e.anchors.first().is_some_and(|a| moved.contains(&a.block));
+        let own: Vec<RelationId> = self
+            .relations
+            .iter()
+            .filter(|(_, r)| r.owner == diagram && (at_moved(&r.a) || at_moved(&r.b)))
+            .map(|(id, _)| *id)
+            .collect();
+        for rel in own {
+            self.reside(rel)?;
+        }
+        let Some(outer) = diagram else {
+            return Ok(());
+        };
+        for rel in self.relations.values_mut() {
+            for end in [End::A, End::B] {
+                let anchors = &mut rel.end_mut(end).anchors;
+                if let Some(i) = anchors.iter().position(|a| a.block == outer)
+                    && let Some(side) = anchors.get(i).map(|a| a.side)
+                    && let Some(inner) = anchors.get_mut(i + 1)
+                    && moved.contains(&inner.block)
+                {
+                    inner.side = side;
+                }
+            }
         }
         Ok(())
     }
@@ -380,6 +414,27 @@ impl Project {
             relation.end_mut(end).anchors.truncate(k);
         }
         Ok(())
+    }
+
+    /// Sets the side of `block` a relation's line leaves it on. The next move of a box
+    /// of that line replaces it with the facing side.
+    pub fn set_side_at(&mut self, rel: RelationId, block: BlockId, side: Side) -> ModelResult<()> {
+        let relation = self
+            .relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?;
+        for end in [End::A, End::B] {
+            if let Some(anchor) = relation
+                .end_mut(end)
+                .anchors
+                .iter_mut()
+                .find(|a| a.block == block)
+            {
+                anchor.side = side;
+                return Ok(());
+            }
+        }
+        Err(ModelError::NotOnChain)
     }
 
     /// Sets the line style of one relation; `None` follows the project.

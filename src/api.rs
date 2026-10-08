@@ -314,6 +314,18 @@ pub struct EditRelationArgs {
     /// How this line bends; project_default follows the project setting.
     #[serde(default)]
     pub line_style: Option<ApiLineStyle>,
+    /// Which side of a box the line leaves it on. Moving a box of the line later
+    /// sets its sides back to the ones facing the partner.
+    #[serde(default)]
+    pub sides: Vec<SideAt>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct SideAt {
+    #[serde(rename = "box")]
+    pub target: BoxRef,
+    pub side: ApiSide,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -426,7 +438,8 @@ lists them as dangling) to the box that handles it. \
 5. Finish with export_docs into the repository's documentation folder; the user is \
 asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
-connect on decides where the partner sits; layout is automatic. Every call is one undo \
+connect on decides where the partner sits; layout is automatic, and moving a box turns \
+its lines to the sides facing their partners. Every call is one undo \
 step for the user; saving the project is up to the user.";
 
 pub fn tools() -> Vec<ToolInfo> {
@@ -483,7 +496,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "edit_relation",
-            description: "Change direction or text of a relation; omitted fields stay.",
+            description: "Change direction, text, short label, line style or the sides of a relation; omitted fields stay.",
             schema: schema::<EditRelationArgs>(),
         },
         ToolInfo {
@@ -757,9 +770,17 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     let owner = r.owner;
     let style = a.line_style.map_or(r.style, ApiLineStyle::style);
     let short = a.short_label.unwrap_or_else(|| r.short.clone());
+    let sides = a
+        .sides
+        .iter()
+        .map(|s| Ok((resolve(&editor.project, &s.target)?, Side::from(s.side))))
+        .collect::<ApiResult<Vec<_>>>()?;
     editor.apply_ai(|p| {
         p.edit_relation(rel, d, &text)?;
         p.set_relation_short(rel, &short)?;
+        for (block, side) in &sides {
+            p.set_side_at(rel, *block, *side)?;
+        }
         p.set_relation_style(rel, style)
     })?;
     note(editor, "edited a relation".to_owned(), owner, None);

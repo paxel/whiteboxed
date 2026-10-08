@@ -521,3 +521,52 @@ fn short_labels_come_with_the_relation_tools() -> TestResult {
     assert!(too_long.is_err());
     Ok(())
 }
+
+#[test]
+fn edit_relation_sets_the_side_at_a_box() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let customer = e
+        .project
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Customer")
+        .map(|(id, _)| *id)
+        .ok_or("customer")?;
+    let rel = *e
+        .project
+        .relations
+        .iter()
+        .find(|(_, r)| {
+            r.a.anchors
+                .iter()
+                .chain(&r.b.anchors)
+                .any(|a| a.block == customer)
+        })
+        .ok_or("relation")?
+        .0;
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "sides": [{"box": "Customer", "side": "bottom"}]}),
+    )?;
+    let r = e.project.relation(rel)?;
+    let side =
+        r.a.anchors
+            .iter()
+            .chain(&r.b.anchors)
+            .find(|a| a.block == customer)
+            .map(|a| a.side);
+    assert_eq!(side, Some(whiteboxed::model::Side::Bottom));
+    // A box the relation does not touch is refused, and nothing changes.
+    assert!(
+        call(
+            &mut e,
+            "edit_relation",
+            json!({"relation": rel.0, "text": "x", "sides": [{"box": "Payment", "side": "top"}]}),
+        )
+        .is_err()
+    );
+    assert_eq!(e.project.relation(rel)?.text, "orders");
+    Ok(())
+}

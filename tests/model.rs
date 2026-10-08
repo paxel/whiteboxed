@@ -405,3 +405,58 @@ fn a_diagram_holds_a_bounded_number_of_relations() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn moving_a_box_turns_its_lines_to_face_the_partner() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    p.move_block(b, Cell::new(0, 2))?;
+    assert_eq!(sides(&p, ab)?, (Side::Bottom, Side::Top));
+    p.move_block(a, Cell::new(-2, 2))?;
+    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    Ok(())
+}
+
+#[test]
+fn a_box_swapped_away_faces_its_partners_too() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let (_, bc) = p.connect_new(b, Side::Bottom, &component("C"), Direction::Out, "")?;
+    // A takes B's cell, so B moves to A's old cell, left of A and of C's column.
+    p.move_block(a, Cell::new(1, 0))?;
+    assert_eq!(cell(&p, b)?, Cell::new(0, 0));
+    assert_eq!(sides(&p, ab)?, (Side::Left, Side::Right));
+    assert_eq!(sides(&p, bc)?, (Side::Right, Side::Left));
+    Ok(())
+}
+
+#[test]
+fn a_side_set_by_hand_holds_until_the_next_move() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    p.set_side_at(ab, a, Side::Top)?;
+    p.set_side_at(ab, b, Side::Top)?;
+    assert_eq!(sides(&p, ab)?, (Side::Top, Side::Top));
+    let c = p.add_block(None, &component("C"))?;
+    assert_eq!(p.set_side_at(ab, c, Side::Top), Err(ModelError::NotOnChain));
+    p.move_block(b, Cell::new(1, 1))?;
+    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    Ok(())
+}
+
+#[test]
+fn moving_an_inner_box_faces_the_frame_its_line_enters_at() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let (_, rel) = p.connect_new(shop, Side::Left, &component("Customer"), Direction::In, "")?;
+    let inner = p.add_block(Some(shop), &component("UI"))?;
+    p.attach(rel, End::A, shop, inner, Side::Bottom)?;
+    p.move_block(inner, Cell::new(2, 1))?;
+    let r = p.relation(rel)?;
+    let chain: Vec<(BlockId, Side)> = r.a.anchors.iter().map(|a| (a.block, a.side)).collect();
+    assert_eq!(chain, vec![(shop, Side::Left), (inner, Side::Left)]);
+    Ok(())
+}

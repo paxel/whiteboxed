@@ -103,6 +103,15 @@ impl Side {
     pub fn is_horizontal(self) -> bool {
         matches!(self, Side::Left | Side::Right)
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Side::Top => "top",
+            Side::Right => "right",
+            Side::Bottom => "bottom",
+            Side::Left => "left",
+        }
+    }
 }
 
 /// Direction of a relation, seen from its endpoint `a` (the box it was created from).
