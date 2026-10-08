@@ -130,7 +130,8 @@ You need Claude Code (or another MCP client) and the repository it should read.
    ```
 
    It registers whiteboxed for this repository (`--scope user` registers it for all
-   of them).
+   of them). Never use `--scope project`: it writes the entry, token included, into
+   `.mcp.json` in the repository, where it ends up in git.
 3. Start `claude` in the repository and check with `/mcp` that whiteboxed is
    connected.
 4. Ask for the documentation, for example:
