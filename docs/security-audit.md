@@ -26,7 +26,7 @@ Version audited: `0.1.0` (unreleased), branch `summer`; findings fixed up to com
 | S10 | Project files are parsed by a C-translated YAML parser         | Low      | Accepted   |
 | S11 | `ttf-parser` is unmaintained                                   | Low      | Accepted   |
 | S12 | The token can leak through the client side                     | Low      | Documented |
-| S13 | CI actions are pinned by tag, not by commit                    | Low      | Open       |
+| S13 | CI actions were pinned by tag, not by commit                   | Low      | Fixed      |
 | S14 | Many open MCP sessions use memory                              | Info     | Accepted   |
 
 No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
@@ -184,14 +184,19 @@ Anyone with the token and access to the port can change the model and export int
 folders the user allowed. **Generate new token**
 in the AI dialog revokes it.
 
-### S13 CI actions pinned by tag — Low, open
+### S13 CI actions were pinned by tag — Low, fixed
 
-Workflows use third-party actions by version tag (`dtolnay/rust-toolchain@stable`,
-`Swatinem/rust-cache@v2`, `taiki-e/install-action@v2`). A compromised tag could run
-code in the release job, which holds `CARGO_REGISTRY_TOKEN` and `CHANNEL_PAT`.
-Recommendation: pin actions to commit SHAs and update them deliberately. The
-`CHANNEL_PAT` is already limited to the tap and bucket repositories, and pull
-requests from forks get no secrets.
+Workflows used third-party actions by version tag or branch
+(`dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
+`taiki-e/install-action@v2`, `actions/*@v4`). Whoever controls such a tag could run
+code in the release job, which holds `CARGO_REGISTRY_TOKEN` and `CHANNEL_PAT`. Every
+action is now pinned to a full commit SHA, with the version it was resolved from in a
+comment (`dtolnay/rust-toolchain` has no releases; it is pinned to the head of its
+`stable` branch and given `toolchain: stable` explicitly). Updating an action is now a
+deliberate change: resolve the new tag with
+`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha` and replace the SHA. The
+`CHANNEL_PAT` is limited to the tap and bucket repositories, and pull requests from
+forks get no secrets.
 
 ### S14 Many MCP sessions use memory — Info, accepted
 
