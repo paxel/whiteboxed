@@ -19,5 +19,11 @@ thiserror = "2.0"
 ttf-parser = "0.25"
 
 [dev-dependencies]
-egui_kittest = "0.35"
+egui_kittest = { version = "0.35", features = ["wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 tempfile = "3"
+
+[features]
+# Tests that render the window through wgpu; they need a Vulkan/Metal/DX12 device
+# (CI uses lavapipe on Linux).
+render-tests = []

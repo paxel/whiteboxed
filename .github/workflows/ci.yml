@@ -1,9 +1,10 @@
 # Gate for every push and pull request.
 #
 # Tiered: the Ubuntu lane is the full gate — formatting, clippy with zero
-# warnings and the test suite. The Windows and macOS lanes build and run the
-# tests, catching platform breakage early; fmt and clippy would only repeat
-# the Linux result.
+# warnings and the test suite including the render tests, with software Vulkan
+# (lavapipe) installed so the window can be drawn headlessly. The Windows and
+# macOS lanes build and run the tests without rendering, catching platform
+# breakage early; fmt and clippy would only repeat the Linux result.
 name: CI
 
 on:
@@ -27,12 +28,16 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: System dependencies (software Vulkan for the render tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Tests
-        run: cargo test
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests (with render tests)
+        run: cargo test --features render-tests
 
   windows:
     name: Windows (build + tests)
