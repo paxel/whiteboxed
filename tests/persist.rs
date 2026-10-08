@@ -126,3 +126,24 @@ fn broken_references_are_rejected() {
         Err(PersistError::Yaml(_))
     ));
 }
+
+#[test]
+fn texts_survive_the_file_and_stay_out_when_empty() -> TestResult {
+    let mut p = sample()?;
+    let shop = p
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Shop")
+        .map(|(id, _)| *id)
+        .ok_or("shop")?;
+    p.set_responsibility(shop, "Sells things.\nShips them, too.")?;
+    p.set_motivation(None, "Who buys: customers.")?;
+    p.set_motivation(Some(shop), "One box per capability.")?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("motivation:"));
+    assert_eq!(persist::from_yaml(&yaml)?, p);
+    // Projects without texts keep the old, unchanged file.
+    assert!(!GOLDEN.contains("responsibility"));
+    assert_eq!(persist::to_yaml(&sample()?)?, GOLDEN);
+    Ok(())
+}

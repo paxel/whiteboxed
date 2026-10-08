@@ -28,6 +28,9 @@ pub enum PersistError {
 #[derive(Serialize, Deserialize)]
 struct FileDto {
     format: u32,
+    /// Explanation of the context view.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    motivation: String,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
@@ -53,6 +56,10 @@ struct BlockDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tag: Option<TagId>,
     cell: Cell,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    responsibility: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    motivation: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -98,6 +105,7 @@ fn endpoint(anchors: Vec<AnchorDto>) -> Endpoint {
 pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
     let dto = FileDto {
         format: FORMAT,
+        motivation: project.motivation.clone(),
         tags: project
             .tags
             .iter()
@@ -117,6 +125,8 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 parent: b.parent,
                 tag: b.tag,
                 cell: b.cell,
+                responsibility: b.responsibility.clone(),
+                motivation: b.motivation.clone(),
             })
             .collect(),
         relations: project
@@ -144,6 +154,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         )));
     }
     let mut project = Project::new();
+    project.motivation = dto.motivation;
     let mut ids = BTreeSet::new();
     let mut fresh = |id: u64| {
         if ids.insert(id) {
@@ -172,6 +183,8 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 tag: b.tag,
                 parent: b.parent,
                 cell: b.cell,
+                responsibility: b.responsibility,
+                motivation: b.motivation,
             },
         );
     }

@@ -316,3 +316,24 @@ fn tags_are_project_wide_with_palette_colours() -> TestResult {
     assert_eq!(p.block(blank)?.tag, None);
     Ok(())
 }
+
+#[test]
+fn responsibility_and_motivation_are_stored_per_box_and_diagram() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let user = p.add_block(None, &BlockSpec::new("User", BlockKind::Person))?;
+    p.set_responsibility(shop, "  Sells things.\n")?;
+    p.set_motivation(None, "The shop and who uses it.")?;
+    p.set_motivation(Some(shop), "Split by business capability.")?;
+    assert_eq!(p.block(shop)?.responsibility, "Sells things.");
+    assert_eq!(p.motivation(None), "The shop and who uses it.");
+    assert_eq!(p.motivation(Some(shop)), "Split by business capability.");
+    assert_eq!(
+        p.set_motivation(Some(user), "x"),
+        Err(ModelError::NotDrillable("person"))
+    );
+    // Editing name, type and tag keeps the texts.
+    p.edit_block(shop, &component("Web Shop"))?;
+    assert_eq!(p.block(shop)?.responsibility, "Sells things.");
+    Ok(())
+}

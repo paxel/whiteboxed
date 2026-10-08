@@ -243,6 +243,10 @@ pub struct Block {
     pub tag: Option<TagId>,
     pub parent: DiagramId,
     pub cell: Cell,
+    /// What this building block is responsible for (arc42 blackbox description).
+    pub responsibility: String,
+    /// Why the whitebox of this block is decomposed the way it is.
+    pub motivation: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -355,6 +359,8 @@ pub struct Project {
     pub blocks: BTreeMap<BlockId, Block>,
     pub relations: BTreeMap<RelationId, Relation>,
     pub tags: BTreeMap<TagId, Tag>,
+    /// The explanation of the context view.
+    pub motivation: String,
     pub next_id: u64,
 }
 
@@ -419,6 +425,14 @@ impl Project {
             i += 1;
         }
         out
+    }
+
+    /// The motivation of a diagram: the context view's or a whitebox's.
+    pub fn motivation(&self, diagram: DiagramId) -> &str {
+        match diagram {
+            None => &self.motivation,
+            Some(id) => self.blocks.get(&id).map_or("", |b| b.motivation.as_str()),
+        }
     }
 
     pub fn tag_by_name(&self, name: &str) -> Option<TagId> {

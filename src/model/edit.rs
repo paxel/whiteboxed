@@ -114,6 +114,29 @@ impl Project {
         Ok(())
     }
 
+    /// Sets the responsibility text of a box.
+    pub fn set_responsibility(&mut self, id: BlockId, text: &str) -> ModelResult<()> {
+        let block = self.blocks.get_mut(&id).ok_or(ModelError::UnknownBlock)?;
+        block.responsibility = text.trim().to_owned();
+        Ok(())
+    }
+
+    /// Sets the motivation of the context view (`None`) or of a whitebox.
+    pub fn set_motivation(&mut self, diagram: DiagramId, text: &str) -> ModelResult<()> {
+        let text = text.trim().to_owned();
+        match diagram {
+            None => self.motivation = text,
+            Some(id) => {
+                let block = self.blocks.get_mut(&id).ok_or(ModelError::UnknownBlock)?;
+                if !block.kind.can_drill() {
+                    return Err(ModelError::NotDrillable(block.kind.label()));
+                }
+                block.motivation = text;
+            }
+        }
+        Ok(())
+    }
+
     // ----- relations -----
 
     /// Creates a new box on `side` of `from` and connects the two.
@@ -405,6 +428,8 @@ impl Project {
                 tag,
                 parent: diagram,
                 cell,
+                responsibility: String::new(),
+                motivation: String::new(),
             },
         );
         Ok(id)
