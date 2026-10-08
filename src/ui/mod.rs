@@ -1,5 +1,6 @@
 //! The egui front end: menu, breadcrumb, structure tree, canvas and popups.
 
+pub mod ai;
 pub mod canvas;
 pub mod details;
 pub mod icons;
@@ -37,7 +38,7 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
         }),
         None => Editor::new(dir.clone()),
     };
-    let mut app = App::new(editor, dir);
+    let mut app = App::new(editor, dir).with_ai_dir(crate::mcp::settings::default_dir());
     app.editor.message = message;
     if cfg!(target_os = "linux") {
         std::thread::spawn(crate::launcher::register);
@@ -87,6 +88,7 @@ pub struct App {
     shown_popup: Option<(std::mem::Discriminant<Popup>, Pos2)>,
     popup_serial: u64,
     draft: Option<details::Draft>,
+    pub ai: ai::Ai,
 }
 
 impl eframe::App for App {
@@ -112,7 +114,14 @@ impl App {
             shown_popup: None,
             popup_serial: 0,
             draft: None,
+            ai: ai::Ai::new(None),
         }
+    }
+
+    /// Where the AI access settings (port, token) are stored; `None` disables AI access.
+    pub fn with_ai_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.ai = ai::Ai::new(dir);
+        self
     }
 
     /// The current diagram-to-screen transform, once the canvas was drawn.
@@ -129,6 +138,11 @@ impl App {
         let ctx = ui.ctx().clone();
         self.handle_close(&ctx);
         self.shortcuts(&ctx);
+        if let Some(action) = self.ai.pump(&mut self.editor)
+            && self.ai.follow
+        {
+            self.follow(&action);
+        }
         if let Some(wait) = self.editor.tick(Instant::now()) {
             ctx.request_repaint_after(wait);
         }
@@ -153,6 +167,7 @@ impl App {
             });
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
+        self.ai.dialog(&ctx);
         self.leave_dialog(&ctx);
     }
 
@@ -294,6 +309,20 @@ impl App {
                     self.editor.go_up();
                 }
             });
+            ui.menu_button("AI", |ui| {
+                let mut on = self.ai.is_on();
+                if ui.checkbox(&mut on, "Allow AI access").clicked() {
+                    if on {
+                        self.ai.start(ui.ctx());
+                    } else {
+                        self.ai.stop();
+                    }
+                }
+                ui.checkbox(&mut self.ai.follow, "Follow AI");
+                if ui.button("Connection\u{2026}").clicked() {
+                    self.ai.dialog = true;
+                }
+            });
             ui.add_space(12.0);
             let can_undo = self.editor.can_undo();
             if icons::history_button(ui, icons::History::Undo, can_undo).clicked() {
@@ -374,8 +403,9 @@ impl App {
                 }
             }
             let dangling = self.editor.dangling_count();
-            if dangling > 0 {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut go = None;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if dangling > 0 {
                     ui.label(
                         RichText::new(format!(
                             "{dangling} interface{} not assigned to a box",
@@ -383,9 +413,39 @@ impl App {
                         ))
                         .color(Color32::from_rgb(0xb0, 0x6a, 0x00)),
                     );
-                });
+                }
+                if self.ai.is_on() {
+                    if let Some(last) = &self.editor.last_ai {
+                        let link = Button::new(RichText::new(format!("AI: {}", last.summary)))
+                            .frame(false);
+                        if ui.add(link).on_hover_text("Show this change").clicked() {
+                            go = Some(last.clone());
+                        }
+                    }
+                    if ui
+                        .add(Button::new(RichText::new("AI access on").color(ACCENT)).frame(false))
+                        .clicked()
+                    {
+                        self.ai.dialog = true;
+                    }
+                }
+            });
+            if let Some(action) = go {
+                self.follow(&action);
             }
         });
+    }
+
+    /// Shows the diagram and box an AI change was about.
+    fn follow(&mut self, action: &crate::editor::AiAction) {
+        let exists = |d: DiagramId| d.is_none_or(|id| self.editor.project.blocks.contains_key(&id));
+        if exists(action.diagram) {
+            self.commit_draft();
+            self.editor.diagram = action.diagram;
+            self.editor.selected = action
+                .block
+                .filter(|b| self.editor.project.blocks.contains_key(b));
+        }
     }
 
     fn sidebar(&mut self, ui: &mut Ui) {

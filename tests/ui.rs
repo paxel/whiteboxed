@@ -499,3 +499,126 @@ fn the_undo_button_is_disabled_without_history() -> TestResult {
     assert_eq!(h.state().editor.project.blocks.len(), 1);
     Ok(())
 }
+
+fn ai_dir(port: u16) -> Result<tempfile::TempDir, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    whiteboxed::mcp::settings::save(
+        dir.path(),
+        &whiteboxed::mcp::settings::AiSettings {
+            port,
+            token: "tok-123".into(),
+        },
+    )?;
+    Ok(dir)
+}
+
+fn ai_harness(editor: Editor, dir: &tempfile::TempDir) -> Harness<'static, App> {
+    let app = App::new(editor, None).with_ai_dir(Some(dir.path().to_path_buf()));
+    Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.show(ui), app)
+}
+
+fn ai_call(
+    h: &mut Harness<'_, App>,
+    tool: &str,
+    args: serde_json::Value,
+) -> Result<whiteboxed::api::Output, Box<dyn std::error::Error>> {
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    h.state().ai.sender().send(whiteboxed::mcp::server::Call {
+        tool: tool.into(),
+        args,
+        reply,
+    })?;
+    h.run();
+    Ok(answer.blocking_recv()??)
+}
+
+#[test]
+fn turning_ai_access_on_shows_how_to_connect() -> TestResult {
+    let dir = ai_dir(0)?;
+    let mut h = ai_harness(Editor::new(None), &dir);
+    h.run();
+    h.get_by_label("AI").click();
+    h.run();
+    h.get_by_label("Allow AI access").click();
+    h.run();
+    assert!(h.state().ai.is_on());
+    assert!(h.query_by_label("AI access: On").is_some());
+    let url = h.state().ai.url().ok_or("no url")?;
+    let port: u16 = url
+        .trim_end_matches("/mcp")
+        .rsplit(':')
+        .next()
+        .ok_or("port")?
+        .parse()?;
+    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_ok());
+    let cmd = h.state_mut().ai.claude_command().ok_or("command")?;
+    assert!(cmd.starts_with("claude mcp add --transport http whiteboxed http://127.0.0.1:"));
+    assert!(cmd.ends_with("--header \"Authorization: Bearer tok-123\""));
+    button(&h, "Turn off").click();
+    h.run();
+    assert!(!h.state().ai.is_on());
+    Ok(())
+}
+
+#[test]
+fn a_taken_port_is_reported_in_the_dialog() -> TestResult {
+    let taken = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let dir = ai_dir(taken.local_addr()?.port())?;
+    let mut h = ai_harness(Editor::new(None), &dir);
+    h.run();
+    let ctx = h.ctx.clone();
+    h.state_mut().ai.start(&ctx);
+    h.run();
+    assert!(!h.state().ai.is_on());
+    assert!(h.query_by_label_contains("cannot be used").is_some());
+    Ok(())
+}
+
+#[test]
+fn ai_changes_show_up_and_the_view_follows() -> TestResult {
+    let dir = ai_dir(0)?;
+    let mut h = ai_harness(Editor::new(None), &dir);
+    h.run();
+    ai_call(
+        &mut h,
+        "add_box",
+        serde_json::json!({"name": "Shop", "kind": "component"}),
+    )?;
+    ai_call(
+        &mut h,
+        "add_box",
+        serde_json::json!({"diagram": "Shop", "name": "Orders", "kind": "component"}),
+    )?;
+    let e = &h.state().editor;
+    assert_eq!(e.project.blocks.len(), 2);
+    // Follow AI is on by default: the view went into Shop's whitebox.
+    let shop = e
+        .project
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Shop")
+        .map(|(id, _)| *id);
+    assert_eq!(e.diagram, shop);
+    assert!(e.selected.is_some());
+    // One undo step per call.
+    h.state_mut().editor.undo();
+    assert_eq!(h.state().editor.project.blocks.len(), 1);
+
+    h.state_mut().ai.follow = false;
+    h.state_mut().editor.open_diagram(None);
+    ai_call(
+        &mut h,
+        "add_box",
+        serde_json::json!({"diagram": "Shop", "name": "Billing", "kind": "component"}),
+    )?;
+    assert_eq!(h.state().editor.diagram, None);
+    let refused = ai_call(
+        &mut h,
+        "add_box",
+        serde_json::json!({"name": "shop", "kind": "component"}),
+    );
+    assert!(refused.is_err());
+    Ok(())
+}
