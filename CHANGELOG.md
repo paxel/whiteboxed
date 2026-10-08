@@ -20,3 +20,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Projects saved as readable YAML files, with automatic recovery of unsaved changes after a crash.
 - Export of the current diagram, or of all diagrams, as SVG and PNG.
 - An app icon; on Linux the app adds itself to the application menu.
+- Installation with Homebrew (Linux, macOS) and Scoop (Windows).

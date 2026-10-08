@@ -34,6 +34,23 @@ levels cannot drift apart.
 - [Guide](docs/guide.md): levels, box types, relations, layout rules, keys and the
   file format.
 
+## Install
+
+Once the first version is released:
+
+| OS      | Channel                                                                                        |
+|---------|------------------------------------------------------------------------------------------------|
+| Linux   | `brew install paxel/tap/whiteboxed`, or the plain tarball (x86_64)                             |
+| macOS   | `brew install paxel/tap/whiteboxed`                                                            |
+| Windows | `scoop bucket add paxel https://github.com/paxel/scoop-bucket` then `scoop install whiteboxed` |
+| Any     | `cargo install whiteboxed` (builds from source)                                                |
+
+On Linux, `brew install` puts whiteboxed into the application menu, and the app keeps
+its menu entry and icon up to date on every start, however it was installed. Run
+`whiteboxed-install-icon` if the entry is missing, and `whiteboxed-install-icon
+--uninstall` before `brew uninstall` to remove it. The macOS build is **unsigned**;
+start it from a terminal with `whiteboxed`.
+
 ## Running
 
 ```sh

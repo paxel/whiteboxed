@@ -1,14 +1,17 @@
 # Release on tag: `git tag v0.1.0 && git push --tags` produces everything.
 #
 #   gate           — tag matches the crate version, then the full Linux gate
-#   build-linux    — binary tar.gz (x86_64)
+#   build-linux    — tar.gz (x86_64): binary, launcher entry, icons, install-icon.sh
 #   build-windows  — zip with whiteboxed.exe (x86_64)
 #   build-macos    — binary tar.gz, per arch (arm64, x86_64)
 #   release        — GitHub Release, notes = the CHANGELOG section for the tag
 #   publish-crate  — crates.io
+#   channels       — Homebrew formula + Scoop manifest pushed to the tap/bucket
 #
-# One-time setup (repository secret):
+# One-time setup (repository secrets):
 #   CARGO_REGISTRY_TOKEN — crates.io API token (publish scope)
+#   CHANNEL_PAT          — PAT with push access to paxel/homebrew-tap and
+#                          paxel/scoop-bucket
 name: Release
 
 on:
@@ -51,11 +54,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --release
-      - name: Binary tarball
+      - name: Tarball (flat, as the Homebrew formula expects)
         run: |
           ver=${GITHUB_REF_NAME#v}
-          mkdir -p dist
-          tar -C target/release -czf "dist/whiteboxed-${ver}-linux-x86_64.tar.gz" whiteboxed
+          mkdir -p dist bundle
+          cp target/release/whiteboxed LICENSE bundle/
+          cp packaging/linux/io.github.paxel.whiteboxed.desktop packaging/linux/install-icon.sh bundle/
+          cp assets/icon_256.png assets/icon.svg bundle/
+          tar -C bundle -czf "dist/whiteboxed-${ver}-linux-x86_64.tar.gz" .
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -160,3 +166,52 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish
+
+  channels:
+    name: Homebrew tap + Scoop bucket
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Render formula and manifest from the templates
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          sha() { sha256sum "dist/$1" | cut -d' ' -f1; }
+          mkdir -p out
+          sed -e "s/{{VERSION}}/$ver/g" \
+              -e "s/{{SHA_MACOS_ARM64}}/$(sha whiteboxed-$ver-macos-arm64.tar.gz)/" \
+              -e "s/{{SHA_MACOS_X86_64}}/$(sha whiteboxed-$ver-macos-x86_64.tar.gz)/" \
+              -e "s/{{SHA_LINUX_X86_64}}/$(sha whiteboxed-$ver-linux-x86_64.tar.gz)/" \
+              packaging/homebrew/whiteboxed.rb.tmpl > out/whiteboxed.rb
+          sed -e "s/{{VERSION}}/$ver/g" \
+              -e "s/{{SHA_WINDOWS_X86_64}}/$(sha whiteboxed-$ver-windows-x86_64.zip)/" \
+              packaging/scoop/whiteboxed.json.tmpl > out/whiteboxed.json
+          ! grep -n "{{" out/whiteboxed.rb out/whiteboxed.json
+      - name: Push to the tap
+        env:
+          GH_TOKEN: ${{ secrets.CHANNEL_PAT }}
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          git config --global user.name "whiteboxed-release-bot"
+          git config --global user.email "taum@tuta.io"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/paxel/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp out/whiteboxed.rb tap/Formula/whiteboxed.rb
+          git -C tap add Formula/whiteboxed.rb
+          git -C tap commit -m "whiteboxed $ver"
+          git -C tap push
+      - name: Push to the bucket
+        env:
+          GH_TOKEN: ${{ secrets.CHANNEL_PAT }}
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/paxel/scoop-bucket.git" bucket
+          mkdir -p bucket/bucket
+          cp out/whiteboxed.json bucket/bucket/whiteboxed.json
+          git -C bucket add bucket/whiteboxed.json
+          git -C bucket commit -m "whiteboxed $ver"
+          git -C bucket push
