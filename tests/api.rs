@@ -460,3 +460,37 @@ fn paths_whose_case_changes_byte_length_do_not_crash() -> TestResult {
     assert_eq!(found["path"], json!(["é", "İİ"]));
     Ok(())
 }
+
+#[test]
+fn edit_relation_sets_and_clears_the_line_style() -> TestResult {
+    use whiteboxed::model::LineStyle;
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    let out = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "line_style": "curved"}),
+    )?;
+    assert_eq!(out["line_style"], "curved");
+    assert_eq!(e.project.relation(rel)?.style, Some(LineStyle::Curved));
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "line_style": "project_default"}),
+    )?;
+    assert_eq!(e.project.relation(rel)?.style, None);
+    // Leaving it out keeps it.
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "line_style": "square"}),
+    )?;
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "text": "x"}),
+    )?;
+    assert_eq!(e.project.relation(rel)?.style, Some(LineStyle::Square));
+    Ok(())
+}

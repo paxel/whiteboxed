@@ -692,3 +692,22 @@ fn escape_keeps_editing_and_enter_saves_before_quitting() -> TestResult {
     assert!(std::fs::read_to_string(&file)?.contains("Billing"));
     Ok(())
 }
+
+#[test]
+fn project_settings_change_the_line_style() -> TestResult {
+    use whiteboxed::model::LineStyle;
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Project settings\u{2026}").click();
+    h.run();
+    h.get_by_label("curved").click();
+    h.run();
+    assert_eq!(h.state().editor.project.line_style, LineStyle::Curved);
+    h.get_by_label("Use as my default for new projects").click();
+    h.run();
+    assert_eq!(h.state().settings.prefs.line_style, LineStyle::Curved);
+    Ok(())
+}

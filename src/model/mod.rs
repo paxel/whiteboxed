@@ -305,6 +305,43 @@ pub struct Relation {
     pub b: Endpoint,
     pub direction: Direction,
     pub text: String,
+    /// Overrides the project's line style for this relation.
+    pub style: Option<LineStyle>,
+}
+
+/// How the bends of relation lines are drawn.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LineStyle {
+    /// Sharp right angles.
+    Square,
+    /// Corners rounded with a 6 px radius.
+    Round6,
+    /// Corners rounded with a 12 px radius.
+    #[default]
+    Round12,
+    /// Smooth curves instead of corners.
+    Curved,
+}
+
+impl LineStyle {
+    pub const ALL: [LineStyle; 4] = [
+        LineStyle::Square,
+        LineStyle::Round6,
+        LineStyle::Round12,
+        LineStyle::Curved,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LineStyle::Square => "square corners",
+            LineStyle::Round6 => "slightly rounded (6 px)",
+            LineStyle::Round12 => "rounded (12 px)",
+            LineStyle::Curved => "curved",
+        }
+    }
 }
 
 impl Relation {
@@ -386,6 +423,8 @@ pub struct Project {
     pub tags: BTreeMap<TagId, Tag>,
     /// The explanation of the context view.
     pub motivation: String,
+    /// Line style for relations without their own.
+    pub line_style: LineStyle,
     pub next_id: u64,
 }
 

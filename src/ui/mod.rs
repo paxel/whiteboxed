@@ -6,6 +6,7 @@ pub mod details;
 pub mod icons;
 pub mod leave;
 pub mod popups;
+pub mod settings;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -39,7 +40,9 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
         }),
         None => Editor::new(dir.clone()),
     };
-    let mut app = App::new(editor, dir).with_ai_dir(crate::mcp::settings::default_dir());
+    let mut app = App::new(editor, dir)
+        .with_ai_dir(crate::mcp::settings::default_dir())
+        .with_prefs_dir(crate::mcp::settings::default_dir());
     app.editor.message = message;
     if cfg!(target_os = "linux") {
         std::thread::spawn(crate::launcher::register);
@@ -90,6 +93,7 @@ pub struct App {
     popup_serial: u64,
     draft: Option<details::Draft>,
     pub ai: ai::Ai,
+    pub settings: settings::Settings,
 }
 
 impl eframe::App for App {
@@ -116,7 +120,15 @@ impl App {
             popup_serial: 0,
             draft: None,
             ai: ai::Ai::new(None),
+            settings: settings::Settings::new(None),
         }
+    }
+
+    /// Where personal preferences live; a fresh project takes its starting values.
+    pub fn with_prefs_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.settings = settings::Settings::new(dir);
+        self.editor.apply_prefs(&self.settings.prefs);
+        self
     }
 
     /// Where the AI access settings (port, token) are stored; `None` disables AI access.
@@ -174,6 +186,7 @@ impl App {
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
         self.ai.dialog(&ctx, &mut self.editor);
+        self.settings.show(&ctx, &mut self.editor);
         self.ai.export_prompt(&ctx, &mut self.editor);
         self.leave_dialog(&ctx);
     }
@@ -274,6 +287,10 @@ impl App {
                 }
                 if ui.button("Save as\u{2026}").clicked() {
                     self.save_as();
+                }
+                ui.separator();
+                if ui.button("Project settings\u{2026}").clicked() {
+                    self.settings.open = true;
                 }
                 ui.separator();
                 if ui.button("Export diagram as SVG\u{2026}").clicked() {
@@ -890,6 +907,7 @@ impl App {
         let roots = std::mem::take(&mut self.editor.ai_export_roots);
         self.editor = editor;
         self.editor.ai_export_roots = roots;
+        self.editor.apply_prefs(&self.settings.prefs);
         self.draft = None;
         self.view = None;
         self.drag = None;

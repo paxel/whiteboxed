@@ -5,7 +5,7 @@
 use egui::{Color32, Context, Id, Key, Pos2, RichText, Ui};
 
 use crate::editor::{BlockForm, ConnectMode, Editor, OpenEnd, Popup, Target};
-use crate::model::{BlockKind, Direction};
+use crate::model::{BlockKind, Direction, LineStyle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -114,10 +114,14 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             ok_cancel(ui, "Connect")
         }
         Popup::EditRelation {
-            direction, text, ..
+            direction,
+            text,
+            style,
+            ..
         } => {
             direction_row(ui, direction);
             text_row(ui, text, std::mem::take(focus));
+            style_row(ui, style, editor.project.line_style);
             ok_cancel(ui, "Save")
         }
         Popup::Conflict { pending, broken } => {
@@ -278,6 +282,28 @@ fn target_list(
             }
         });
     allow_pick && ui.button("Pick in diagram").clicked()
+}
+
+fn style_row(ui: &mut Ui, style: &mut Option<LineStyle>, project: LineStyle) {
+    ui.horizontal(|ui| {
+        ui.label("Line");
+        let shown = match style {
+            None => format!("project default ({})", project.label()),
+            Some(s) => s.label().to_owned(),
+        };
+        egui::ComboBox::from_id_salt("relation-style")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    style,
+                    None,
+                    format!("project default ({})", project.label()),
+                );
+                for s in LineStyle::ALL {
+                    ui.selectable_value(style, Some(s), s.label());
+                }
+            });
+    });
 }
 
 fn direction_row(ui: &mut Ui, direction: &mut Direction) {

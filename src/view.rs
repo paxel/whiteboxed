@@ -1,7 +1,7 @@
 //! What one diagram shows: its boxes and every line that touches them, including
 //! relations that enter the whitebox from a parent level.
 
-use crate::model::{BlockId, DiagramId, Direction, End, Project, RelationId, Side};
+use crate::model::{BlockId, DiagramId, Direction, End, LineStyle, Project, RelationId, Side};
 
 /// One end of a line as drawn in a diagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub struct ViewLine {
     pub b: ViewEnd,
     pub direction: Direction,
     pub text: String,
+    /// The relation's own line style, or the project's.
+    pub style: LineStyle,
 }
 
 impl ViewLine {
@@ -65,6 +67,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 b,
                 direction: rel.direction,
                 text: rel.text.clone(),
+                style: rel.style.unwrap_or(project.line_style),
             });
             continue;
         }
@@ -99,6 +102,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 b,
                 direction: rel.direction,
                 text: rel.text.clone(),
+                style: rel.style.unwrap_or(project.line_style),
             });
         }
     }

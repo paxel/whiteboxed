@@ -299,6 +299,33 @@ pub struct EditRelationArgs {
     pub direction: Option<ApiDirection>,
     #[serde(default)]
     pub text: Option<String>,
+    /// How this line bends; project_default follows the project setting.
+    #[serde(default)]
+    pub line_style: Option<ApiLineStyle>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(rename_all = "snake_case")]
+pub enum ApiLineStyle {
+    ProjectDefault,
+    Square,
+    Round6,
+    Round12,
+    Curved,
+}
+
+impl ApiLineStyle {
+    fn style(self) -> Option<crate::model::LineStyle> {
+        use crate::model::LineStyle;
+        match self {
+            ApiLineStyle::ProjectDefault => None,
+            ApiLineStyle::Square => Some(LineStyle::Square),
+            ApiLineStyle::Round6 => Some(LineStyle::Round6),
+            ApiLineStyle::Round12 => Some(LineStyle::Round12),
+            ApiLineStyle::Curved => Some(LineStyle::Curved),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -704,7 +731,11 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     let d = a.direction.map_or(r.direction, Direction::from);
     let text = a.text.unwrap_or_else(|| r.text.clone());
     let owner = r.owner;
-    editor.apply_ai(|p| p.edit_relation(rel, d, &text))?;
+    let style = a.line_style.map_or(r.style, ApiLineStyle::style);
+    editor.apply_ai(|p| {
+        p.edit_relation(rel, d, &text)?;
+        p.set_relation_style(rel, style)
+    })?;
     note(editor, "edited a relation".to_owned(), owner, None);
     Ok(Output::Json(relation_json(&editor.project, rel)))
 }
@@ -982,6 +1013,7 @@ fn relation_json(project: &Project, rel: RelationId) -> Value {
         "b": endpoint_json(project, &r.b),
         "direction": r.direction.label(),
         "text": r.text,
+        "line_style": r.style.map(|s| format!("{s:?}").to_lowercase()),
     })
 }
 

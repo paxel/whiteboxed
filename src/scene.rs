@@ -3,7 +3,7 @@
 
 use crate::geom::{Pos, Rect};
 use crate::layout::{KIND_SIZE, LABEL_SIZE, Layout, LineGeom, LineKind, NAME_SIZE, kind_caption};
-use crate::model::{BlockKind, Rgb, Side};
+use crate::model::{BlockKind, LineStyle, Rgb, Side};
 use crate::text;
 
 pub const INK: Rgb = Rgb(0x22, 0x22, 0x22);
@@ -297,7 +297,7 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
 fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
     let stroke = Stroke::solid(1.5, LINE);
     shapes.push(Shape::Polyline {
-        points: line.points.clone(),
+        points: shaped(&line.points, line.style),
         stroke,
     });
     let n = line.points.len();
@@ -423,4 +423,52 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
         color: INK,
         align,
     });
+}
+
+/// A routed polyline with its bends drawn in `style`. End segments stay straight, so
+/// arrowheads keep their direction.
+pub fn shaped(points: &[Pos], style: LineStyle) -> Vec<Pos> {
+    let radius = match style {
+        LineStyle::Square => return points.to_vec(),
+        LineStyle::Round6 => 6.0,
+        LineStyle::Round12 => 12.0,
+        LineStyle::Curved => f32::INFINITY,
+    };
+    let n = points.len();
+    if n < 3 {
+        return points.to_vec();
+    }
+    let mut out = vec![points[0]];
+    for i in 1..n - 1 {
+        let (prev, corner, next) = (points[i - 1], points[i], points[i + 1]);
+        let (d_in, d_out) = (prev.dist(corner), corner.dist(next));
+        // Curves reach to the middle of each segment; rounded corners take at most
+        // their radius, and never more than half a segment, so short steps stay steps.
+        let r = radius.min(d_in / 2.0).min(d_out / 2.0);
+        if r < 0.5 {
+            out.push(corner);
+            continue;
+        }
+        let toward = |from: Pos, to: Pos, len: f32| {
+            let d = from.dist(to).max(0.001);
+            Pos::new(
+                from.x + (to.x - from.x) * len / d,
+                from.y + (to.y - from.y) * len / d,
+            )
+        };
+        let start = toward(corner, prev, r);
+        let end = toward(corner, next, r);
+        // Quadratic Bézier from `start` to `end` with the corner as control point.
+        let steps = 10;
+        for k in 0..=steps {
+            let t = k as f32 / steps as f32;
+            let u = 1.0 - t;
+            out.push(Pos::new(
+                u * u * start.x + 2.0 * u * t * corner.x + t * t * end.x,
+                u * u * start.y + 2.0 * u * t * corner.y + t * t * end.y,
+            ));
+        }
+    }
+    out.push(points[n - 1]);
+    out
 }

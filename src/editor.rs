@@ -8,8 +8,8 @@ use crate::doc::{self, DocFormat};
 use crate::export::{self, ExportError};
 use crate::layout::{self, Layout};
 use crate::model::{
-    BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, ModelError, Placement, Project,
-    RelationId, Rgb, Side, TagId,
+    BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, LineStyle, ModelError,
+    Placement, Project, RelationId, Rgb, Side, TagId,
 };
 use crate::persist::{self, PersistError};
 use crate::recovery;
@@ -106,6 +106,8 @@ pub enum Popup {
         rel: RelationId,
         direction: Direction,
         text: String,
+        /// `None` follows the project's line style.
+        style: Option<LineStyle>,
     },
     Conflict {
         pending: Pending,
@@ -465,6 +467,7 @@ impl Editor {
                 rel,
                 direction: r.direction,
                 text: r.text.clone(),
+                style: r.style,
             });
         }
     }
@@ -584,9 +587,13 @@ impl Editor {
                 rel,
                 direction,
                 text,
+                style,
             } => {
                 if self
-                    .apply(|p| p.edit_relation(rel, direction, &text))
+                    .apply(|p| {
+                        p.edit_relation(rel, direction, &text)?;
+                        p.set_relation_style(rel, style)
+                    })
                     .is_some()
                 {
                     self.popup = None;
@@ -770,6 +777,21 @@ impl Editor {
 
     pub fn set_motivation(&mut self, diagram: DiagramId, text: &str) {
         self.apply(|p| p.set_motivation(diagram, text));
+    }
+
+    /// Changes the project's line style (one undo step).
+    pub fn set_line_style(&mut self, style: LineStyle) {
+        self.apply(|p| {
+            p.set_line_style(style);
+            Ok(())
+        });
+    }
+
+    /// Gives a fresh, untouched project the user's preferred starting values.
+    pub fn apply_prefs(&mut self, prefs: &crate::prefs::Prefs) {
+        if self.path.is_none() && !self.dirty && self.project.blocks.is_empty() {
+            self.project.line_style = prefs.line_style;
+        }
     }
 
     pub fn set_tag_color(&mut self, tag: TagId, color: Rgb) {

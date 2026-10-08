@@ -2,7 +2,7 @@
 //! first and only then mutates, so a failed operation leaves the project unchanged.
 
 use super::{
-    Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint,
+    Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint, LineStyle,
     MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_RELATIONS_PER_DIAGRAM, MAX_TEXT, ModelError, ModelResult,
     PALETTE, Project, Relation, RelationId, Rgb, Side, Tag, TagId,
 };
@@ -168,6 +168,7 @@ impl Project {
             b: Endpoint::at(new, side.opposite()),
             direction,
             text,
+            style: None,
         });
         Ok((new, rel))
     }
@@ -230,6 +231,7 @@ impl Project {
             b: Endpoint::at(target, target_side),
             direction,
             text,
+            style: None,
         }))
     }
 
@@ -257,6 +259,7 @@ impl Project {
             b: Endpoint::open(),
             direction,
             text,
+            style: None,
         }))
     }
 
@@ -374,6 +377,25 @@ impl Project {
             relation.end_mut(end).anchors.truncate(k);
         }
         Ok(())
+    }
+
+    /// Sets the line style of one relation; `None` follows the project.
+    pub fn set_relation_style(
+        &mut self,
+        rel: RelationId,
+        style: Option<LineStyle>,
+    ) -> ModelResult<()> {
+        let relation = self
+            .relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?;
+        relation.style = style;
+        Ok(())
+    }
+
+    /// Sets the project's line style.
+    pub fn set_line_style(&mut self, style: LineStyle) {
+        self.line_style = style;
     }
 
     pub fn edit_relation(

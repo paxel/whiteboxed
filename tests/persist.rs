@@ -147,3 +147,18 @@ fn texts_survive_the_file_and_stay_out_when_empty() -> TestResult {
     assert_eq!(persist::to_yaml(&sample()?)?, GOLDEN);
     Ok(())
 }
+
+#[test]
+fn line_styles_are_saved_only_when_not_default() -> TestResult {
+    use whiteboxed::model::LineStyle;
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("line_style"));
+    let rel = *p.relations.keys().next().ok_or("relation")?;
+    p.set_relation_style(rel, Some(LineStyle::Curved))?;
+    p.set_line_style(LineStyle::Square);
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("line_style: square"));
+    assert!(yaml.contains("style: curved"));
+    assert_eq!(persist::from_yaml(&yaml)?, p);
+    Ok(())
+}

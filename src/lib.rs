@@ -13,6 +13,7 @@ pub mod layout;
 pub mod mcp;
 pub mod model;
 pub mod persist;
+pub mod prefs;
 pub mod recovery;
 pub mod scene;
 pub mod text;

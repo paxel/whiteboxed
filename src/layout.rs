@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::geom::{Pos, Rect};
-use crate::model::{BlockId, BlockKind, DiagramId, End, Project, RelationId, Rgb, Side};
+use crate::model::{BlockId, BlockKind, DiagramId, End, LineStyle, Project, RelationId, Rgb, Side};
 use crate::text;
 use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
@@ -66,6 +66,7 @@ pub struct LineGeom {
     pub tip_dir: Option<Side>,
     /// Where the line crosses the whitebox frame, with the partner outside.
     pub frame_port: Option<(Pos, Side, String)>,
+    pub style: LineStyle,
 }
 
 impl LineGeom {
@@ -656,6 +657,7 @@ fn build_line(
         tip,
         tip_dir,
         frame_port: None,
+        style: line.style,
     }
 }
 

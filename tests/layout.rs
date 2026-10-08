@@ -225,3 +225,35 @@ fn png_export_stays_within_the_size_cap() -> TestResult {
     assert!(w > 4000, "still large: {w}");
     Ok(())
 }
+
+#[test]
+fn line_styles_round_the_bends_but_keep_the_ends() {
+    use whiteboxed::model::LineStyle;
+    use whiteboxed::scene::shaped;
+    let route = [
+        Pos::new(0.0, 0.0),
+        Pos::new(100.0, 0.0),
+        Pos::new(100.0, 100.0),
+        Pos::new(104.0, 100.0),
+        Pos::new(104.0, 200.0),
+    ];
+    assert_eq!(shaped(&route, LineStyle::Square), route.to_vec());
+    for style in [LineStyle::Round6, LineStyle::Round12, LineStyle::Curved] {
+        let out = shaped(&route, style);
+        assert!(out.len() > route.len(), "{style:?} adds points");
+        assert_eq!(out.first(), route.first());
+        assert_eq!(out.last(), route.last());
+        // The corner itself is cut off.
+        assert!(!out.contains(&Pos::new(100.0, 0.0)), "{style:?}");
+        // The last segment still points straight down, so the arrowhead does too.
+        let n = out.len();
+        assert!((out[n - 1].x - out[n - 2].x).abs() < 0.01);
+    }
+    // A 12 px radius cuts 12 px from a long segment, a curve reaches its middle.
+    let round = shaped(&route, LineStyle::Round12);
+    assert!(round.contains(&Pos::new(88.0, 0.0)));
+    let curve = shaped(&route, LineStyle::Curved);
+    assert!(curve.contains(&Pos::new(50.0, 0.0)));
+    // The 4 px step only gets half its length as radius: it stays a step.
+    assert!(round.iter().all(|p| p.y <= 100.0 || p.x >= 102.0));
+}

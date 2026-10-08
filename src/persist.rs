@@ -9,8 +9,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, MAX_BLOCKS_PER_DIAGRAM,
-    MAX_RELATIONS_PER_DIAGRAM, Project, Relation, RelationId, Rgb, Side, Tag, TagId,
+    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, LineStyle,
+    MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation, RelationId, Rgb, Side,
+    Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -31,6 +32,9 @@ struct FileDto {
     /// Explanation of the context view.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     motivation: String,
+    /// Written only when it differs from the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    line_style: Option<LineStyle>,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
@@ -78,6 +82,8 @@ struct RelationDto {
     direction: Direction,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    style: Option<LineStyle>,
 }
 
 fn anchors_dto(end: &Endpoint) -> Vec<AnchorDto> {
@@ -106,6 +112,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
     let dto = FileDto {
         format: FORMAT,
         motivation: project.motivation.clone(),
+        line_style: (project.line_style != LineStyle::default()).then_some(project.line_style),
         tags: project
             .tags
             .iter()
@@ -139,6 +146,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 b: anchors_dto(&r.b),
                 direction: r.direction,
                 text: r.text.clone(),
+                style: r.style,
             })
             .collect(),
     };
@@ -155,6 +163,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     }
     let mut project = Project::new();
     project.motivation = dto.motivation;
+    project.line_style = dto.line_style.unwrap_or_default();
     let mut ids = BTreeSet::new();
     let mut fresh = |id: u64| {
         if ids.insert(id) {
@@ -198,6 +207,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 b: endpoint(r.b),
                 direction: r.direction,
                 text: r.text,
+                style: r.style,
             },
         );
     }

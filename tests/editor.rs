@@ -360,3 +360,42 @@ fn the_recovery_directory_is_private() -> TestResult {
     assert_eq!(mode & 0o777, 0o700);
     Ok(())
 }
+
+#[test]
+fn line_styles_change_with_one_undo_step_each() -> TestResult {
+    use whiteboxed::model::LineStyle;
+    let mut e = Editor::new(None);
+    e.apply_prefs(&whiteboxed::prefs::Prefs {
+        line_style: LineStyle::Curved,
+    });
+    assert_eq!(e.project.line_style, LineStyle::Curved);
+    assert!(!e.dirty, "starting values are not a change");
+    let a = add_first(&mut e, "A")?;
+    connect_new(&mut e, a, Side::Right, "B", BlockKind::Component)?;
+    // A project in use keeps its style when preferences are applied.
+    e.apply_prefs(&whiteboxed::prefs::Prefs::default());
+    assert_eq!(e.project.line_style, LineStyle::Curved);
+    e.set_line_style(LineStyle::Square);
+    assert_eq!(e.project.line_style, LineStyle::Square);
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    e.start_edit_relation(rel);
+    if let Some(Popup::EditRelation { style, text, .. }) = &mut e.popup {
+        *style = Some(LineStyle::Round6);
+        *text = "calls".into();
+    }
+    e.confirm();
+    let r = e.project.relation(rel)?;
+    assert_eq!(
+        (r.style, r.text.as_str()),
+        (Some(LineStyle::Round6), "calls")
+    );
+    assert_eq!(
+        e.layout().lines.first().map(|l| l.style),
+        Some(LineStyle::Round6)
+    );
+    e.undo();
+    assert_eq!(e.project.relation(rel)?.style, None);
+    e.undo();
+    assert_eq!(e.project.line_style, LineStyle::Curved);
+    Ok(())
+}
