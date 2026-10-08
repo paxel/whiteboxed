@@ -53,6 +53,14 @@ fn close(a: Rgb, b: Rgb) -> bool {
     d(a.0, b.0) && d(a.1, b.1) && d(a.2, b.2)
 }
 
+/// Whether `color` is drawn within `radius` pixels of `p`. Thin shapes blend with
+/// their surroundings at single pixels (anti-aliasing), so look around.
+fn drawn_near(img: &Image, p: Pos2, color: Rgb, radius: i32) -> bool {
+    (-radius..=radius).any(|dx| {
+        (-radius..=radius).any(|dy| close(pixel(img, p + egui::vec2(dx as f32, dy as f32)), color))
+    })
+}
+
 /// The example from the README: a web shop, its context and its whitebox.
 fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
     let mut p = Project::new();
@@ -117,6 +125,20 @@ fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
         "",
     )?;
     p.attach(buy, End::B, shop, ui, Side::Left)?;
+    p.set_motivation(
+        None,
+        "Customers buy through the web shop; payment and shipping are external services.",
+    )?;
+    p.set_responsibility(
+        shop,
+        "Sells the catalogue online: browsing, ordering and payment.\n\nOwns orders until they are handed to the warehouse.",
+    )?;
+    p.set_responsibility(ui, "Renders the shop pages and holds the session.")?;
+    p.set_responsibility(orders, "Validates orders and publishes order events.")?;
+    p.set_motivation(
+        Some(shop),
+        "Split by responsibility: presentation, order handling and storage are separate so each can scale on its own.",
+    )?;
     Ok((p, shop))
 }
 
@@ -172,9 +194,7 @@ fn hovering_a_border_highlights_that_side() -> TestResult {
     let accent = Rgb(0x1e, 0x88, 0xe5);
     // The highlight is a 5 px line on the edge; anti-aliasing blends single pixels
     // with the outline, so look for the accent anywhere across the line.
-    let found = (-4..=4).any(|dx| {
-        (-2..=2).any(|dy| close(pixel(&img, edge + egui::vec2(dx as f32, dy as f32)), accent))
-    });
+    let found = drawn_near(&img, edge, accent, 4);
     let got = pixel(&img, edge);
     let view = h.state().view().ok_or("no view")?;
     let layout = h.state_mut().editor.layout().clone();
@@ -208,11 +228,11 @@ fn the_whitebox_marks_unassigned_interfaces() -> TestResult {
         .find(|l| l.kind == whiteboxed::layout::LineKind::Dangling)
         .and_then(|l| l.tip)
         .ok_or("dangling marker")?;
-    let at = screen(&h, Pos::new(tip.x, tip.y + 4.0))?;
+    let at = screen(&h, Pos::new(tip.x, tip.y + 2.0))?;
     let img = h.render()?;
     let got = pixel(&img, at);
     assert!(
-        close(got, whiteboxed::scene::WARN),
+        drawn_near(&img, at, whiteboxed::scene::WARN, 3),
         "expected the warning marker, got {got}"
     );
     Ok(())
@@ -230,8 +250,10 @@ fn save(h: &mut Harness<'_, App>, name: &str) -> TestResult {
 #[test]
 #[ignore = "writes docs/screenshots (needs wgpu)"]
 fn doc_screenshot_context_view() -> TestResult {
-    let (p, _) = shop()?;
-    let mut h = harness(editor_with(p));
+    let (p, shop) = shop()?;
+    let mut e = editor_with(p);
+    e.selected = Some(shop);
+    let mut h = harness(e);
     h.run();
     save(&mut h, "context")
 }

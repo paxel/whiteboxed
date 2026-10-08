@@ -1,6 +1,8 @@
 //! The egui front end: menu, breadcrumb, structure tree, canvas and popups.
 
 pub mod canvas;
+pub mod details;
+pub mod icons;
 pub mod popups;
 
 use std::path::{Path, PathBuf};
@@ -84,6 +86,7 @@ pub struct App {
     /// Popup kind and anchor shown last frame, to place a newly opened popup.
     shown_popup: Option<(std::mem::Discriminant<Popup>, Pos2)>,
     popup_serial: u64,
+    draft: Option<details::Draft>,
 }
 
 impl eframe::App for App {
@@ -108,6 +111,7 @@ impl App {
             shown_title: String::new(),
             shown_popup: None,
             popup_serial: 0,
+            draft: None,
         }
     }
 
@@ -141,6 +145,12 @@ impl App {
             .resizable(true)
             .default_size(230.0)
             .show(ui, |ui| self.sidebar(ui));
+        egui::Panel::right("details")
+            .resizable(true)
+            .default_size(260.0)
+            .show(ui, |ui| {
+                details::show(ui, &mut self.editor, &mut self.draft)
+            });
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
         self.leave_dialog(&ctx);
@@ -152,6 +162,7 @@ impl App {
         if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }
+        self.commit_draft();
         if self.editor.dirty && !self.allow_close {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
             self.leave = Some(Leave::Quit);
@@ -164,11 +175,12 @@ impl App {
         };
         let shift = Modifiers::COMMAND | Modifiers::SHIFT;
         let no_popup = self.editor.popup.is_none() && self.leave.is_none();
-        if no_popup {
+        // Inside a text field, Ctrl+Z belongs to the field.
+        if no_popup && !ctx.text_edit_focused() {
             if pressed(shift, Key::Z) || pressed(Modifiers::COMMAND, Key::Y) {
-                self.editor.redo();
+                self.redo();
             } else if pressed(Modifiers::COMMAND, Key::Z) {
-                self.editor.undo();
+                self.undo();
             }
         }
         if pressed(shift, Key::S) {
@@ -262,13 +274,13 @@ impl App {
                     .add_enabled(self.editor.can_undo(), Button::new("Undo"))
                     .clicked()
                 {
-                    self.editor.undo();
+                    self.undo();
                 }
                 if ui
                     .add_enabled(self.editor.can_redo(), Button::new("Redo"))
                     .clicked()
                 {
-                    self.editor.redo();
+                    self.redo();
                 }
             });
             ui.menu_button("View", |ui| {
@@ -282,7 +294,32 @@ impl App {
                     self.editor.go_up();
                 }
             });
+            ui.add_space(12.0);
+            let can_undo = self.editor.can_undo();
+            if icons::history_button(ui, icons::History::Undo, can_undo).clicked() {
+                self.undo();
+            }
+            let can_redo = self.editor.can_redo();
+            if icons::history_button(ui, icons::History::Redo, can_redo).clicked() {
+                self.redo();
+            }
         });
+    }
+
+    /// Writes the text being typed in the details panel into the project.
+    fn commit_draft(&mut self) {
+        details::commit(&mut self.editor, &self.draft);
+        self.draft = None;
+    }
+
+    fn undo(&mut self) {
+        self.commit_draft();
+        self.editor.undo();
+    }
+
+    fn redo(&mut self) {
+        self.commit_draft();
+        self.editor.redo();
     }
 
     fn breadcrumb(&mut self, ui: &mut Ui) {
@@ -795,6 +832,7 @@ impl App {
 
     fn reset(&mut self, editor: Editor) {
         self.editor = editor;
+        self.draft = None;
         self.view = None;
         self.drag = None;
         self.picking = false;
@@ -833,6 +871,7 @@ impl App {
 
     /// Saves; asks for a file name the first time. Returns whether it saved.
     fn save(&mut self) -> bool {
+        self.commit_draft();
         match self.editor.save() {
             Ok(true) => true,
             Ok(false) => self.save_as(),
@@ -844,6 +883,7 @@ impl App {
     }
 
     fn save_as(&mut self) -> bool {
+        self.commit_draft();
         let Some(mut path) = rfd::FileDialog::new()
             .add_filter("whiteboxed project", &["yaml", "yml"])
             .set_file_name("architecture.yaml")
@@ -864,6 +904,7 @@ impl App {
     }
 
     fn export(&mut self, ext: &str) {
+        self.commit_draft();
         let name = format!("{}.{ext}", self.editor.file_name_for(self.editor.diagram));
         let Some(path) = rfd::FileDialog::new()
             .add_filter(ext.to_uppercase(), &[ext])
@@ -884,6 +925,7 @@ impl App {
     }
 
     fn export_all(&mut self, format: DocFormat) {
+        self.commit_draft();
         let Some(dir) = rfd::FileDialog::new().pick_folder() else {
             return;
         };

@@ -425,3 +425,77 @@ fn closing_with_unsaved_changes_asks_first() -> TestResult {
     assert!(closes, "the window should close after \"Don't save\"");
     Ok(())
 }
+
+fn details_field<'h>(h: &'h Harness<'_, App>) -> egui_kittest::Node<'h> {
+    h.get_by_role(egui::accesskit::Role::MultilineTextInput)
+}
+
+#[test]
+fn the_details_panel_edits_responsibility_with_one_undo_step() -> TestResult {
+    let (e, shop) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    let at = block_center(&mut h, shop)?;
+    press(&mut h, at, PointerButton::Primary);
+    h.run();
+    assert!(h.query_by_label("Responsibility").is_some());
+    details_field(&h).click();
+    h.run();
+    h.event(Event::Text("Sells things.".into()));
+    h.run();
+    // Ctrl+Z inside the field is the field's own undo, never the project's.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run();
+    assert_eq!(h.state().editor.project.blocks.len(), 1);
+    h.event(Event::Text("Sells things.".into()));
+    h.run();
+    // Leaving the field (a click on empty canvas) writes the text.
+    press(&mut h, Pos2::new(600.0, 700.0), PointerButton::Primary);
+    h.run();
+    assert_eq!(
+        h.state().editor.project.block(shop)?.responsibility,
+        "Sells things."
+    );
+    assert!(h.state().editor.dirty);
+    // Nothing is selected now: the panel describes the diagram.
+    assert!(h.query_by_label("Motivation").is_some());
+    button(&h, "Undo").click();
+    h.run();
+    assert_eq!(h.state().editor.project.block(shop)?.responsibility, "");
+    button(&h, "Redo").click();
+    h.run();
+    assert_eq!(
+        h.state().editor.project.block(shop)?.responsibility,
+        "Sells things."
+    );
+    Ok(())
+}
+
+#[test]
+fn the_motivation_is_kept_when_switching_to_a_box() -> TestResult {
+    let (e, shop) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    details_field(&h).click();
+    h.run();
+    h.event(Event::Text("Who uses the shop.".into()));
+    h.run();
+    let at = block_center(&mut h, shop)?;
+    press(&mut h, at, PointerButton::Primary);
+    h.run();
+    assert_eq!(h.state().editor.project.motivation, "Who uses the shop.");
+    assert_eq!(h.state().editor.selected, Some(shop));
+    Ok(())
+}
+
+#[test]
+fn the_undo_button_is_disabled_without_history() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    button(&h, "Undo").click();
+    h.run();
+    assert!(!h.state().editor.can_undo());
+    assert_eq!(h.state().editor.project.blocks.len(), 1);
+    Ok(())
+}

@@ -720,6 +720,14 @@ impl Editor {
         }
     }
 
+    pub fn set_responsibility(&mut self, block: BlockId, text: &str) {
+        self.apply(|p| p.set_responsibility(block, text));
+    }
+
+    pub fn set_motivation(&mut self, diagram: DiagramId, text: &str) {
+        self.apply(|p| p.set_motivation(diagram, text));
+    }
+
     pub fn set_tag_color(&mut self, tag: TagId, color: Rgb) {
         self.apply(|p| p.set_tag_color(tag, color));
     }
