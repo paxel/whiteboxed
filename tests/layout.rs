@@ -204,3 +204,24 @@ fn render_sample_pngs() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn png_export_stays_within_the_size_cap() -> TestResult {
+    let mut p = Project::new();
+    let mut prev = p.add_block(None, &spec("B0", BlockKind::Component))?;
+    for i in 1..60 {
+        let (next, _) = p.connect_new(
+            prev,
+            Side::Right,
+            &spec(&format!("B{i}"), BlockKind::Component),
+            Direction::Out,
+            "",
+        )?;
+        prev = next;
+    }
+    let png = export::to_png(&scene::scene(&render(&p, None)), 2.0)?;
+    let w = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+    assert!(w as f32 <= export::MAX_PNG_SIDE, "width {w}");
+    assert!(w > 4000, "still large: {w}");
+    Ok(())
+}

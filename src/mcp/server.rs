@@ -45,7 +45,16 @@ impl Call {
         if self.reply.is_closed() {
             return;
         }
-        let result = api::call(editor, &self.tool, self.args);
+        // A bug in a tool must not take the window (and unsaved work) down. Changes
+        // run on a copy of the project, so a panic leaves the project as it was.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            api::call(editor, &self.tool, self.args)
+        }))
+        .unwrap_or_else(|_| {
+            Err(ApiError::Rejected(
+                "internal error in whiteboxed; nothing was changed".into(),
+            ))
+        });
         let _ = self.reply.send(result);
     }
 

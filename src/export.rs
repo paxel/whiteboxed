@@ -157,6 +157,9 @@ fn escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Longest side of an exported PNG, in pixels.
+pub const MAX_PNG_SIDE: f32 = 8192.0;
+
 /// Renders the scene to PNG bytes at `scale` (1.0 = one pixel per diagram unit).
 pub fn to_png(scene: &Scene, scale: f32) -> Result<Vec<u8>, ExportError> {
     let svg = to_svg(scene);
@@ -167,6 +170,9 @@ pub fn to_png(scene: &Scene, scale: f32) -> Result<Vec<u8>, ExportError> {
     let tree =
         resvg::usvg::Tree::from_str(&svg, &opt).map_err(|e| ExportError::Render(e.to_string()))?;
     let size = tree.size();
+    // Keep the image within MAX_PNG_SIDE pixels, however large the diagram.
+    let longest = size.width().max(size.height()).max(1.0);
+    let scale = scale.min(MAX_PNG_SIDE / longest);
     let (w, h) = (
         (size.width() * scale).ceil() as u32,
         (size.height() * scale).ceil() as u32,
