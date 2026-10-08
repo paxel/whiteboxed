@@ -124,7 +124,9 @@ There is nothing to position by pixel.
 - Lines on one side of a box keep 40 px apart, so a box grows along a side from its
   second relation there. A box never gets smaller than its minimum size.
 - Lines run horizontally and vertically through the gaps between cells and never
-  through a box. Gaps widen to fit long labels. A line leaves a box where its partner
+  through a box. Only a line that enters a whitebox through the bottom of its frame
+  crosses the [cross-cutting bands](#cross-cutting-bands) on its way in. Gaps widen to
+  fit long labels. A line leaves a box where its partner
   is, so two boxes facing each other are joined by a straight line.
 - Lines avoid crossing each other where a short detour or a different lane allows it.
   Where two lines still cross, the horizontal one jumps over the other in a small arc.
