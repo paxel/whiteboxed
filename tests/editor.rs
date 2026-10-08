@@ -10,7 +10,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn add_first(e: &mut Editor, name: &str) -> Result<BlockId, Box<dyn std::error::Error>> {
     e.start_add_block();
-    if let Some(Popup::AddBlock(form)) = &mut e.popup {
+    if let Some(Popup::AddBlock(form, _)) = &mut e.popup {
         form.name = name.into();
     }
     e.confirm();
@@ -328,7 +328,7 @@ fn export_all_writes_every_diagram() -> TestResult {
 fn tag_colours_change_with_undo() -> TestResult {
     let mut e = Editor::new(None);
     e.start_add_block();
-    if let Some(Popup::AddBlock(form)) = &mut e.popup {
+    if let Some(Popup::AddBlock(form, _)) = &mut e.popup {
         form.name = "Shop".into();
         form.tag = "core".into();
     }

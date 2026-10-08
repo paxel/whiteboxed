@@ -28,7 +28,7 @@ pub fn show(
     focus: &mut bool,
 ) -> Option<Action> {
     let (title, salt) = match popup {
-        Popup::AddBlock(_) => ("Add box", "add"),
+        Popup::AddBlock(..) => ("Add box", "add"),
         Popup::Connect(_) => ("Connect", "connect"),
         Popup::EditBlock(..) => ("Edit box", "edit-box"),
         Popup::EditRelation { .. } => ("Edit relation", "edit-rel"),
@@ -63,7 +63,7 @@ pub fn show(
 
 fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Option<Action> {
     match popup {
-        Popup::AddBlock(form) => {
+        Popup::AddBlock(form, _) => {
             block_form(ui, editor, form, focus);
             ok_cancel(ui, "Add")
         }

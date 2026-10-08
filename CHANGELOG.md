@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Boxes without a relation can be added anywhere: right-click empty space > Add box here puts the box in that cell, and + Box in the menu bar puts it in the next free cell.
 - Short labels for relations; long texts without one appear as [1], [2] … with the full text in a legend below the diagram (in the app, the export and as a tooltip). When texts get shortened is set in Project settings.
 - Line styles for relations: square, slightly rounded, rounded or curved; set for the project under File > Project settings and per relation, with your choice as the default for new projects.
 

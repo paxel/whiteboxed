@@ -21,7 +21,7 @@ use crate::editor::{Editor, Popup, Target};
 use crate::geom;
 use crate::hit::{self, Hit};
 use crate::layout::Layout;
-use crate::model::{BlockId, DiagramId, PALETTE, Side};
+use crate::model::{BlockId, Cell, DiagramId, PALETTE, Side};
 use crate::recovery;
 use crate::scene;
 use canvas::{ACCENT, View};
@@ -83,6 +83,8 @@ pub struct App {
     anchor: Pos2,
     focus: bool,
     context: Option<Hit>,
+    /// The grid cell under the last right-click.
+    context_cell: Option<Cell>,
     drag: Option<BlockId>,
     picking: bool,
     leave: Option<Leave>,
@@ -111,6 +113,7 @@ impl App {
             anchor: Pos2::new(200.0, 150.0),
             focus: true,
             context: None,
+            context_cell: None,
             drag: None,
             picking: false,
             leave: None,
@@ -357,6 +360,15 @@ impl App {
             let can_redo = self.editor.can_redo();
             if icons::history_button(ui, icons::History::Redo, can_redo).clicked() {
                 self.redo();
+            }
+            ui.add_space(12.0);
+            let add = ui
+                .button("+ Box")
+                .on_hover_text("Add a box to this diagram, in the next free cell");
+            if add.clicked() {
+                self.anchor = add.rect.left_bottom() + vec2(0.0, 8.0);
+                self.focus = true;
+                self.editor.start_add_block();
             }
         });
     }
@@ -646,6 +658,7 @@ impl App {
         if let Some((p, h)) = secondary {
             self.anchor = p;
             self.context = Some(h);
+            self.context_cell = hit::cell_at(&layout, view.diagram(p));
         }
         let resp = match full {
             Some(text) => resp.on_hover_text_at_pointer(text),
@@ -831,6 +844,13 @@ impl App {
                 }
             }
             _ => {
+                if ui.button("Add box here").clicked() {
+                    self.focus = true;
+                    match self.context_cell {
+                        Some(cell) => self.editor.start_add_block_at(cell),
+                        None => self.editor.start_add_block(),
+                    }
+                }
                 if ui.button("Fit to window").clicked() {
                     self.view = None;
                 }

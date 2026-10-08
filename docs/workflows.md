@@ -69,6 +69,8 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 
 ## Rearrange
 
+- To add a box without a relation, right-click an empty spot and choose **Add box
+  here** (it lands in that cell), or click **+ Box** in the menu bar.
 - Drag a box onto another cell; it snaps. A box already there swaps places.
 - Or select a box and use the arrow keys.
 - **View > Fit to window** (or right-click empty space) shows the whole diagram again.

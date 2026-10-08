@@ -11,8 +11,9 @@ next to each diagram and exports them. For step-by-step recipes see
 ![The window: menu, breadcrumb, structure tree, tags, canvas, details and status bar](screenshots/context.png)
 
 - **Menu bar**: File (new, open, save, export), Edit (undo, redo), View (fit, up one
-  level), and the **undo** and **redo** arrows. An arrow is grey when there is nothing
-  to undo or redo.
+  level), the **undo** and **redo** arrows, and **+ Box**, which adds a box without a
+  relation in the next free cell. An arrow is grey when there is nothing to undo or
+  redo.
 - **Breadcrumb** under the menu: where you are, e.g. `Context › Web Shop › Orders`.
   Click any part to jump there.
 - **Structure** (left): every box of the project as a tree. Click a box to show it in

@@ -51,6 +51,24 @@ impl Project {
         self.insert_block(diagram, spec, cell)
     }
 
+    /// Adds a box without a relation in `cell`, or in the nearest free cell next to it
+    /// if that one is taken.
+    pub fn add_block_at(
+        &mut self,
+        diagram: DiagramId,
+        spec: &BlockSpec,
+        cell: Cell,
+    ) -> ModelResult<BlockId> {
+        if !cell.in_grid() {
+            return Err(ModelError::OutsideGrid);
+        }
+        let cell = self.free_cell_near(diagram, cell, Side::Right, None);
+        if !cell.in_grid() {
+            return Err(ModelError::OutsideGrid);
+        }
+        self.insert_block(diagram, spec, cell)
+    }
+
     /// Changes name, type and tag of a box.
     pub fn edit_block(&mut self, id: BlockId, spec: &BlockSpec) -> ModelResult<()> {
         let parent = self.block(id)?.parent;

@@ -3,7 +3,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use whiteboxed::editor::{Editor, Popup};
 use whiteboxed::geom::Pos;
-use whiteboxed::model::{BlockId, BlockKind, BlockSpec, Side};
+use whiteboxed::model::{BlockId, BlockKind, BlockSpec, Cell, Side};
 use whiteboxed::ui::App;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -53,7 +53,7 @@ fn empty_canvas_offers_add_box() -> TestResult {
     h.run();
     h.get_by_label("+ add box").click();
     h.run();
-    assert!(matches!(h.state().editor.popup, Some(Popup::AddBlock(_))));
+    assert!(matches!(h.state().editor.popup, Some(Popup::AddBlock(..))));
     type_and_enter(&mut h, "Shop");
     let names: Vec<_> = h
         .state()
@@ -709,5 +709,65 @@ fn project_settings_change_the_line_style() -> TestResult {
     h.get_by_label("Use as my default for new projects").click();
     h.run();
     assert_eq!(h.state().settings.prefs.line_style, LineStyle::Curved);
+    Ok(())
+}
+
+#[test]
+fn right_click_on_empty_space_adds_a_box_in_that_cell() -> TestResult {
+    let (e, shop) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    let c = h
+        .state_mut()
+        .editor
+        .layout()
+        .block(shop)
+        .ok_or("shop")?
+        .rect
+        .center();
+    // One cell to the right of the shop, below it.
+    let at = screen(&h, Pos::new(c.x, c.y + 260.0))?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Add box here").click();
+    h.run();
+    assert!(matches!(
+        h.state().editor.popup,
+        Some(Popup::AddBlock(_, Some(cell))) if cell == Cell::new(0, 1)
+    ));
+    type_and_enter(&mut h, "Billing");
+    let billing = h
+        .state()
+        .editor
+        .project
+        .blocks
+        .values()
+        .find(|b| b.name == "Billing")
+        .map(|b| b.cell);
+    assert_eq!(billing, Some(Cell::new(0, 1)));
+    Ok(())
+}
+
+#[test]
+fn the_menu_bar_adds_a_box_in_the_next_free_cell() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("+ Box").click();
+    h.run();
+    assert!(matches!(
+        h.state().editor.popup,
+        Some(Popup::AddBlock(_, None))
+    ));
+    type_and_enter(&mut h, "Billing");
+    let billing = h
+        .state()
+        .editor
+        .project
+        .blocks
+        .values()
+        .find(|b| b.name == "Billing")
+        .map(|b| b.cell);
+    assert_eq!(billing, Some(Cell::new(1, 0)));
     Ok(())
 }

@@ -495,3 +495,22 @@ fn moving_an_inner_box_faces_the_frame_its_line_enters_at() -> TestResult {
     assert_eq!(chain, vec![(shop, Side::Left), (inner, Side::Left)]);
     Ok(())
 }
+
+#[test]
+fn add_block_at_takes_the_cell_or_the_next_free_one() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block_at(None, &component("A"), Cell::new(2, 3))?;
+    assert_eq!(cell(&p, a)?, Cell::new(2, 3));
+    let b = p.add_block_at(None, &component("B"), Cell::new(2, 3))?;
+    // Taken: the nearest free cell next to it.
+    assert_eq!(cell(&p, b)?, Cell::new(2, 4));
+    assert_eq!(
+        p.add_block_at(
+            None,
+            &component("C"),
+            Cell::new(whiteboxed::model::MAX_CELL + 1, 0)
+        ),
+        Err(ModelError::OutsideGrid)
+    );
+    Ok(())
+}

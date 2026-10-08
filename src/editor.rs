@@ -102,7 +102,8 @@ pub enum Pending {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Popup {
-    AddBlock(BlockForm),
+    /// A new box, in the given cell or else in the next free one.
+    AddBlock(BlockForm, Option<Cell>),
     Connect(ConnectForm),
     EditBlock(BlockId, BlockForm),
     EditRelation {
@@ -431,7 +432,12 @@ impl Editor {
     }
 
     pub fn start_add_block(&mut self) {
-        self.popup = Some(Popup::AddBlock(BlockForm::default()));
+        self.popup = Some(Popup::AddBlock(BlockForm::default(), None));
+    }
+
+    /// Asks for a new box in `cell` (the empty cell the user right-clicked).
+    pub fn start_add_block_at(&mut self, cell: Cell) {
+        self.popup = Some(Popup::AddBlock(BlockForm::default(), Some(cell)));
     }
 
     pub fn start_connect(&mut self, from: BlockId, side: Side) {
@@ -591,9 +597,13 @@ impl Editor {
             return;
         };
         match popup {
-            Popup::AddBlock(form) => {
+            Popup::AddBlock(form, cell) => {
                 let diagram = self.diagram;
-                if let Some(id) = self.apply(|p| p.add_block(diagram, &form.spec())) {
+                let added = self.apply(|p| match cell {
+                    Some(cell) => p.add_block_at(diagram, &form.spec(), cell),
+                    None => p.add_block(diagram, &form.spec()),
+                });
+                if let Some(id) = added {
                     self.selected = Some(id);
                     self.popup = None;
                 }
