@@ -27,7 +27,11 @@ levels cannot drift apart.
 - **Tags** colour boxes project-wide.
 - **Git-friendly files.** One YAML file per project with the model and grid cells, no
   pixel coordinates. Unsaved work is recovered after a crash.
-- **Export** every diagram as SVG and PNG for your arc42 document.
+- **arc42 texts.** A responsibility per box and a motivation per diagram, typed in a
+  details panel; undo and redo from the toolbar arrows or the keyboard.
+- **Export** every diagram as SVG and PNG, together with arc42 text files
+  (AsciiDoc or Markdown) holding the partner, building-block and interface tables,
+  and an index that ties them together.
 
 ![The whitebox of the web shop, with two interfaces not assigned yet](docs/screenshots/whitebox.png)
 

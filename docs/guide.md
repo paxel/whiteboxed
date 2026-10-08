@@ -2,31 +2,36 @@
 
 whiteboxed draws the building-block view of [arc42](https://arc42.org) (section 5):
 the context view, and for every box its whitebox one level deeper. You describe
-boxes and relations; the app does the layout. For step-by-step recipes see
+boxes and relations; the app does the layout. It also keeps the texts arc42 asks for
+next to each diagram and exports them. For step-by-step recipes see
 [Workflows](workflows.md).
 
 ## The window
 
-![The window: menu, breadcrumb, structure tree, tags, canvas and status bar](screenshots/context.png)
+![The window: menu, breadcrumb, structure tree, tags, canvas, details and status bar](screenshots/context.png)
 
 - **Menu bar**: File (new, open, save, export), Edit (undo, redo), View (fit, up one
-  level).
+  level), and the **undo** and **redo** arrows. An arrow is grey when there is nothing
+  to undo or redo.
 - **Breadcrumb** under the menu: where you are, e.g. `Context › Web Shop › Orders`.
   Click any part to jump there.
 - **Structure** (left): every box of the project as a tree. Click a box to show it in
   its diagram, double-click it to open its whitebox.
 - **Tags** (left, below the tree): every tag with its colour.
 - **Canvas** (centre): the current diagram.
+- **Details** (right): the **responsibility** of the selected box, or the
+  **motivation** of the current diagram when nothing is selected. See
+  [arc42 texts](#arc42-texts).
 - **Status bar** (bottom): hints, errors, and the number of interfaces in this
   whitebox that are not assigned to a box yet.
 
 ## Levels
 
-| Level | Shows                                                                 |
-|-------|-----------------------------------------------------------------------|
-| 0     | The context view: your system(s) and their neighbours                 |
-| 1     | The whitebox of a level-0 box: its building blocks                    |
-| 2, 3… | The whitebox of a box one level up; there is no depth limit           |
+| Level | Shows                                                       |
+|-------|-------------------------------------------------------------|
+| 0     | The context view: your system(s) and their neighbours       |
+| 1     | The whitebox of a level-0 box: its building blocks          |
+| 2, 3… | The whitebox of a box one level up; there is no depth limit |
 
 A box is a blackbox on its own level. Opening it shows its whitebox: a frame with the
 box's name, the boxes inside it, and every relation that reaches the box from outside.
@@ -35,16 +40,16 @@ box's name, the boxes inside it, and every relation that reaches the box from ou
 
 ## Box types
 
-| Type            | Drawn as                       | Where                | Opens into a whitebox |
-|-----------------|--------------------------------|----------------------|-----------------------|
-| component       | rectangle                      | every level          | yes                   |
-| database        | cylinder                       | every level          | yes                   |
-| queue/topic     | horizontal pipe                | every level          | yes                   |
-| cache           | rectangle with a double border | every level          | yes                   |
-| file storage    | folder                         | every level          | yes                   |
-| UI              | window with a title bar        | every level          | yes                   |
-| person          | rounded box with a figure      | context view only    | no                    |
-| external system | dashed grey rectangle          | context view only    | no                    |
+| Type            | Drawn as                       | Where             | Opens into a whitebox |
+|-----------------|--------------------------------|-------------------|-----------------------|
+| component       | rectangle                      | every level       | yes                   |
+| database        | cylinder                       | every level       | yes                   |
+| queue/topic     | horizontal pipe                | every level       | yes                   |
+| cache           | rectangle with a double border | every level       | yes                   |
+| file storage    | folder                         | every level       | yes                   |
+| UI              | window with a title bar        | every level       | yes                   |
+| person          | rounded box with a figure      | context view only | no                    |
+| external system | dashed grey rectangle          | context view only | no                    |
 
 Every box has a **name**, unique within its diagram (case does not matter), a
 **type**, and at most one **tag**. A small mark in the lower right corner shows that a
@@ -96,6 +101,20 @@ There is nothing to position by pixel.
   keys. A box already in that cell swaps places with it.
 - The same project always gives the same picture.
 
+## arc42 texts
+
+arc42 describes every level with a few texts besides the diagram. whiteboxed keeps
+two of them and builds the tables from the model:
+
+| Text           | Where                            | Typed in                             |
+|----------------|----------------------------------|--------------------------------------|
+| Responsibility | every box                        | Details panel, with the box selected |
+| Motivation     | the context view, every whitebox | Details panel, with nothing selected |
+
+Relation texts serve as the interface descriptions. Typing stays in the field until
+you leave it; then the change becomes one step for undo. Inside the field, Ctrl+Z
+undoes your typing only.
+
 ## Tags
 
 Type a tag name in the box popup. Tags are project-wide: the same tag has the same
@@ -116,33 +135,60 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
 
 ## Export
 
-File > **Export diagram as SVG/PNG** writes the diagram on screen. **Export all
-diagrams** writes an SVG and a PNG for the context view and every whitebox with
-content into a folder, named after the breadcrumb (e.g. `context - Web Shop.svg`).
-Exports look exactly like the canvas.
+File > **Export diagram as SVG/PNG** writes the diagram on screen. Exports look
+exactly like the canvas.
+
+**Export all as AsciiDoc…** and **Export all as Markdown…** write, for the context
+view and every whitebox with content, into one folder:
+
+- an SVG and a PNG, named after the breadcrumb (e.g. `context - Web Shop.svg`);
+- a text file with the same name (`context - Web Shop.adoc` or `.md`);
+- `index.adoc` or `index.md`, which puts them in order: the context first, then the
+  whiteboxes level by level.
+
+The context file holds the image, the motivation as explanation, and two tables:
+
+| Table                  | Columns                | From                                         |
+|------------------------|------------------------|----------------------------------------------|
+| Communication partners | Partner, Input, Output | the arrows between neighbours and your boxes |
+| Building blocks        | Name, Responsibility   | your own boxes                               |
+
+A whitebox file holds the image, the motivation and three tables:
+
+| Table                     | Columns                                      |
+|---------------------------|----------------------------------------------|
+| Contained building blocks | Name, Responsibility                         |
+| External interfaces       | Partner outside, Handled by, Direction, Text |
+| Internal relations        | From, To, Direction, Text                    |
+
+An interface no box takes yet appears as "not assigned"; an empty cell shows "–".
+Each file starts at heading level 3 (`===` / `###`), so it fits under a chapter of
+your own arc42 document: `include::context - Web Shop.adoc[]` in AsciiDoc. In
+Markdown, which has no includes, the index links the files.
 
 ## Keys
 
-| Key                   | Does                                         |
-|-----------------------|----------------------------------------------|
-| Enter                 | Confirm a popup; open the selected box       |
-| Esc                   | Close a popup; stop picking; deselect        |
-| Backspace             | Up one level                                 |
-| F2                    | Edit the selected box                        |
-| Delete                | Delete the selected box                      |
-| Arrow keys            | Move the selected box one cell               |
-| Ctrl+Z                | Undo                                         |
-| Ctrl+Shift+Z / Ctrl+Y | Redo                                         |
-| Ctrl+S                | Save                                         |
-| Ctrl+Shift+S          | Save as                                      |
-| Ctrl+O                | Open                                         |
-| Ctrl+N                | New project                                  |
-| Ctrl+scroll           | Zoom                                         |
+| Key                   | Does                                   |
+|-----------------------|----------------------------------------|
+| Enter                 | Confirm a popup; open the selected box |
+| Esc                   | Close a popup; stop picking; deselect  |
+| Backspace             | Up one level                           |
+| F2                    | Edit the selected box                  |
+| Delete                | Delete the selected box                |
+| Arrow keys            | Move the selected box one cell         |
+| Ctrl+Z                | Undo                                   |
+| Ctrl+Shift+Z / Ctrl+Y | Redo                                   |
+| Ctrl+S                | Save                                   |
+| Ctrl+Shift+S          | Save as                                |
+| Ctrl+O                | Open                                   |
+| Ctrl+N                | New project                            |
+| Ctrl+scroll           | Zoom                                   |
 
 ## File format
 
 ```yaml
 format: 1
+motivation: Customers buy through the web shop.   # explanation of the context view
 tags:
 - id: 2
   name: core
@@ -161,6 +207,8 @@ blocks:
   cell:
     col: 1
     row: 0
+  responsibility: Sells the catalogue online.
+  motivation: Split by responsibility.             # of its whitebox
 - id: 5
   name: Storefront
   kind: ui
@@ -188,3 +236,4 @@ relations:
   lists the box on that level, then the box it is attached to inside, and so on. An
   empty end (`b: []`) is an open stub end.
 - `side`: `top`, `right`, `bottom`, `left`.
+- Empty texts (`motivation`, `responsibility`, `text`) are left out.

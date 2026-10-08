@@ -16,8 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Automatic grid layout with orthogonal lines; boxes grow with their relations and can be moved by dragging or with the arrow keys.
 - A prompt when connecting a box would break the side of another relation: move the box or route around it.
 - Project-wide tags that colour every box carrying them.
-- Unlimited undo and redo.
+- A details panel for the responsibility of each box and the motivation of each diagram.
+- Unlimited undo and redo, from the arrows in the toolbar or the keyboard.
 - Projects saved as readable YAML files, with automatic recovery of unsaved changes after a crash.
-- Export of the current diagram, or of all diagrams, as SVG and PNG.
+- Export of the current diagram as SVG and PNG, and of all diagrams as images plus arc42 text files (AsciiDoc or Markdown) with an index.
 - An app icon; on Linux the app adds itself to the application menu.
 - Installation with Homebrew (Linux, macOS) and Scoop (Windows).

@@ -96,11 +96,23 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 3. If the app or the machine crashes, start whiteboxed again (with the same file): it
    offers to restore the changes made since the last save.
 
+## Describe what each box does
+
+1. Click a box. The **Details** panel on the right shows its **Responsibility**. Type
+   what the box is responsible for.
+2. Click empty canvas. The panel now shows the **Motivation** of the diagram: in the
+   context view the explanation of who uses the system, in a whitebox why the box is
+   split this way.
+3. The text is kept when you click elsewhere. **Ctrl+Z** inside the field undoes
+   typing; outside it, it undoes the whole text change.
+
 ## Put the diagrams into the arc42 document
 
-1. **File > Export all diagrams…** and pick the folder of your documentation, e.g.
-   `docs/arc42/images`.
-2. You get `context.svg`/`.png` and one pair per whitebox, named after the breadcrumb
-   (`context - Web Shop.svg`).
-3. Reference them from section 5 of your arc42 document. Export again after changes;
-   the names stay the same.
+1. **File > Export all as AsciiDoc…** (or **as Markdown…**) and pick a folder, e.g.
+   `docs/arc42/building-blocks`.
+2. You get, per diagram, an SVG, a PNG and a text file named after the breadcrumb
+   (`context.adoc`, `context - Web Shop.adoc`), plus `index.adoc`.
+3. Without an arc42 document yet: use `index.adoc` (or `index.md`) as it is.
+4. With one: include the files where they belong, e.g. in section 3
+   `include::context.adoc[]` and in section 5 `include::context - Web Shop.adoc[]`.
+5. Export again after changes; the names stay the same.
