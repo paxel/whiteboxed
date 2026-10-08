@@ -248,6 +248,10 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 
 ![The AI access dialog with the endpoint and the command for Claude Code](screenshots/ai-access.png)
 
+- **Connecting Claude Code** takes three steps, listed in the dialog: open a terminal
+  in your project folder (a normal shell, not inside Claude Code), paste the copied
+  `claude mcp add` command there, then start `claude` and check with `/mcp` that
+  whiteboxed is connected.
 - **Off by default.** **AI > Allow AI access** turns it on until you turn it off or
   quit; the next start begins with it off.
 - **Token.** Every request needs the access token, as `Authorization: Bearer <token>`
@@ -273,19 +277,19 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `get_model`          | The whole project as JSON                                         |
 | `get_diagram`        | One diagram: boxes, cells, lines, open and unassigned ends        |
 | `render_diagram`     | One diagram as PNG, as you see it                                 |
-| `add_box`            | A box without relation                                            |
+| `add_box`            | A box without relation, or with `band: true` a cross-cutting band |
 | `connect_new`        | A new box on one side of a box, connected                         |
 | `connect_existing`   | Two boxes of a diagram; `placement` move (default) or keep        |
 | `add_stub`           | A relation that leaves the level                                  |
 | `connect_open_end`   | A stub's open end to a box                                        |
-| `attach`             | A relation from the level above to the box inside that handles it |
+| `attach`             | A relation from the level above to a box inside; again: fans out  |
 | `edit_box`           | Name, type, tag                                                   |
-| `edit_relation`      | Direction, text                                                   |
+| `edit_relation`      | Direction, text, short label, line style, sides                   |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
-| `delete_relation`    | A relation, or with `detach_in` only its end in a whitebox        |
+| `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts and index into a folder you allowed           |
 
 Boxes are addressed by id or by their path of names from the context view, as a list

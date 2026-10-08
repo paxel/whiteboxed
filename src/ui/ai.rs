@@ -246,23 +246,37 @@ impl Ai {
             ui.label(RichText::new(e).color(egui::Color32::from_rgb(0xc6, 0x28, 0x28)));
         }
         ui.add_space(6.0);
-        ui.label("Register whiteboxed in Claude Code once (run it in your project):");
-        if let Some(cmd) = command {
-            let mut shown = cmd.clone();
-            ui.add(
-                egui::TextEdit::multiline(&mut shown)
-                    .desired_rows(2)
-                    .desired_width(f32::INFINITY)
-                    .font(egui::TextStyle::Monospace),
-            );
-            ui.horizontal(|ui| {
-                if ui.button("Copy command").clicked() {
-                    action = Some(DialogAction::Copy(cmd.clone()));
-                }
-                if ui.button("Generate new token").clicked() {
-                    action = Some(DialogAction::NewToken);
-                }
-            });
+        ui.label(RichText::new("Connect Claude Code once").strong());
+        match command {
+            Some(cmd) => {
+                ui.label(
+                    "1. Open a terminal in your project folder: a normal shell, not inside \
+                     Claude Code.",
+                );
+                ui.label("2. Paste this command there and press Enter:");
+                let mut shown = cmd.clone();
+                ui.add(
+                    egui::TextEdit::multiline(&mut shown)
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY)
+                        .font(egui::TextStyle::Monospace),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Copy command").clicked() {
+                        action = Some(DialogAction::Copy(cmd.clone()));
+                    }
+                    if ui.button("Generate new token").clicked() {
+                        action = Some(DialogAction::NewToken);
+                    }
+                });
+                ui.label(
+                    "3. Start claude in the same folder and type /mcp: whiteboxed is listed \
+                     as connected.",
+                );
+            }
+            None => {
+                ui.label(RichText::new("Turn AI access on to get the command.").weak());
+            }
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -277,8 +291,9 @@ impl Ai {
         });
         ui.label(
             RichText::new(
-                "A new token or port means registering again. The token is stored in your \
-                 user data directory, never in the project.",
+                "A new token or port means registering again: run claude mcp remove \
+                 whiteboxed, then step 2. The token is stored in your user data directory, \
+                 never in the project.",
             )
             .weak()
             .small(),

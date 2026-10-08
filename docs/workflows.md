@@ -132,7 +132,8 @@ You need Claude Code (or another MCP client) and the repository it should read.
 
 1. Open or start a project in whiteboxed, then **AI > Allow AI access**. The dialog
    shows the endpoint and a command.
-2. **Copy command** and run it once in a terminal inside the repository:
+2. **Copy command** and run it once in a terminal inside the repository. Use a normal
+   shell: typed inside a running Claude Code session it does nothing.
 
    ```sh
    claude mcp add --transport http whiteboxed http://127.0.0.1:7342/mcp --header "Authorization: Bearer <token>"

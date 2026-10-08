@@ -556,6 +556,13 @@ fn turning_ai_access_on_shows_how_to_connect() -> TestResult {
     let cmd = h.state_mut().ai.claude_command().ok_or("command")?;
     assert!(cmd.starts_with("claude mcp add --transport http whiteboxed http://127.0.0.1:"));
     assert!(cmd.ends_with("--header \"Authorization: Bearer tok-123\""));
+    for step in [
+        "1. Open a terminal",
+        "2. Paste this command",
+        "3. Start claude",
+    ] {
+        assert!(h.query_by_label_contains(step).is_some(), "{step}");
+    }
     button(&h, "Turn off").click();
     h.run();
     assert!(!h.state().ai.is_on());

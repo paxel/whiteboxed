@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The AI dialog explains connecting Claude Code in three steps: a terminal in the project folder (not inside Claude Code), the copied command, then claude and /mcp.
 - One File > Export… dialog replaces the four export entries: this diagram or all, SVG, PNG at 1×/2×/3×, AsciiDoc, Markdown or no text, and the target folder. The choices are kept in the project file, the folder relative to the project file inside its repository.
 - Lines between boxes that face each other are straight, and relations from the level above enter a whitebox opposite the box that takes them, instead of being spread evenly along the side.
 - Lines on one side of a box keep 40 px apart instead of 26 px, so a box visibly grows from its second relation on a side; the minimum box size stays.
