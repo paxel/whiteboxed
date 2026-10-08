@@ -156,6 +156,26 @@ fn a_side_grows_with_its_relations() -> TestResult {
 }
 
 #[test]
+fn the_second_relation_on_a_side_already_grows_the_box() -> TestResult {
+    let mut p = Project::new();
+    let hub = p.add_block(None, &spec("Hub", BlockKind::Component))?;
+    let mut heights = Vec::new();
+    for i in 0..2 {
+        p.connect_new(
+            hub,
+            Side::Left,
+            &spec(&format!("S{i}"), BlockKind::Component),
+            Direction::Out,
+            "",
+        )?;
+        heights.push(render(&p, None).block(hub).ok_or("hub")?.rect.height());
+    }
+    assert_eq!(heights[0], MIN_H, "one relation keeps the minimum size");
+    assert!(heights[1] > MIN_H, "two relations grow the side: {heights:?}");
+    Ok(())
+}
+
+#[test]
 fn whitebox_shows_inherited_ends_on_the_frame() -> TestResult {
     let (p, shop) = sample()?;
     let view = diagram_view(&p, Some(shop));

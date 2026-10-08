@@ -11,7 +11,7 @@ use crate::text;
 use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
 pub const GAP: f32 = 110.0;
-pub const PORT_SPACING: f32 = 26.0;
+pub const PORT_SPACING: f32 = 40.0;
 pub const MIN_W: f32 = 150.0;
 pub const MIN_H: f32 = 80.0;
 pub const PAD: f32 = 18.0;
