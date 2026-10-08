@@ -254,6 +254,16 @@ impl Editor {
             .2
     }
 
+    /// The project's name for people: the file name without extension, or
+    /// "untitled" before the first save.
+    pub fn display_name(&self) -> String {
+        self.path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".into())
+    }
+
     pub fn title(&self) -> String {
         let name = self
             .path

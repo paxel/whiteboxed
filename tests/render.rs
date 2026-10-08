@@ -327,3 +327,23 @@ fn doc_screenshot_ai_access() -> TestResult {
     h.run();
     save(&mut h, "ai-access")
 }
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_unsaved_changes() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (p, _) = shop()?;
+    let mut e = editor_with(p);
+    e.save_as(&dir.path().join("Web Shop.yaml"))?;
+    e.dirty = true;
+    let mut h = harness(e);
+    h.run();
+    h.input_mut()
+        .viewports
+        .entry(egui::ViewportId::ROOT)
+        .or_default()
+        .events
+        .push(egui::ViewportEvent::Close);
+    h.run();
+    save(&mut h, "unsaved-changes")
+}

@@ -415,7 +415,7 @@ fn closing_with_unsaved_changes_asks_first() -> TestResult {
         .events
         .push(egui::ViewportEvent::Close);
     h.run();
-    button(&h, "Don't save").click();
+    button(&h, "Quit without saving").click();
     h.step();
     let closes = h
         .output()
@@ -640,5 +640,55 @@ fn an_ai_export_request_is_answered_in_the_window() -> TestResult {
     h.run();
     let allowed = std::fs::canonicalize(dir.path())?;
     assert_eq!(h.state().editor.ai_export_roots, vec![allowed]);
+    Ok(())
+}
+
+fn request_close(h: &mut Harness<'_, App>) {
+    h.input_mut()
+        .viewports
+        .entry(egui::ViewportId::ROOT)
+        .or_default()
+        .events
+        .push(egui::ViewportEvent::Close);
+    h.run();
+}
+
+fn closes(h: &Harness<'_, App>) -> bool {
+    h.output()
+        .viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .is_some_and(|v| v.commands.contains(&egui::ViewportCommand::Close))
+}
+
+#[test]
+fn escape_keeps_editing_and_enter_saves_before_quitting() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("shop.yaml");
+    let (mut e, _) = one_box()?;
+    e.save_as(&file)?;
+    e.project
+        .add_block(None, &BlockSpec::new("Billing", BlockKind::Component))?;
+    e.dirty = true;
+    let mut h = harness(e);
+    h.run();
+    request_close(&mut h);
+    assert!(
+        h.query_by_label("Save changes to \u{201c}shop\u{201d}?")
+            .is_some()
+    );
+    h.key_press(Key::Escape);
+    h.run();
+    assert!(
+        h.query_by_label("Keep editing").is_none(),
+        "the dialog is gone"
+    );
+    assert!(!closes(&h));
+    assert!(!h.state().is_closing());
+    request_close(&mut h);
+    h.key_press(Key::Enter);
+    h.run();
+    assert!(h.state().is_closing(), "Enter saves and quits");
+    assert!(!h.state().editor.dirty);
+    assert!(std::fs::read_to_string(&file)?.contains("Billing"));
     Ok(())
 }

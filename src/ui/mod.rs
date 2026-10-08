@@ -4,6 +4,7 @@ pub mod ai;
 pub mod canvas;
 pub mod details;
 pub mod icons;
+pub mod leave;
 pub mod popups;
 
 use std::path::{Path, PathBuf};
@@ -129,6 +130,11 @@ impl App {
         self.view.map(|(_, _, v)| v)
     }
 
+    /// Whether the window is about to close (the user confirmed quitting).
+    pub fn is_closing(&self) -> bool {
+        self.allow_close
+    }
+
     pub fn is_picking(&self) -> bool {
         self.picking
     }
@@ -182,6 +188,8 @@ impl App {
         if self.editor.dirty && !self.allow_close {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
             self.leave = Some(Leave::Quit);
+            // Draw the question right away, even if nothing else moves.
+            ctx.request_repaint();
         }
     }
 
@@ -844,38 +852,24 @@ impl App {
         let Some(leave) = self.leave.clone() else {
             return;
         };
-        let mut choice = None;
-        egui::Window::new("Unsaved changes")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.label("Save the changes to this project first?");
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        choice = Some(0);
-                    }
-                    if ui.button("Don't save").clicked() {
-                        choice = Some(1);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        choice = Some(2);
-                    }
-                });
-            });
-        match choice {
-            Some(0) => {
+        let occasion = match leave {
+            Leave::Quit => leave::Occasion::Quit,
+            Leave::New => leave::Occasion::New,
+            Leave::Open(_) => leave::Occasion::Open,
+        };
+        match leave::show(ctx, &self.editor.display_name(), occasion) {
+            Some(leave::Choice::Save) => {
                 if self.save() {
                     self.leave = None;
                     self.proceed(ctx, leave);
                 }
             }
-            Some(1) => {
+            Some(leave::Choice::Discard) => {
                 self.leave = None;
                 self.editor.forget_unsaved();
                 self.proceed(ctx, leave);
             }
-            Some(_) => self.leave = None,
+            Some(leave::Choice::Keep) => self.leave = None,
             None => {}
         }
     }
