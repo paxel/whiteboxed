@@ -650,3 +650,26 @@ fn labels_move_off_crossings() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn a_line_without_direction_has_no_arrowheads() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Undirected,
+        "",
+    )?;
+    let l = render(&p, None);
+    let line = l.lines.first().ok_or("line")?;
+    assert!(!line.arrow_start && !line.arrow_end);
+    let arrows = scene::scene(&l)
+        .shapes
+        .iter()
+        .filter(|s| matches!(s, scene::Shape::Polygon { .. }))
+        .count();
+    assert_eq!(arrows, 0);
+    Ok(())
+}

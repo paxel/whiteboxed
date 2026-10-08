@@ -121,16 +121,25 @@ pub enum Direction {
     Out,
     In,
     Bi,
+    /// A plain line without arrowheads.
+    #[serde(rename = "none")]
+    Undirected,
 }
 
 impl Direction {
-    pub const ALL: [Direction; 3] = [Direction::Out, Direction::In, Direction::Bi];
+    pub const ALL: [Direction; 4] = [
+        Direction::Out,
+        Direction::In,
+        Direction::Bi,
+        Direction::Undirected,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Direction::Out => "out",
             Direction::In => "in",
             Direction::Bi => "bi",
+            Direction::Undirected => "none",
         }
     }
 

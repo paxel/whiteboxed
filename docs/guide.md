@@ -65,7 +65,8 @@ box has content in its whitebox.
 A relation connects two boxes of the same diagram. It has:
 
 - a **direction** seen from the box you started at: **out** (arrow to the other box),
-  **in** (arrow to your box) or **bi** (both);
+  **in** (arrow to your box), **bi** (both) or **none** (a plain line without arrows;
+  the documentation lists it as both input and output of a communication partner);
 - an optional **text**, shown next to the line;
 - an optional **short label**, shown on the line instead of a long text;
 - a **line style**: the project's, or its own (square corners, slightly rounded,
@@ -330,7 +331,7 @@ relations:
     side: left
   - block: 5
     side: left
-  direction: out     # seen from a
+  direction: out     # seen from a: out, in, bi or none
   text: orders via browser
   short: browser     # optional: shown instead of a long text
   style: curved      # optional: overrides the project's line_style

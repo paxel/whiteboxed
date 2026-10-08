@@ -1,7 +1,7 @@
 //! arc42 text export: one AsciiDoc or Markdown file per diagram, with the image, the
 //! motivation and the tables arc42 asks for, plus an index that ties them together.
 
-use crate::model::{BlockId, DiagramId, End, Project};
+use crate::model::{BlockId, DiagramId, Direction, End, Project};
 use crate::view::{self, ViewEnd};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,10 +271,12 @@ fn context_doc(w: &mut Writer, project: &Project, image: &str) {
                 End::A => rel.direction.arrow_at_b(),
                 End::B => rel.direction.arrow_at_a(),
             };
-            if into_system {
+            // A line without arrows goes both ways as far as the table can tell.
+            let plain = rel.direction == Direction::Undirected;
+            if into_system || plain {
                 input.push(item.clone());
             }
-            if into_partner {
+            if into_partner || plain {
                 output.push(item);
             }
         }
@@ -301,13 +303,14 @@ fn context_doc(w: &mut Writer, project: &Project, image: &str) {
     }
 }
 
-/// "in" when the arrow points into the box, "out" when it points away.
+/// "in" when the arrow points into the box, "out" when it points away, "none" for a
+/// line without arrows.
 fn direction_word(toward_first: bool, toward_second: bool) -> &'static str {
     match (toward_first, toward_second) {
         (true, true) => "bi",
         (true, false) => "in",
         (false, true) => "out",
-        (false, false) => NONE,
+        (false, false) => "none",
     }
 }
 

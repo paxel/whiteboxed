@@ -154,3 +154,35 @@ fn typed_text_cannot_inject_markup_into_the_export() -> TestResult {
     assert!(md.contains("\\[click\\](javascript:alert(1))"));
     Ok(())
 }
+
+#[test]
+fn a_line_without_arrows_counts_as_input_and_output() -> TestResult {
+    let mut p = Project::new();
+    let spec = BlockSpec::new;
+    let shop = p.add_block(None, &spec("Shop", BlockKind::Component))?;
+    let (_, rel) = p.connect_new(
+        shop,
+        Side::Right,
+        &spec("Ops Team", BlockKind::Person),
+        Direction::Undirected,
+        "runbooks",
+    )?;
+    let md = doc::diagram_doc(&p, None, "context.svg", DocFormat::Markdown);
+    let row = md
+        .lines()
+        .find(|l| l.starts_with("| Ops Team"))
+        .ok_or("partner row")?;
+    let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+    assert_eq!(cells[3], "runbooks", "input: {row}");
+    assert_eq!(cells[4], "runbooks", "output: {row}");
+    // Inside the whitebox the interface reads "none".
+    let inner = p.add_block(Some(shop), &spec("Docs", BlockKind::Component))?;
+    p.attach(rel, End::A, shop, inner, Side::Right)?;
+    let md = doc::diagram_doc(&p, Some(shop), "shop.svg", DocFormat::Markdown);
+    assert!(
+        md.lines()
+            .any(|l| l.contains("runbooks") && l.contains("| none")),
+        "{md}"
+    );
+    Ok(())
+}

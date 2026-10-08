@@ -570,3 +570,23 @@ fn edit_relation_sets_the_side_at_a_box() -> TestResult {
     assert_eq!(e.project.relation(rel)?.text, "orders");
     Ok(())
 }
+
+#[test]
+fn relations_can_have_no_direction() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let out = call(
+        &mut e,
+        "connect_new",
+        json!({"from": "Web Shop", "side": "bottom", "name": "Ops", "kind": "person", "direction": "none", "text": "runbooks"}),
+    )?;
+    let rel = e
+        .project
+        .relations
+        .values()
+        .find(|r| r.text == "runbooks")
+        .ok_or("relation")?;
+    assert_eq!(rel.direction, Direction::Undirected);
+    assert!(out.to_string().contains("Ops"));
+    Ok(())
+}

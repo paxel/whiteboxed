@@ -903,3 +903,29 @@ fn project_settings_name_the_project() -> TestResult {
     assert_eq!(h.state().editor.title(), "whiteboxed \u{2013} Sanshain *");
     Ok(())
 }
+
+#[test]
+fn the_relation_dialog_offers_no_direction() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    e.project.connect_new(
+        shop,
+        Side::Right,
+        &BlockSpec::new("Billing", BlockKind::Component),
+        whiteboxed::model::Direction::Out,
+        "",
+    )?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    let mut h = harness(e);
+    h.run();
+    h.state_mut().editor.start_edit_relation(rel);
+    h.run();
+    h.get_by_label("none").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+    assert_eq!(
+        h.state().editor.project.relation(rel)?.direction,
+        whiteboxed::model::Direction::Undirected
+    );
+    Ok(())
+}

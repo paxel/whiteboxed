@@ -191,3 +191,22 @@ fn the_project_name_is_saved_only_when_set() -> TestResult {
     assert_eq!(persist::from_yaml(&yaml)?.name, "Sanshain");
     Ok(())
 }
+
+#[test]
+fn a_line_without_direction_is_written_as_none() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &BlockSpec::new("A", BlockKind::Component))?;
+    p.connect_new(
+        a,
+        Side::Right,
+        &BlockSpec::new("B", BlockKind::Component),
+        Direction::Undirected,
+        "",
+    )?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("direction: none"), "{yaml}");
+    let back = persist::from_yaml(&yaml)?;
+    let rel = back.relations.values().next().ok_or("relation")?;
+    assert_eq!(rel.direction, Direction::Undirected);
+    Ok(())
+}

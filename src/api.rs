@@ -140,6 +140,9 @@ pub enum ApiDirection {
     Out,
     In,
     Bi,
+    /// No arrowheads.
+    #[serde(rename = "none")]
+    Undirected,
 }
 
 impl From<ApiDirection> for Direction {
@@ -148,6 +151,7 @@ impl From<ApiDirection> for Direction {
             ApiDirection::Out => Direction::Out,
             ApiDirection::In => Direction::In,
             ApiDirection::Bi => Direction::Bi,
+            ApiDirection::Undirected => Direction::Undirected,
         }
     }
 }
@@ -213,7 +217,7 @@ pub struct ConnectNewArgs {
     pub tag: Option<String>,
     #[serde(default)]
     pub responsibility: Option<String>,
-    /// Seen from `from`: out (arrow to the new box, default), in, or bi.
+    /// Seen from `from`: out (arrow to the new box, default), in, bi, or none (no arrows).
     #[serde(default)]
     pub direction: Option<ApiDirection>,
     /// The interface, e.g. "REST", "orders via browser".
