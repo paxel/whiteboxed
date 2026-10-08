@@ -3,8 +3,8 @@
 
 use super::{
     Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint,
-    MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_TEXT, ModelError, ModelResult, PALETTE, Project,
-    Relation, RelationId, Rgb, Side, Tag, TagId,
+    MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_RELATIONS_PER_DIAGRAM, MAX_TEXT, ModelError, ModelResult,
+    PALETTE, Project, Relation, RelationId, Rgb, Side, Tag, TagId,
 };
 
 /// What the user enters for a box: name, type and an optional tag name.
@@ -159,6 +159,7 @@ impl Project {
         let origin = self.block(from)?;
         let diagram = origin.parent;
         let text = check_text(text)?;
+        self.check_relation_room(diagram)?;
         let cell = self.free_cell_near(diagram, origin.cell.toward(side), side, None);
         let new = self.insert_block(diagram, spec, cell)?;
         let rel = self.insert_relation(Relation {
@@ -220,6 +221,7 @@ impl Project {
     ) -> ModelResult<RelationId> {
         let diagram = self.check_pair(from, target)?;
         let text = check_text(text)?;
+        self.check_relation_room(diagram)?;
         self.place_partner(from, side, target, placement)?;
         let target_side = self.partner_side(from, side, target)?;
         Ok(self.insert_relation(Relation {
@@ -242,6 +244,7 @@ impl Project {
     ) -> ModelResult<RelationId> {
         let parent = self.block(from)?.parent;
         let text = check_text(text)?;
+        self.check_relation_room(None)?;
         let mut anchors: Vec<Anchor> = self
             .path(parent)
             .into_iter()
@@ -454,6 +457,18 @@ impl Project {
             },
         );
         Ok(id)
+    }
+
+    fn check_relation_room(&self, diagram: DiagramId) -> ModelResult<()> {
+        let count = self
+            .relations
+            .values()
+            .filter(|r| r.owner == diagram)
+            .count();
+        if count >= MAX_RELATIONS_PER_DIAGRAM {
+            return Err(ModelError::TooManyRelations);
+        }
+        Ok(())
     }
 
     fn insert_relation(&mut self, relation: Relation) -> RelationId {

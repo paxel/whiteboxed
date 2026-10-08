@@ -38,6 +38,12 @@ fn fnv(text: &str) -> u64 {
 pub fn write(file: &Path, project: &Project) -> Result<(), PersistError> {
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir)?;
+        // Unsaved work is nobody else's business on a shared machine.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+        }
     }
     persist::save(file, project)
 }

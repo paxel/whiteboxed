@@ -385,3 +385,23 @@ fn limits_keep_the_project_drawable() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_diagram_holds_a_bounded_number_of_relations() -> TestResult {
+    use whiteboxed::model::MAX_RELATIONS_PER_DIAGRAM;
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let b = p.add_block(None, &component("B"))?;
+    for _ in 0..MAX_RELATIONS_PER_DIAGRAM {
+        p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep)?;
+    }
+    assert_eq!(
+        p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep),
+        Err(ModelError::TooManyRelations)
+    );
+    assert_eq!(
+        p.add_stub(a, Side::Top, Direction::Out, ""),
+        Err(ModelError::TooManyRelations)
+    );
+    Ok(())
+}

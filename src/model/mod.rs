@@ -359,6 +359,8 @@ pub enum ModelError {
     DiagramFull,
     #[error("grid cells range from -{MAX_CELL} to {MAX_CELL}")]
     OutsideGrid,
+    #[error("a diagram can hold at most {MAX_RELATIONS_PER_DIAGRAM} relations")]
+    TooManyRelations,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;
@@ -368,6 +370,7 @@ pub const MAX_NAME: usize = 120;
 pub const MAX_TEXT: usize = 10_000;
 pub const MAX_BLOCKS_PER_DIAGRAM: usize = 250;
 pub const MAX_CELL: i32 = 1_000;
+pub const MAX_RELATIONS_PER_DIAGRAM: usize = 1_000;
 
 impl Cell {
     pub fn in_grid(self) -> bool {

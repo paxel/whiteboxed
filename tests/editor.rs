@@ -345,3 +345,18 @@ fn tag_colours_change_with_undo() -> TestResult {
     assert_eq!(e.tag_suggestions("c"), vec!["core".to_owned()]);
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn the_recovery_directory_is_private() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir()?;
+    let rec = dir.path().join("recovery");
+    let mut e = Editor::new(Some(rec.clone()));
+    add_first(&mut e, "Shop")?;
+    let now = Instant::now();
+    e.tick(now + Duration::from_secs(3));
+    let mode = std::fs::metadata(&rec)?.permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+    Ok(())
+}

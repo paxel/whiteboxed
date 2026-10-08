@@ -9,8 +9,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, MAX_BLOCKS_PER_DIAGRAM, Project,
-    Relation, RelationId, Rgb, Side, Tag, TagId,
+    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, MAX_BLOCKS_PER_DIAGRAM,
+    MAX_RELATIONS_PER_DIAGRAM, Project, Relation, RelationId, Rgb, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -242,6 +242,16 @@ fn check(project: &Project) -> Result<(), PersistError> {
     for (id, b) in &project.blocks {
         if let Some(other) = cells.insert((b.parent, b.cell), *id) {
             return invalid(format!("boxes {} and {} share a cell", other.0, id.0));
+        }
+    }
+    let mut per_owner: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
+    for r in project.relations.values() {
+        let count = per_owner.entry(r.owner).or_default();
+        *count += 1;
+        if *count > MAX_RELATIONS_PER_DIAGRAM {
+            return invalid(format!(
+                "more than {MAX_RELATIONS_PER_DIAGRAM} relations in one diagram"
+            ));
         }
     }
     for (id, r) in &project.relations {
