@@ -337,3 +337,51 @@ fn responsibility_and_motivation_are_stored_per_box_and_diagram() -> TestResult 
     assert_eq!(p.block(shop)?.responsibility, "Sells things.");
     Ok(())
 }
+
+#[test]
+fn limits_keep_the_project_drawable() -> TestResult {
+    use whiteboxed::model::{MAX_BLOCKS_PER_DIAGRAM, MAX_CELL, MAX_NAME, MAX_TEXT};
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    assert_eq!(
+        p.add_block(None, &component(&"x".repeat(MAX_NAME + 1))),
+        Err(ModelError::NameTooLong)
+    );
+    assert_eq!(
+        p.add_block(None, &component("bad\u{7}name")),
+        Err(ModelError::ControlCharacter)
+    );
+    assert_eq!(
+        p.add_block(None, &component("B").tagged("tag\u{0}")),
+        Err(ModelError::ControlCharacter)
+    );
+    assert_eq!(
+        p.set_responsibility(a, &"y".repeat(MAX_TEXT + 1)),
+        Err(ModelError::TextTooLong)
+    );
+    p.set_responsibility(a, "line one\r\nline two\tend")?;
+    assert_eq!(p.block(a)?.responsibility, "line one\nline two\tend");
+    assert_eq!(
+        p.move_block(a, Cell::new(MAX_CELL + 1, 0)),
+        Err(ModelError::OutsideGrid)
+    );
+    assert_eq!(
+        p.move_block(a, Cell::new(i32::MAX, 0)),
+        Err(ModelError::OutsideGrid)
+    );
+    // A box at the edge cannot get a neighbour beyond it.
+    p.move_block(a, Cell::new(MAX_CELL, 0))?;
+    assert_eq!(
+        p.connect_new(a, Side::Right, &component("Beyond"), Direction::Out, ""),
+        Err(ModelError::OutsideGrid)
+    );
+    let mut q = Project::new();
+    for i in 0..MAX_BLOCKS_PER_DIAGRAM {
+        q.add_block(None, &component(&format!("B{i}")))?;
+    }
+    assert_eq!(
+        q.add_block(None, &component("one too many")),
+        Err(ModelError::DiagramFull)
+    );
+    Ok(())
+}

@@ -349,9 +349,31 @@ pub enum ModelError {
     NotOnChain,
     #[error("this end is not open")]
     NotOpen,
+    #[error("a name can have at most {MAX_NAME} characters")]
+    NameTooLong,
+    #[error("a text can have at most {MAX_TEXT} characters")]
+    TextTooLong,
+    #[error("names and texts cannot contain control characters")]
+    ControlCharacter,
+    #[error("a diagram can hold at most {MAX_BLOCKS_PER_DIAGRAM} boxes")]
+    DiagramFull,
+    #[error("grid cells range from -{MAX_CELL} to {MAX_CELL}")]
+    OutsideGrid,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;
+
+/// Limits that keep a project drawable, also when an AI client fills it.
+pub const MAX_NAME: usize = 120;
+pub const MAX_TEXT: usize = 10_000;
+pub const MAX_BLOCKS_PER_DIAGRAM: usize = 250;
+pub const MAX_CELL: i32 = 1_000;
+
+impl Cell {
+    pub fn in_grid(self) -> bool {
+        self.col.abs() <= MAX_CELL && self.row.abs() <= MAX_CELL
+    }
+}
 
 /// A whole project: every level of every whitebox.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

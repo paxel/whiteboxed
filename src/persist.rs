@@ -9,8 +9,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, Project, Relation, RelationId,
-    Rgb, Side, Tag, TagId,
+    Anchor, Block, BlockId, BlockKind, Cell, Direction, Endpoint, MAX_BLOCKS_PER_DIAGRAM, Project,
+    Relation, RelationId, Rgb, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -223,6 +223,19 @@ fn check(project: &Project) -> Result<(), PersistError> {
         }
         if project.path(b.parent).contains(id) {
             return invalid(format!("box {} is nested inside itself", id.0));
+        }
+    }
+    let mut per_diagram: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
+    for (id, b) in &project.blocks {
+        if !b.cell.in_grid() {
+            return invalid(format!("box {} lies outside the grid", id.0));
+        }
+        let count = per_diagram.entry(b.parent).or_default();
+        *count += 1;
+        if *count > MAX_BLOCKS_PER_DIAGRAM {
+            return invalid(format!(
+                "more than {MAX_BLOCKS_PER_DIAGRAM} boxes in one diagram"
+            ));
         }
     }
     let mut cells = BTreeMap::new();

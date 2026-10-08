@@ -2,8 +2,9 @@
 //! first and only then mutates, so a failed operation leaves the project unchanged.
 
 use super::{
-    Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint, ModelError,
-    ModelResult, PALETTE, Project, Relation, RelationId, Rgb, Side, Tag, TagId,
+    Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint,
+    MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_TEXT, ModelError, ModelResult, PALETTE, Project,
+    Relation, RelationId, Rgb, Side, Tag, TagId,
 };
 
 /// What the user enters for a box: name, type and an optional tag name.
@@ -58,6 +59,9 @@ impl Project {
         if !spec.kind.can_drill() && self.has_content(id) {
             return Err(ModelError::KindHasContent(spec.kind.label()));
         }
+        if let Some(tag) = &spec.tag {
+            check_name_text(tag)?;
+        }
         let tag = self.resolve_tag(spec.tag.as_deref());
         let block = self.blocks.get_mut(&id).ok_or(ModelError::UnknownBlock)?;
         block.name = name;
@@ -68,6 +72,9 @@ impl Project {
 
     /// Moves a box to another grid cell; a box already there takes the old cell.
     pub fn move_block(&mut self, id: BlockId, cell: Cell) -> ModelResult<()> {
+        if !cell.in_grid() {
+            return Err(ModelError::OutsideGrid);
+        }
         let block = self.block(id)?;
         let (parent, old) = (block.parent, block.cell);
         let occupant = self
@@ -116,14 +123,15 @@ impl Project {
 
     /// Sets the responsibility text of a box.
     pub fn set_responsibility(&mut self, id: BlockId, text: &str) -> ModelResult<()> {
+        let text = check_text(text)?;
         let block = self.blocks.get_mut(&id).ok_or(ModelError::UnknownBlock)?;
-        block.responsibility = text.trim().to_owned();
+        block.responsibility = text;
         Ok(())
     }
 
     /// Sets the motivation of the context view (`None`) or of a whitebox.
     pub fn set_motivation(&mut self, diagram: DiagramId, text: &str) -> ModelResult<()> {
-        let text = text.trim().to_owned();
+        let text = check_text(text)?;
         match diagram {
             None => self.motivation = text,
             Some(id) => {
@@ -150,6 +158,7 @@ impl Project {
     ) -> ModelResult<(BlockId, RelationId)> {
         let origin = self.block(from)?;
         let diagram = origin.parent;
+        let text = check_text(text)?;
         let cell = self.free_cell_near(diagram, origin.cell.toward(side), side, None);
         let new = self.insert_block(diagram, spec, cell)?;
         let rel = self.insert_relation(Relation {
@@ -157,7 +166,7 @@ impl Project {
             a: Endpoint::at(from, side),
             b: Endpoint::at(new, side.opposite()),
             direction,
-            text: text.trim().to_owned(),
+            text,
         });
         Ok((new, rel))
     }
@@ -210,6 +219,7 @@ impl Project {
         placement: Placement,
     ) -> ModelResult<RelationId> {
         let diagram = self.check_pair(from, target)?;
+        let text = check_text(text)?;
         self.place_partner(from, side, target, placement)?;
         let target_side = self.partner_side(from, side, target)?;
         Ok(self.insert_relation(Relation {
@@ -217,7 +227,7 @@ impl Project {
             a: Endpoint::at(from, side),
             b: Endpoint::at(target, target_side),
             direction,
-            text: text.trim().to_owned(),
+            text,
         }))
     }
 
@@ -231,6 +241,7 @@ impl Project {
         text: &str,
     ) -> ModelResult<RelationId> {
         let parent = self.block(from)?.parent;
+        let text = check_text(text)?;
         let mut anchors: Vec<Anchor> = self
             .path(parent)
             .into_iter()
@@ -242,7 +253,7 @@ impl Project {
             a: Endpoint { anchors },
             b: Endpoint::open(),
             direction,
-            text: text.trim().to_owned(),
+            text,
         }))
     }
 
@@ -368,12 +379,13 @@ impl Project {
         direction: Direction,
         text: &str,
     ) -> ModelResult<()> {
+        let text = check_text(text)?;
         let relation = self
             .relations
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?;
         relation.direction = direction;
-        relation.text = text.trim().to_owned();
+        relation.text = text;
         Ok(())
     }
 
@@ -418,6 +430,15 @@ impl Project {
         self.check_diagram(diagram)?;
         let name = self.check_name(diagram, &spec.name, None)?;
         self.check_kind(diagram, spec.kind)?;
+        if let Some(tag) = &spec.tag {
+            check_name_text(tag)?;
+        }
+        if !cell.in_grid() {
+            return Err(ModelError::OutsideGrid);
+        }
+        if self.blocks_in(diagram).count() >= MAX_BLOCKS_PER_DIAGRAM {
+            return Err(ModelError::DiagramFull);
+        }
         let tag = self.resolve_tag(spec.tag.as_deref());
         let id = BlockId(self.allocate());
         self.blocks.insert(
@@ -465,6 +486,7 @@ impl Project {
         if name.is_empty() {
             return Err(ModelError::EmptyName);
         }
+        check_name_text(name)?;
         let lower = name.to_lowercase();
         let taken = self
             .blocks_in(diagram)
@@ -556,10 +578,13 @@ impl Project {
             return Ok(());
         }
         let broken = self.conflicts(from, side, target)?;
-        if let Some(cell) = self.partner_cell(from, side, target)?
-            && let Some(block) = self.blocks.get_mut(&target)
-        {
-            block.cell = cell;
+        if let Some(cell) = self.partner_cell(from, side, target)? {
+            if !cell.in_grid() {
+                return Err(ModelError::OutsideGrid);
+            }
+            if let Some(block) = self.blocks.get_mut(&target) {
+                block.cell = cell;
+            }
         }
         for rel in broken {
             self.reside(rel)?;
@@ -608,4 +633,30 @@ fn open_ends(relation: &Relation) -> ModelResult<(&Endpoint, &Endpoint)> {
     } else {
         Err(ModelError::NotOpen)
     }
+}
+
+/// A name or tag: one line, no control characters, at most `MAX_NAME` characters.
+fn check_name_text(name: &str) -> ModelResult<()> {
+    if name.chars().any(char::is_control) {
+        return Err(ModelError::ControlCharacter);
+    }
+    if name.trim().chars().count() > MAX_NAME {
+        return Err(ModelError::NameTooLong);
+    }
+    Ok(())
+}
+
+/// A free text: line breaks and tabs allowed, other control characters not.
+fn check_text(text: &str) -> ModelResult<String> {
+    let text = text.trim().replace("\r\n", "\n");
+    if text
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        return Err(ModelError::ControlCharacter);
+    }
+    if text.chars().count() > MAX_TEXT {
+        return Err(ModelError::TextTooLong);
+    }
+    Ok(text)
 }
