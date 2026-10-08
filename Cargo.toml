@@ -6,6 +6,21 @@ description = "WYSIWYG editor for arc42 building-block views"
 license = "MIT"
 repository = "https://github.com/paxel/whiteboxed"
 
+[lints.rust]
+# No-`unsafe` policy, as in sanshain-service; whiteboxed needs no exception.
+unsafe_code = "forbid"
+
+[lints.clippy]
+# No-panic policy, as in sanshain-service. Test code is exempt via clippy.toml.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# No-`#[allow]` policy: fix the lint instead of silencing it.
+allow_attributes = "deny"
+
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }
 base64 = "0.22"
