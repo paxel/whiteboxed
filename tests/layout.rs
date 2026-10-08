@@ -171,7 +171,10 @@ fn the_second_relation_on_a_side_already_grows_the_box() -> TestResult {
         heights.push(render(&p, None).block(hub).ok_or("hub")?.rect.height());
     }
     assert_eq!(heights[0], MIN_H, "one relation keeps the minimum size");
-    assert!(heights[1] > MIN_H, "two relations grow the side: {heights:?}");
+    assert!(
+        heights[1] > MIN_H,
+        "two relations grow the side: {heights:?}"
+    );
     Ok(())
 }
 
@@ -626,4 +629,24 @@ fn a_jump_bulges_over_the_crossing_in_either_direction() {
         let xs: Vec<f32> = out.iter().map(|p| p.x).collect();
         assert!(xs.windows(2).all(|w| (w[1] - w[0]) * (to - from) >= -0.01));
     }
+}
+
+#[test]
+fn labels_move_off_crossings() -> TestResult {
+    // "receipt" runs down through the middle of the REST line, where its label was.
+    let (p, _) = sample()?;
+    let l = render(&p, None);
+    let crossings = layout::crossings(&l);
+    assert!(!crossings.is_empty());
+    for c in crossings {
+        for line in &l.lines {
+            assert!(
+                line.label_at.dist(c.at) > 20.0,
+                "label of {} sits on the crossing at {:?}",
+                line.text,
+                c.at
+            );
+        }
+    }
+    Ok(())
 }

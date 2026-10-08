@@ -128,9 +128,13 @@ pub struct Crossing {
 /// Every point where a horizontal segment of one relation crosses a vertical
 /// segment of another, away from both segments' ends.
 pub fn crossings(layout: &Layout) -> Vec<Crossing> {
+    line_crossings(&layout.lines)
+}
+
+fn line_crossings(lines: &[LineGeom]) -> Vec<Crossing> {
     let mut out = Vec::new();
-    for (hl, h) in layout.lines.iter().enumerate() {
-        for (vl, v) in layout.lines.iter().enumerate() {
+    for (hl, h) in lines.iter().enumerate() {
+        for (vl, v) in lines.iter().enumerate() {
             if h.relation == v.relation {
                 continue;
             }
@@ -557,6 +561,18 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     for (li, geom) in lines.iter_mut().enumerate() {
         if let Some(text) = shown.get(li) {
             geom.text = text.clone();
+        }
+    }
+    // A label over a crossing would hide the jump: move it along its segment.
+    let found = line_crossings(&lines);
+    for (li, geom) in lines.iter_mut().enumerate() {
+        let marks: Vec<Pos> = found
+            .iter()
+            .filter(|c| c.horizontal == li || c.vertical == li)
+            .map(|c| c.at)
+            .collect();
+        if geom.tip.is_none() && !marks.is_empty() {
+            geom.label_at = clear_of(&geom.points, geom.label_at, geom.label_horizontal, &marks);
         }
     }
     // The legend goes below everything, as wide as the diagram (or a readable
@@ -1169,6 +1185,46 @@ fn build_line(
 }
 
 /// Middle of the longest horizontal segment, else of the longest vertical one.
+/// The middle of the longest stretch between crossings on the segment that holds
+/// the label at `at`; `at` itself when no crossing lies on that segment.
+fn clear_of(points: &[Pos], at: Pos, horizontal: bool, marks: &[Pos]) -> Pos {
+    let along = |p: Pos| if horizontal { p.x } else { p.y };
+    let across = |p: Pos| if horizontal { p.y } else { p.x };
+    let Some(w) = points.windows(2).find(|w| {
+        (across(w[0]) - across(at)).abs() < 0.01
+            && (across(w[1]) - across(at)).abs() < 0.01
+            && along(at) >= along(w[0]).min(along(w[1])) - 0.01
+            && along(at) <= along(w[0]).max(along(w[1])) + 0.01
+    }) else {
+        return at;
+    };
+    let (lo, hi) = (along(w[0]).min(along(w[1])), along(w[0]).max(along(w[1])));
+    let mut cuts: Vec<f32> = marks
+        .iter()
+        .filter(|m| (across(**m) - across(at)).abs() < 0.01 && along(**m) > lo && along(**m) < hi)
+        .map(|m| along(*m))
+        .collect();
+    if cuts.is_empty() {
+        return at;
+    }
+    cuts.push(lo);
+    cuts.push(hi);
+    cuts.sort_by(f32::total_cmp);
+    let (a, b) = cuts
+        .windows(2)
+        .map(|c| (c[0], c[1]))
+        .fold(
+            (lo, lo),
+            |best, c| if c.1 - c.0 > best.1 - best.0 { c } else { best },
+        );
+    let mid = (a + b) / 2.0;
+    if horizontal {
+        Pos::new(mid, at.y)
+    } else {
+        Pos::new(at.x, mid)
+    }
+}
+
 fn label_position(points: &[Pos]) -> (Pos, bool) {
     let longest = |horizontal: bool| {
         points
