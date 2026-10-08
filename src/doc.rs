@@ -86,7 +86,11 @@ impl Writer {
         self.out.push_str("\n\n");
     }
 
+    /// An image; nothing when there is no file (the export wrote no picture).
     fn image(&mut self, file: &str, alt: &str) {
+        if file.is_empty() {
+            return;
+        }
         let alt = inert(self.format, alt).replace(']', "\\]");
         match self.format {
             DocFormat::AsciiDoc => self.out.push_str(&format!("image::{file}[{alt}]\n\n")),

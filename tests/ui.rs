@@ -1013,3 +1013,37 @@ fn deleting_one_branch_of_a_fanned_out_line_keeps_the_other() -> TestResult {
     assert_eq!(landed, vec![ui]);
     Ok(())
 }
+
+#[test]
+fn the_export_dialog_writes_the_files_and_remembers_the_choice() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Export\u{2026}").click();
+    h.run();
+    assert!(h.state().export.open);
+    let target = dir.path().join("docs");
+    h.state_mut().export.set_folder(target.clone());
+    h.get_by_label("Markdown").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Export")
+        .click();
+    h.run();
+    assert!(!h.state().export.open);
+    assert!(target.join("context.svg").exists());
+    assert!(target.join("context.png").exists());
+    assert!(target.join("index.md").exists());
+    let remembered = h
+        .state()
+        .editor
+        .project
+        .export
+        .clone()
+        .ok_or("not remembered")?;
+    assert_eq!(remembered.text, Some(whiteboxed::doc::DocFormat::Markdown));
+    assert_eq!(remembered.folder, target.to_string_lossy());
+    Ok(())
+}

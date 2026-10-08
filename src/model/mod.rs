@@ -463,7 +463,38 @@ pub struct Project {
     /// Relation texts longer than this many characters (without a short label)
     /// become numbers with a legend; 0 numbers every text, `None` never shortens.
     pub label_limit: Option<u32>,
+    /// The last choices made in File > Export…
+    pub export: Option<ExportChoice>,
     pub next_id: u64,
+}
+
+/// What File > Export… writes, and where.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportChoice {
+    /// Every diagram, or only the one shown.
+    pub all: bool,
+    pub svg: bool,
+    pub png: bool,
+    /// Pixels per diagram unit for the PNG: 1, 2 or 3.
+    pub png_scale: u8,
+    /// A text file per diagram (and an index when exporting all), or none.
+    pub text: Option<crate::doc::DocFormat>,
+    /// The target folder: relative to the project file when it lies in the same
+    /// repository, otherwise absolute. Empty until one is chosen.
+    pub folder: String,
+}
+
+impl Default for ExportChoice {
+    fn default() -> Self {
+        ExportChoice {
+            all: true,
+            svg: true,
+            png: true,
+            png_scale: 2,
+            text: Some(crate::doc::DocFormat::AsciiDoc),
+            folder: String::new(),
+        }
+    }
 }
 
 /// The label limit a new project starts with.
@@ -479,6 +510,7 @@ impl Default for Project {
             motivation: String::new(),
             line_style: LineStyle::default(),
             label_limit: DEFAULT_LABEL_LIMIT,
+            export: None,
             next_id: 0,
         }
     }

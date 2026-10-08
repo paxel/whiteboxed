@@ -3,6 +3,7 @@
 pub mod ai;
 pub mod canvas;
 pub mod details;
+pub mod export;
 pub mod icons;
 pub mod leave;
 pub mod popups;
@@ -16,7 +17,6 @@ use egui::{
     Sense, Stroke, Ui, ViewportCommand, vec2,
 };
 
-use crate::doc::DocFormat;
 use crate::editor::{Editor, Popup, Target};
 use crate::geom;
 use crate::hit::{self, Hit};
@@ -99,6 +99,7 @@ pub struct App {
     draft: Option<details::Draft>,
     pub ai: ai::Ai,
     pub settings: settings::Settings,
+    pub export: export::ExportDialog,
 }
 
 impl eframe::App for App {
@@ -129,6 +130,7 @@ impl App {
             draft: None,
             ai: ai::Ai::new(None),
             settings: settings::Settings::new(None),
+            export: export::ExportDialog::default(),
         }
     }
 
@@ -202,6 +204,7 @@ impl App {
         self.popup(&ctx);
         self.ai.dialog(&ctx, &mut self.editor);
         self.settings.show(&ctx, &mut self.editor);
+        self.export.show(&ctx, &mut self.editor);
         self.ai.export_prompt(&ctx, &mut self.editor);
         self.leave_dialog(&ctx);
     }
@@ -317,17 +320,9 @@ impl App {
                     self.settings.open = true;
                 }
                 ui.separator();
-                if ui.button("Export diagram as SVG\u{2026}").clicked() {
-                    self.export("svg");
-                }
-                if ui.button("Export diagram as PNG\u{2026}").clicked() {
-                    self.export("png");
-                }
-                if ui.button("Export all as AsciiDoc\u{2026}").clicked() {
-                    self.export_all(DocFormat::AsciiDoc);
-                }
-                if ui.button("Export all as Markdown\u{2026}").clicked() {
-                    self.export_all(DocFormat::Markdown);
+                if ui.button("Export\u{2026}").clicked() {
+                    self.commit_draft();
+                    self.export.start(&self.editor);
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
@@ -1138,38 +1133,6 @@ impl App {
                 false
             }
         }
-    }
-
-    fn export(&mut self, ext: &str) {
-        self.commit_draft();
-        let name = format!("{}.{ext}", self.editor.file_name_for(self.editor.diagram));
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter(ext.to_uppercase(), &[ext])
-            .set_file_name(name)
-            .save_file()
-        else {
-            return;
-        };
-        let result = if ext == "svg" {
-            self.editor.export_svg(&path)
-        } else {
-            self.editor.export_png(&path)
-        };
-        self.editor.message = Some(match result {
-            Ok(()) => format!("Exported {}", path.display()),
-            Err(e) => format!("Export failed: {e}"),
-        });
-    }
-
-    fn export_all(&mut self, format: DocFormat) {
-        self.commit_draft();
-        let Some(dir) = rfd::FileDialog::new().pick_folder() else {
-            return;
-        };
-        self.editor.message = Some(match self.editor.export_all(&dir, format) {
-            Ok(n) => format!("Exported {n} diagrams to {}", dir.display()),
-            Err(e) => format!("Export failed: {e}"),
-        });
     }
 }
 

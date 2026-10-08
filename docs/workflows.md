@@ -117,8 +117,8 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 
 ## Put the diagrams into the arc42 document
 
-1. **File > Export all as AsciiDoc…** (or **as Markdown…**) and pick a folder, e.g.
-   `docs/arc42/building-blocks`.
+1. **File > Export…**: **All diagrams**, SVG and PNG, **AsciiDoc** (or **Markdown**),
+   and a folder, e.g. `docs/arc42/building-blocks`. The project remembers all of it.
 2. You get, per diagram, an SVG, a PNG and a text file named after the breadcrumb
    (`context.adoc`, `context - Web Shop.adoc`), plus `index.adoc`.
 3. Without an arc42 document yet: use `index.adoc` (or `index.md`) as it is.

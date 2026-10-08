@@ -8,8 +8,8 @@ use crate::doc::{self, DocFormat};
 use crate::export::{self, ExportError};
 use crate::layout::{self, Layout};
 use crate::model::{
-    BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, LineStyle, ModelError,
-    Placement, Project, RelationId, Rgb, Side, TagId,
+    BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, ExportChoice, LineStyle,
+    ModelError, Placement, Project, RelationId, Rgb, Side, TagId,
 };
 use crate::persist::{self, PersistError};
 use crate::recovery;
@@ -425,7 +425,9 @@ impl Editor {
     }
 
     pub fn undo(&mut self) {
-        if let Some(previous) = self.undo.pop() {
+        if let Some(mut previous) = self.undo.pop() {
+            // The export choices are no edit: they stay as they are.
+            previous.export = self.project.export.clone();
             let current = std::mem::replace(&mut self.project, previous);
             self.redo.push(current);
             self.popup = None;
@@ -434,7 +436,8 @@ impl Editor {
     }
 
     pub fn redo(&mut self) {
-        if let Some(next) = self.redo.pop() {
+        if let Some(mut next) = self.redo.pop() {
+            next.export = self.project.export.clone();
             let current = std::mem::replace(&mut self.project, next);
             self.undo.push(current);
             self.popup = None;
@@ -961,43 +964,103 @@ impl Editor {
 
     // ----- export -----
 
-    pub fn export_svg(&mut self, path: &Path) -> Result<(), ExportError> {
-        let svg = export::to_svg(&scene::scene(self.layout()));
-        write_file(path, svg)?;
-        Ok(())
-    }
-
-    pub fn export_png(&mut self, path: &Path) -> Result<(), ExportError> {
-        let png = export::to_png(&scene::scene(self.layout()), 2.0)?;
-        write_file(path, png)?;
-        Ok(())
-    }
-
     /// Exports the context view and every whitebox with content into `dir`: an SVG
     /// and a PNG each, a text file each in `format`, and an index over the texts.
     /// Returns the number of diagrams written.
     pub fn export_all(&self, dir: &Path, format: DocFormat) -> Result<usize, ExportError> {
-        let diagrams = doc::diagrams(&self.project);
-        let ext = format.extension();
+        let choice = ExportChoice {
+            text: Some(format),
+            ..ExportChoice::default()
+        };
+        self.export(&choice, dir)?;
+        Ok(doc::diagrams(&self.project).len())
+    }
+
+    /// Writes what `choice` asks for into `dir`: for the current diagram or every
+    /// diagram an SVG, a PNG and a text file each, and with every diagram's text an
+    /// index over them. Returns the number of files written.
+    pub fn export(&self, choice: &ExportChoice, dir: &Path) -> Result<usize, ExportError> {
+        let diagrams = if choice.all {
+            doc::diagrams(&self.project)
+        } else {
+            vec![self.diagram]
+        };
+        let mut files = 0;
         let mut entries = Vec::new();
         for diagram in &diagrams {
             let l = layout::layout(&self.project, &view::diagram_view(&self.project, *diagram));
             let s = scene::scene(&l);
             let name = self.file_name_for(*diagram);
-            write_file(&dir.join(format!("{name}.svg")), export::to_svg(&s))?;
-            write_file(&dir.join(format!("{name}.png")), export::to_png(&s, 2.0)?)?;
-            let text = doc::diagram_doc(&self.project, *diagram, &format!("{name}.svg"), format);
-            write_file(&dir.join(format!("{name}.{ext}")), text)?;
+            if choice.svg {
+                write_file(&dir.join(format!("{name}.svg")), export::to_svg(&s))?;
+                files += 1;
+            }
+            if choice.png {
+                let scale = f32::from(choice.png_scale.clamp(1, 3));
+                write_file(&dir.join(format!("{name}.png")), export::to_png(&s, scale)?)?;
+                files += 1;
+            }
+            if let Some(format) = choice.text {
+                let image = match (choice.svg, choice.png) {
+                    (true, _) => format!("{name}.svg"),
+                    (false, true) => format!("{name}.png"),
+                    (false, false) => String::new(),
+                };
+                let text = doc::diagram_doc(&self.project, *diagram, &image, format);
+                write_file(&dir.join(format!("{name}.{}", format.extension())), text)?;
+                files += 1;
+            }
             entries.push((*diagram, name));
         }
-        let title = self
-            .project
-            .display_name()
-            .or_else(|| self.file_stem())
-            .unwrap_or_else(|| "Architecture".to_owned());
-        let index = doc::index_doc(&self.project, &title, &entries, format);
-        write_file(&dir.join(format!("index.{ext}")), index)?;
-        Ok(diagrams.len())
+        if let (Some(format), true) = (choice.text, choice.all) {
+            let title = self
+                .project
+                .display_name()
+                .or_else(|| self.file_stem())
+                .unwrap_or_else(|| "Architecture".to_owned());
+            let index = doc::index_doc(&self.project, &title, &entries, format);
+            write_file(&dir.join(format!("index.{}", format.extension())), index)?;
+            files += 1;
+        }
+        Ok(files)
+    }
+
+    /// Keeps the choices of the export dialog with the project, without an undo step.
+    pub fn remember_export(&mut self, choice: ExportChoice) {
+        if self.project.export.as_ref() != Some(&choice) {
+            self.project.export = Some(choice);
+            self.touched();
+        }
+    }
+
+    /// The export folder of `choice` as an absolute path, if one was chosen.
+    pub fn export_folder(&self, choice: &ExportChoice) -> Option<PathBuf> {
+        if choice.folder.is_empty() {
+            return None;
+        }
+        let folder = PathBuf::from(&choice.folder);
+        if folder.is_absolute() {
+            return Some(folder);
+        }
+        let base = self.path.as_ref()?.parent()?;
+        Some(normalize(&base.join(folder)))
+    }
+
+    /// How to store `folder` in the project: relative to the project file when both
+    /// lie in the same repository, else absolute. The flag says it lies outside.
+    pub fn folder_to_store(&self, folder: &Path) -> (String, bool) {
+        let absolute = || (folder.to_string_lossy().into_owned(), true);
+        let Some(base) = self.path.as_ref().and_then(|p| p.parent()) else {
+            return absolute();
+        };
+        let root = repository_root(base).unwrap_or_else(|| base.to_path_buf());
+        if !folder.starts_with(&root) {
+            return absolute();
+        }
+        match relative_path(base, folder) {
+            Some(rel) => (rel, false),
+            None => absolute(),
+        }
     }
 
     /// File name for a diagram: its breadcrumb, e.g. `context - Shop - Orders`.
@@ -1010,6 +1073,51 @@ impl Editor {
         }
         safe_file_name(&parts.join(" - "))
     }
+}
+
+/// The nearest folder at or above `dir` that holds a `.git`.
+fn repository_root(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors()
+        .find(|d| d.join(".git").exists())
+        .map(Path::to_path_buf)
+}
+
+/// `to` relative to `from` (both absolute), with `..` where needed.
+fn relative_path(from: &Path, to: &Path) -> Option<String> {
+    use std::path::Component;
+    let from: Vec<Component> = from.components().collect();
+    let to: Vec<Component> = to.components().collect();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    if common == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = vec!["..".to_owned(); from.len() - common];
+    parts.extend(
+        to[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    Some(if parts.is_empty() {
+        ".".to_owned()
+    } else {
+        parts.join("/")
+    })
+}
+
+/// `path` with `.` and `..` resolved by text, without touching the disk.
+fn normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// `name` with everything but letters, digits, spaces and `-_.` replaced by `_`.

@@ -199,16 +199,25 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
 
 ## Export
 
-File > **Export diagram as SVG/PNG** writes the diagram on screen. Exports look
-exactly like the canvas.
+**File > Export…** opens one dialog for everything. Exports look exactly like the
+canvas.
 
-**Export all as AsciiDoc…** and **Export all as Markdown…** write, for the context
-view and every whitebox with content, into one folder:
+![The export dialog: all diagrams, SVG and PNG at 2×, AsciiDoc, into docs/arc42](screenshots/export.png)
 
-- an SVG and a PNG, named after the breadcrumb (e.g. `context - Web Shop.svg`);
-- a text file with the same name (`context - Web Shop.adoc` or `.md`);
-- `index.adoc` or `index.md`, which puts them in order: the context first, then the
-  whiteboxes level by level.
+- **What**: the diagram on screen, or all diagrams (the context view and every
+  whitebox with content).
+- **Pictures**: SVG, and PNG at 1×, 2× or 3× the canvas size, named after the
+  breadcrumb (e.g. `context - Web Shop.svg`).
+- **Text**: none, AsciiDoc or Markdown: a text file per diagram with the same name
+  (`context - Web Shop.adoc` or `.md`). With all diagrams also `index.adoc` or
+  `index.md`, which puts them in order: the context first, then the whiteboxes level
+  by level.
+- **Folder**: where the files go. A missing folder is created.
+
+The dialog remembers your choices in the project file, so the next export of a
+checkout writes to the same place. The folder is kept relative to the project file
+when both lie in the same repository (the nearest folder with a `.git`), else as an
+absolute path; the dialog says so.
 
 The context file holds the image, the motivation as explanation, and two tables. A
 partner's description is the responsibility typed for that person or external system.
@@ -353,7 +362,8 @@ relations:
 
 Project-wide settings sit at the top of the file and are only written when they
 differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
-default `round12`) and `label_limit` (default 24; `never` turns shortening off).
+default `round12`), `label_limit` (default 24; `never` turns shortening off) and
+`export` (the last choices of File > Export…).
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,
   `external_system`.

@@ -484,3 +484,79 @@ fn connect_existing_adds_a_landing_and_one_landing_can_be_removed() -> TestResul
     assert_eq!(landed(&e), vec![ui, api]);
     Ok(())
 }
+
+#[test]
+fn export_writes_only_what_was_chosen() -> TestResult {
+    use whiteboxed::model::ExportChoice;
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    let shop = add_first(&mut e, "Shop")?;
+    e.open_diagram(Some(shop));
+    add_first(&mut e, "Orders")?;
+    // This diagram only, a 3x PNG and Markdown that shows the PNG.
+    let choice = ExportChoice {
+        all: false,
+        svg: false,
+        png: true,
+        png_scale: 3,
+        text: Some(DocFormat::Markdown),
+        folder: String::new(),
+    };
+    assert_eq!(e.export(&choice, dir.path())?, 2);
+    let mut names: Vec<String> = std::fs::read_dir(dir.path())?
+        .filter_map(|f| f.ok())
+        .map(|f| f.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["context - Shop.md", "context - Shop.png"]);
+    let md = std::fs::read_to_string(dir.path().join("context - Shop.md"))?;
+    assert!(md.contains("(<context - Shop.png>)"), "{md}");
+    let png = std::fs::read(dir.path().join("context - Shop.png"))?;
+    let w3 = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+    let one = ExportChoice {
+        png_scale: 1,
+        text: None,
+        ..choice
+    };
+    e.export(&one, dir.path())?;
+    let png = std::fs::read(dir.path().join("context - Shop.png"))?;
+    let w1 = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+    assert!((w3 as f32 / w1 as f32 - 3.0).abs() < 0.05, "{w3} vs {w1}");
+    Ok(())
+}
+
+#[test]
+fn the_export_folder_is_kept_relative_inside_the_repository() -> TestResult {
+    use whiteboxed::model::ExportChoice;
+    let tmp = tempfile::tempdir()?;
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git"))?;
+    std::fs::create_dir_all(repo.join("arch"))?;
+    let mut e = Editor::new(None);
+    add_first(&mut e, "Shop")?;
+    // Not saved yet: absolute.
+    let docs = repo.join("docs/arc42");
+    assert_eq!(
+        e.folder_to_store(&docs),
+        (docs.to_string_lossy().into_owned(), true)
+    );
+    e.save_as(&repo.join("arch/shop.yaml"))?;
+    let (stored, outside) = e.folder_to_store(&docs);
+    assert_eq!((stored.as_str(), outside), ("../docs/arc42", false));
+    let elsewhere = tmp.path().join("elsewhere");
+    assert_eq!(
+        e.folder_to_store(&elsewhere),
+        (elsewhere.to_string_lossy().into_owned(), true)
+    );
+    // Remembered with the project, read back as the same absolute folder, kept by undo.
+    let choice = ExportChoice {
+        folder: stored,
+        ..ExportChoice::default()
+    };
+    e.remember_export(choice.clone());
+    assert!(e.dirty);
+    assert_eq!(e.export_folder(&choice), Some(docs));
+    e.undo();
+    assert_eq!(e.project.export, Some(choice));
+    Ok(())
+}

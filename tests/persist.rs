@@ -265,3 +265,27 @@ fn a_fanned_out_relation_round_trips_and_bad_trees_are_rejected() -> TestResult 
     ));
     Ok(())
 }
+
+#[test]
+fn the_export_choice_is_saved_with_the_project() -> TestResult {
+    use whiteboxed::doc::DocFormat;
+    use whiteboxed::model::ExportChoice;
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("export:"));
+    p.export = Some(ExportChoice {
+        all: false,
+        svg: true,
+        png: false,
+        png_scale: 3,
+        text: Some(DocFormat::Markdown),
+        folder: "../docs/arc42".into(),
+    });
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("export:\n  all: false\n"), "{yaml}");
+    assert!(
+        yaml.contains("  text: markdown\n  folder: ../docs/arc42\n"),
+        "{yaml}"
+    );
+    assert_eq!(persist::from_yaml(&yaml)?.export, p.export);
+    Ok(())
+}

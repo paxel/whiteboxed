@@ -366,3 +366,20 @@ fn doc_screenshot_project_settings() -> TestResult {
     h.run();
     save(&mut h, "project-settings")
 }
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_export() -> TestResult {
+    let (p, _) = shop()?;
+    let mut e = editor_with(p);
+    e.path = Some("/home/you/web-shop/architecture.yaml".into());
+    let mut h = harness(e);
+    h.run();
+    let editor = &h.state().editor;
+    let mut dialog = whiteboxed::ui::export::ExportDialog::default();
+    dialog.start(editor);
+    dialog.set_folder("/home/you/web-shop/docs/arc42".into());
+    h.state_mut().export = dialog;
+    h.run();
+    save(&mut h, "export")
+}

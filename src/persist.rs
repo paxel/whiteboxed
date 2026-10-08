@@ -9,9 +9,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint, LineStyle,
-    MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation, RelationId, Rgb, Side,
-    Tag, TagId,
+    Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
+    ExportChoice, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation,
+    RelationId, Rgb, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -41,12 +41,52 @@ struct FileDto {
     /// Written only when it differs from the default; `never` turns shortening off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     label_limit: Option<LimitDto>,
+    /// The last choices of File > Export…
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export: Option<ExportDto>,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
     blocks: Vec<BlockDto>,
     #[serde(default)]
     relations: Vec<RelationDto>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportDto {
+    all: bool,
+    svg: bool,
+    png: bool,
+    png_scale: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text: Option<TextDto>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    folder: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum TextDto {
+    AsciiDoc,
+    Markdown,
+}
+
+impl From<crate::doc::DocFormat> for TextDto {
+    fn from(f: crate::doc::DocFormat) -> Self {
+        match f {
+            crate::doc::DocFormat::AsciiDoc => TextDto::AsciiDoc,
+            crate::doc::DocFormat::Markdown => TextDto::Markdown,
+        }
+    }
+}
+
+impl From<TextDto> for crate::doc::DocFormat {
+    fn from(t: TextDto) -> Self {
+        match t {
+            TextDto::AsciiDoc => crate::doc::DocFormat::AsciiDoc,
+            TextDto::Markdown => crate::doc::DocFormat::Markdown,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -145,6 +185,14 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 None => LimitDto::Never(Never::Never),
             },
         ),
+        export: project.export.as_ref().map(|e| ExportDto {
+            all: e.all,
+            svg: e.svg,
+            png: e.png,
+            png_scale: e.png_scale,
+            text: e.text.map(TextDto::from),
+            folder: e.folder.clone(),
+        }),
         tags: project
             .tags
             .iter()
@@ -204,6 +252,14 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         Some(LimitDto::Chars(n)) => Some(n),
         Some(LimitDto::Never(_)) => None,
     };
+    project.export = dto.export.map(|e| ExportChoice {
+        all: e.all,
+        svg: e.svg,
+        png: e.png,
+        png_scale: e.png_scale.clamp(1, 3),
+        text: e.text.map(Into::into),
+        folder: e.folder,
+    });
     let mut ids = BTreeSet::new();
     let mut fresh = |id: u64| {
         if ids.insert(id) {
