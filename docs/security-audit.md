@@ -7,26 +7,27 @@ asks one question first: **can whoever holds the AI token do more than edit the 
 architecture model?** It also covers the files the app reads and writes, its
 dependencies and its build pipeline.
 
-Version audited: `0.1.0` (unreleased), branch `summer`, after commit `58605a2`.
+Version audited: `0.1.0` (unreleased), branch `summer`; findings fixed up to commit
+`5c1a625`.
 
 ## Summary
 
-| #   | Finding                                                        | Severity | Status          |
-|-----|----------------------------------------------------------------|----------|-----------------|
-| S1  | `export_docs` writes into any folder the AI names              | High     | Open (decision) |
-| S2  | A box path with special characters crashed the app             | High     | Fixed           |
-| S3  | Typed text could inject AsciiDoc includes or HTML into exports | Medium   | Fixed           |
-| S4  | Browser pages were not refused by Origin                       | Medium   | Fixed           |
-| S5  | An AI could flood the model until the window froze             | Medium   | Fixed           |
-| S6  | A bug in a tool call would close the app                       | Medium   | Fixed           |
-| S7  | Control characters broke SVG export and rendering              | Low      | Fixed           |
-| S8  | Menu entry temp file could be written through a symlink        | Low      | Fixed           |
-| S9  | Recovery files were readable by other local users              | Low      | Fixed           |
-| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Accepted        |
-| S11 | `ttf-parser` is unmaintained                                   | Low      | Accepted        |
-| S12 | The token can leak through the client side                     | Low      | Documented      |
-| S13 | CI actions are pinned by tag, not by commit                    | Low      | Open            |
-| S14 | Many open MCP sessions use memory                              | Info     | Accepted        |
+| #   | Finding                                                        | Severity | Status     |
+|-----|----------------------------------------------------------------|----------|------------|
+| S1  | `export_docs` wrote into any folder the AI named               | High     | Fixed      |
+| S2  | A box path with special characters crashed the app             | High     | Fixed      |
+| S3  | Typed text could inject AsciiDoc includes or HTML into exports | Medium   | Fixed      |
+| S4  | Browser pages were not refused by Origin                       | Medium   | Fixed      |
+| S5  | An AI could flood the model until the window froze             | Medium   | Fixed      |
+| S6  | A bug in a tool call would close the app                       | Medium   | Fixed      |
+| S7  | Control characters broke SVG export and rendering              | Low      | Fixed      |
+| S8  | Menu entry temp file could be written through a symlink        | Low      | Fixed      |
+| S9  | Recovery files were readable by other local users              | Low      | Fixed      |
+| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Accepted   |
+| S11 | `ttf-parser` is unmaintained                                   | Low      | Accepted   |
+| S12 | The token can leak through the client side                     | Low      | Documented |
+| S13 | CI actions are pinned by tag, not by commit                    | Low      | Open       |
+| S14 | Many open MCP sessions use memory                              | Info     | Accepted   |
 
 No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 `Cargo.lock`. whiteboxed itself contains no `unsafe` code and now forbids it.
@@ -43,38 +44,38 @@ No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 | A project file from someone else       | The YAML parser and the layout                                   | The user opening it               |
 
 What the token grants, checked tool by tool in `src/api.rs`: reading and changing
-the open model, rendering it to PNG, and `export_docs`. **No tool reads files, lists
-directories, runs commands, opens URLs, saves or opens projects.** The only effect
-outside the model is `export_docs` (S1).
+the open model, rendering it to PNG, and `export_docs` into folders the user allowed
+(S1). **No tool reads files, lists directories, runs commands, opens URLs, saves or
+opens projects.**
 
 ## Findings
 
-### S1 `export_docs` writes into any folder the AI names — High, open
+### S1 `export_docs` wrote into any folder the AI named — High, fixed
 
-`export_docs` accepts any absolute path, creates missing directories and writes
+`export_docs` accepted any absolute path, created missing directories and wrote
 `context*.svg/.png/.adoc/.md` and `index.adoc`/`index.md` there, overwriting files of
 those names and following symlinks.
 
-On a normal desktop with Claude Code this adds nothing: Claude Code can already write
-files with the user's rights. It matters when the AI is **confined**: an agent in a
+On a normal desktop with Claude Code this added nothing: Claude Code can already write
+files with the user's rights. It mattered when the AI is **confined**: an agent in a
 Docker container (or another sandbox) that reaches the host's whiteboxed — through
-`--network host`, a port forward, or a shared loopback — can create directories and
+`--network host`, a port forward, or a shared loopback — could create directories and
 place files anywhere the user can write **on the host**, outside its sandbox. The
-content is limited (diagrams and generated arc42 text with escaped user text, see S3),
-the file names are fixed, and nothing is executed, so it is not code execution. But it
-is a write primitive that crosses the sandbox boundary, and it can overwrite an
-existing `index.md`.
+content was limited (diagrams and generated text, no code execution), but it was a
+write primitive across the sandbox boundary.
 
-Options:
+Fixed in `5c1a625`:
 
-- (a) Export only into a folder you allowed in the GUI (asked on the first AI export
-  per session, or set in the AI dialog).
-- (b) Export only below the folder of the open project file.
-- (c) Drop `export_docs` from the AI tools; export stays a menu action.
-- (d) Keep it, as decided when AI access was designed.
+- AI exports go only into folders the user allowed for this session. An export into a
+  new folder fails and the window asks **Allow for this session / Don't allow**; the
+  AI dialog lists, revokes and pre-allows folders. Nothing is remembered after quit.
+- The folder is resolved before the check: `..` is refused, and symlinked folders are
+  followed, so a link inside an allowed folder that points outside is not allowed.
+- No exported file is written through a symbolic link (also for menu exports).
 
-Recommended: (a). This contradicts the earlier decision "export into a folder the AI
-chooses", so it is left for you to decide.
+Tests: `export_asks_once_per_folder_and_stays_inside_it`,
+`export_never_follows_symlinks_out_of_the_allowed_folder`,
+`an_ai_export_request_is_answered_in_the_window`.
 
 ### S2 A box path with special characters crashed the app — High, fixed
 
@@ -179,7 +180,8 @@ can still leak where the user puts it:
 - the `?token=` form ends up in shell history and logs; prefer the header;
 - **Copy command** puts it on the clipboard.
 
-Anyone with the token and access to the port has the S1 power. **Generate new token**
+Anyone with the token and access to the port can change the model and export into
+folders the user allowed. **Generate new token**
 in the AI dialog revokes it.
 
 ### S13 CI actions pinned by tag — Low, open
@@ -208,7 +210,7 @@ open sessions, so this is not reachable without the token.
   a refused call changes nothing.
 - SVG output escapes `& < > "`; text in the canvas is drawn, never interpreted.
 - Saves and recovery writes go through a new temporary file and an atomic rename.
-- whiteboxed declares `#![forbid(unsafe_code)]` in the library and the binary.
+- whiteboxed forbids `unsafe` code (`[lints.rust]` in `Cargo.toml`).
 
 ## Tool results
 
@@ -251,8 +253,19 @@ Run with `arithmetic_side_effects`, `indexing_slicing`, `string_slice`,
 | `cast_possible_truncation`, `cast_sign_loss` | 5    | Image sizes; Rust casts saturate, and S5 caps them         |
 | all others                                   | 0    | No `unwrap`, `expect`, `panic!`, `todo!` or debug output   |
 
-These lints are not enforced in CI (most hits are layout arithmetic); `cargo clippy
--D warnings` with the default lints is.
+These scan lints are not enforced in CI (most hits are layout arithmetic).
+
+### Lint policy (enforced)
+
+The same policy as sanshain-service, in `Cargo.toml` `[lints]` and `clippy.toml`, and
+enforced by `cargo clippy --all-targets --all-features -- -D warnings` in CI:
+
+| Lint                                  | Level  | Why                                 |
+|---------------------------------------|--------|-------------------------------------|
+| `unsafe_code`                         | forbid | Memory safety left to the compiler  |
+| `unwrap_used`, `expect_used`, `panic` | deny   | No panics from input (tests exempt) |
+| `todo`, `unimplemented`, `dbg_macro`  | deny   | No unfinished or debug code shipped |
+| `allow_attributes`                    | deny   | Lints are fixed, never silenced     |
 
 ## In CI
 

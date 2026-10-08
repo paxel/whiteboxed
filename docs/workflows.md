@@ -144,9 +144,11 @@ You need Claude Code (or another MCP client) and the repository it should read.
 
 5. Watch the diagrams appear; with **Follow AI** on, the window shows each change.
    Correct anything by hand, or undo the AI's steps one by one with **Ctrl+Z**.
-6. **Ctrl+S** saves the project. The AI cannot save; the recovery file protects the
+6. When the AI exports, whiteboxed asks whether it may write into that folder.
+   **Allow for this session**; the AI repeats the export.
+7. **Ctrl+S** saves the project. The AI cannot save; the recovery file protects the
    work until you do.
-7. **AI > Allow AI access** again turns the access off.
+8. **AI > Allow AI access** again turns the access off.
 
 A new token or port (from the dialog) means running the `claude mcp add` command
 again; remove the old entry first with `claude mcp remove whiteboxed`.

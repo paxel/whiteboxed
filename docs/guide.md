@@ -187,7 +187,13 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
   and is **one undo step**. A refused call changes nothing and tells the AI why.
 - **Follow AI** (AI menu, on by default) shows the diagram the AI just changed. The
   status bar shows "AI access on" and the last change; click it to go there.
-- **What the AI may not do:** save, open or start a project. That stays with you.
+- **Exports need your permission.** `export_docs` only writes into folders you allowed
+  for this session. The first export into a new folder fails and whiteboxed asks
+  **Allow for this session / Don't allow**; the AI then tries again. The AI dialog
+  lists the allowed folders, can revoke them and can allow one in advance. Exports
+  never follow symbolic links out of an allowed folder.
+- **What the AI may not do:** save, open or start a project, read files, or run
+  anything. That stays with you.
 
 | Tool                 | Does                                                              |
 |----------------------|-------------------------------------------------------------------|
@@ -207,7 +213,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `move_box`           | A box to another grid cell                                        |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation, or with `detach_in` only its end in a whitebox        |
-| `export_docs`        | Images, arc42 texts and index into an absolute folder             |
+| `export_docs`        | Images, arc42 texts and index into a folder you allowed           |
 
 Boxes are addressed by id or by their path of names from the context view, as a list
 (`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare
