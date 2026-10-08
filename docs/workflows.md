@@ -5,6 +5,8 @@ Step-by-step recipes for the things you do most. The concepts behind them are in
 
 ## Start the context view
 
+![An empty project](screenshots/empty.png)
+
 1. Start whiteboxed. The empty canvas shows **+ add box**.
 2. Click it, type the name of your system, e.g. `Web Shop`, keep the type
    **component**, press **Enter**.
@@ -17,6 +19,8 @@ Step-by-step recipes for the things you do most. The concepts behind them are in
    set the direction to **bi**, text `REST`.
 6. Click the bottom border and add `Warehouse` the same way.
 
+![Clicking the top border of Web Shop opens the Connect popup](screenshots/connect.png)
+
 Persons and external systems only exist in the context view, so the type list offers
 them only there.
 
@@ -28,6 +32,8 @@ them only there.
    (`Customer`, `Payment Provider`, `Warehouse`) and ending in an orange warning
    marker: nobody inside handles them yet. The status bar counts them.
 3. Click **+ add box** and add `Storefront` of type **UI**.
+   ![The whitebox: Customer is attached, Payment Provider and Warehouse are not yet](screenshots/whitebox.png)
+
 4. Click the warning marker of the `Customer` relation. Pick `Storefront` and press
    **Enter**. The line now runs from the frame to the storefront.
 

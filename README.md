@@ -10,6 +10,8 @@ context view is level 0, and every box opens into its whitebox one level deeper,
 deep as you like. Relations that reach a box show up inside its whitebox, so the
 levels cannot drift apart.
 
+![The context view of a web shop](docs/screenshots/context.png)
+
 ## What it does
 
 - **Click, don't draw.** Click the side of a box where its partner should be: connect a
@@ -26,6 +28,8 @@ levels cannot drift apart.
 - **Git-friendly files.** One YAML file per project with the model and grid cells, no
   pixel coordinates. Unsaved work is recovered after a crash.
 - **Export** every diagram as SVG and PNG for your arc42 document.
+
+![The whitebox of the web shop, with two interfaces not assigned yet](docs/screenshots/whitebox.png)
 
 ## Documentation
 
