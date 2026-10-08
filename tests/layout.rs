@@ -346,11 +346,108 @@ fn long_legend_entries_wrap_to_the_diagram_width() -> TestResult {
 fn render_legend_png() -> TestResult {
     let mut p = Project::new();
     let api = p.add_block(None, &spec("HTTP API", BlockKind::Component))?;
-    p.connect_new(api, Side::Bottom, &spec("Application Services", BlockKind::Component), Direction::Out, "use cases")?;
-    let (_, r) = p.connect_new(api, Side::Right, &spec("Telemetry", BlockKind::Component), Direction::Out, "tracing spans, request metrics and the /metrics endpoint for Prometheus")?;
+    p.connect_new(
+        api,
+        Side::Bottom,
+        &spec("Application Services", BlockKind::Component),
+        Direction::Out,
+        "use cases",
+    )?;
+    let (_, r) = p.connect_new(
+        api,
+        Side::Right,
+        &spec("Telemetry", BlockKind::Component),
+        Direction::Out,
+        "tracing spans, request metrics and the /metrics endpoint for Prometheus",
+    )?;
     p.set_relation_short(r, "telemetry")?;
-    p.connect_new(api, Side::Left, &spec("Web UI", BlockKind::Ui), Direction::In, "fetch JSON, SSE/WS updates for the live dashboard")?;
+    p.connect_new(
+        api,
+        Side::Left,
+        &spec("Web UI", BlockKind::Ui),
+        Direction::In,
+        "fetch JSON, SSE/WS updates for the live dashboard",
+    )?;
     let png = export::to_png(&scene::scene(&render(&p, None)), 1.0)?;
     std::fs::write("target/legend.png", png)?;
+    Ok(())
+}
+
+fn line_of(
+    l: &Layout,
+    rel: whiteboxed::model::RelationId,
+) -> Result<Vec<Pos>, Box<dyn std::error::Error>> {
+    Ok(l.lines
+        .iter()
+        .find(|g| g.relation == rel)
+        .ok_or("line")?
+        .points
+        .clone())
+}
+
+#[test]
+fn facing_boxes_get_straight_lines() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let (b, ab) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    // A second line on A's right side, to a box further down.
+    let (_, ac) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("C", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    // And two lines between A and B: both straight, side by side.
+    let ab2 = p.connect_existing(a, Side::Right, b, Direction::In, "", Placement::Move)?;
+    let l = render(&p, None);
+    for rel in [ab, ab2] {
+        let pts = line_of(&l, rel)?;
+        assert_eq!(pts.len(), 2, "{rel:?} is one straight segment: {pts:?}");
+        assert!((pts[0].y - pts[1].y).abs() < 0.01);
+    }
+    let y1 = line_of(&l, ab)?[0].y;
+    let y2 = line_of(&l, ab2)?[0].y;
+    assert!((y1 - y2).abs() >= whiteboxed::layout::PORT_SPACING - 0.01);
+    assert!(line_of(&l, ac)?.len() > 2, "C is below: that one bends");
+    Ok(())
+}
+
+#[test]
+fn frame_ends_line_up_with_the_box_that_takes_them() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &spec("User", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Shop", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    let ui = p.add_block(Some(shop), &spec("UI", BlockKind::Ui))?;
+    p.connect_new(
+        ui,
+        Side::Bottom,
+        &spec("Orders", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    p.connect_new(
+        ui,
+        Side::Right,
+        &spec("Search", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    p.attach(rel, End::B, shop, ui, Side::Left)?;
+    let l = render(&p, Some(shop));
+    let pts = line_of(&l, rel)?;
+    assert_eq!(pts.len(), 2, "straight from the frame into UI: {pts:?}");
     Ok(())
 }

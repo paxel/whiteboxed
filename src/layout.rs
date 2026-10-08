@@ -263,7 +263,108 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     let bounds = Rect::from_min_size(Pos::new(0.0, 0.0), grid.width, grid.height);
     let frame = view.diagram.map(|_| bounds);
 
-    // Port positions: (line index, end) -> (point, channel entry).
+    // Port positions: (line index, end) -> (point, channel entry). A port sits where
+    // its partner is, so facing boxes get straight lines; ports on one side then keep
+    // a minimum distance from each other.
+    let owner_rect = |owner: Owner| match owner {
+        Owner::Block(id) => rects.get(&id).map(|(r, _, _)| *r),
+        Owner::Frame => Some(bounds),
+    };
+    let range = |rect: Rect, side: Side| {
+        if side.is_horizontal() {
+            (rect.min.y, rect.max.y)
+        } else {
+            (rect.min.x, rect.max.x)
+        }
+    };
+    let mut ends: BTreeMap<(usize, End), (Owner, Side)> = BTreeMap::new();
+    for ((owner, side), list) in &ports {
+        for (_, _, li, end) in list {
+            ends.insert((*li, *end), (*owner, *side));
+        }
+    }
+    let ideal = |li: usize, end: End, owner: Owner, side: Side| -> Option<f32> {
+        let own = range(owner_rect(owner)?, side);
+        let Some(&(o2, s2)) = ends.get(&(li, end.other())) else {
+            return Some((own.0 + own.1) / 2.0);
+        };
+        let other_rect = owner_rect(o2)?;
+        if side.is_horizontal() == s2.is_horizontal() {
+            let other = range(other_rect, s2);
+            let (lo, hi) = (own.0.max(other.0), own.1.min(other.1));
+            // No overlap: as close to the partner as this side allows.
+            Some(if lo <= hi {
+                (lo + hi) / 2.0
+            } else {
+                ((other.0 + other.1) / 2.0).clamp(own.0, own.1)
+            })
+        } else {
+            let c = other_rect.center();
+            let along = if side.is_horizontal() { c.y } else { c.x };
+            Some(along.clamp(own.0, own.1))
+        }
+    };
+    // Place every side's ports for given wishes; returns the coordinate along the side.
+    let place = |wish: &BTreeMap<(usize, End), f32>| -> BTreeMap<(usize, End), f32> {
+        let mut out = BTreeMap::new();
+        for ((owner, side), list) in &ports {
+            let Some(rect) = owner_rect(*owner) else {
+                continue;
+            };
+            let (lo, hi) = range(rect, *side);
+            let mut wanted: Vec<(f32, RelationId, usize, End)> = list
+                .iter()
+                .map(|(_, rel, li, end)| {
+                    let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
+                    (at, *rel, *li, *end)
+                })
+                .collect();
+            wanted.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.1.cmp(&b.1))
+                    .then(a.3.cmp(&b.3))
+            });
+            let at: Vec<f32> = wanted.iter().map(|w| w.0).collect();
+            let placed = spread(
+                &at,
+                lo + PORT_SPACING / 2.0,
+                hi - PORT_SPACING / 2.0,
+                PORT_SPACING,
+            );
+            for ((_, _, li, end), v) in wanted.iter().zip(placed) {
+                out.insert((*li, *end), v);
+            }
+        }
+        out
+    };
+    let first_wish: BTreeMap<(usize, End), f32> = ends
+        .iter()
+        .filter_map(|(&(li, end), &(owner, side))| {
+            ideal(li, end, owner, side).map(|v| ((li, end), v))
+        })
+        .collect();
+    let first = place(&first_wish);
+    // Facing ends must agree: the end on the busier side keeps its place, and the
+    // other one takes the same coordinate.
+    let busy = |owner: Owner, side: Side| ports.get(&(owner, side)).map_or(0, Vec::len);
+    let second_wish: BTreeMap<(usize, End), f32> = first
+        .iter()
+        .map(|(&(li, end), &v)| {
+            let own = ends.get(&(li, end));
+            let other = ends.get(&(li, end.other()));
+            let follow = match (own, other, first.get(&(li, end.other()))) {
+                (Some(&(o1, s1)), Some(&(o2, s2)), Some(&w))
+                    if s1.is_horizontal() == s2.is_horizontal() && busy(o2, s2) > busy(o1, s1) =>
+                {
+                    Some(w)
+                }
+                _ => None,
+            };
+            ((li, end), follow.unwrap_or(v))
+        })
+        .collect();
+    let along = place(&second_wish);
     let mut port_at: BTreeMap<(usize, End), (Pos, Side, Chan)> = BTreeMap::new();
     for ((owner, side), list) in &ports {
         let (rect, chan) = match owner {
@@ -289,14 +390,15 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                 (bounds, chan)
             }
         };
-        let n = list.len() as f32;
-        for (i, (_, _, li, end)) in list.iter().enumerate() {
-            let t = (i as f32 + 1.0) / (n + 1.0);
+        for (_, _, li, end) in list {
+            let Some(&v) = along.get(&(*li, *end)) else {
+                continue;
+            };
             let p = match side {
-                Side::Top => Pos::new(rect.min.x + t * rect.width(), rect.min.y),
-                Side::Bottom => Pos::new(rect.min.x + t * rect.width(), rect.max.y),
-                Side::Left => Pos::new(rect.min.x, rect.min.y + t * rect.height()),
-                Side::Right => Pos::new(rect.max.x, rect.min.y + t * rect.height()),
+                Side::Top => Pos::new(v, rect.min.y),
+                Side::Bottom => Pos::new(v, rect.max.y),
+                Side::Left => Pos::new(rect.min.x, v),
+                Side::Right => Pos::new(rect.max.x, v),
             };
             port_at.insert((*li, *end), (p, *side, chan));
         }
@@ -487,6 +589,39 @@ fn step_out(p: Pos, side: Side, len: f32) -> Pos {
         Side::Left => Pos::new(p.x - len, p.y),
         Side::Right => Pos::new(p.x + len, p.y),
     }
+}
+
+/// Positions as close to `wanted` (sorted) as possible, at least `gap` apart and
+/// within `lo..=hi`. When they do not fit, they are spread evenly.
+fn spread(wanted: &[f32], lo: f32, hi: f32, gap: f32) -> Vec<f32> {
+    let n = wanted.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if hi < lo || (n as f32 - 1.0) * gap > hi - lo {
+        let mid = (lo + hi) / 2.0;
+        let step = if n > 1 {
+            (hi - lo).max(0.0) / (n as f32 - 1.0)
+        } else {
+            0.0
+        };
+        let start = if n > 1 { lo.min(mid) } else { mid };
+        return (0..n).map(|i| start + step * i as f32).collect();
+    }
+    let mut out: Vec<f32> = Vec::with_capacity(n);
+    for (i, w) in wanted.iter().enumerate() {
+        let min = if i == 0 { lo } else { out[i - 1] + gap };
+        out.push(w.clamp(lo, hi).max(min));
+    }
+    // Pull back from the far end where the forward pass ran over.
+    let mut max = hi;
+    for v in out.iter_mut().rev() {
+        if *v > max {
+            *v = max;
+        }
+        max = *v - gap;
+    }
+    out
 }
 
 /// Orders ports along a side by where their partner is, to avoid crossings.
