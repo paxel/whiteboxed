@@ -1,0 +1,41 @@
+# Fails when a crate we depend on has a known vulnerability (RustSec / CVE), and
+# checks licences and crate sources. Runs on every push and daily, because new
+# advisories appear without any change here. See docs/security-audit.md.
+name: Security
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Vulnerable dependencies (cargo audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Exits non-zero on any vulnerability advisory for a crate in Cargo.lock.
+      # The one accepted warning (unmaintained ttf-parser) is listed in
+      # .cargo/audit.toml with its reason.
+      - name: cargo audit
+        run: cargo audit
+
+  deny:
+    name: Advisories, licences, sources (cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny
+        run: cargo deny check

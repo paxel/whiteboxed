@@ -1,0 +1,6 @@
+# Accepted advisories, each with its reason. Vulnerabilities are never listed here
+# without a documented decision in docs/security-audit.md.
+[advisories]
+# ttf-parser is unmaintained (RUSTSEC-2026-0192): an informational warning, not a
+# vulnerability. whiteboxed only reads its own embedded font with it.
+ignore = ["RUSTSEC-2026-0192"]
