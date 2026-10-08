@@ -1,5 +1,7 @@
 //! whiteboxed: a WYSIWYG editor for arc42 building-block views.
 
+#![forbid(unsafe_code)]
+
 pub mod api;
 pub mod doc;
 pub mod editor;

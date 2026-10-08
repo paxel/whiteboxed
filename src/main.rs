@@ -1,5 +1,6 @@
 // No console window next to the app on Windows.
 #![windows_subsystem = "windows"]
+#![forbid(unsafe_code)]
 
 use std::path::PathBuf;
 

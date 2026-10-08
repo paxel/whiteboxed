@@ -128,7 +128,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("path has no parent"))?;
     fs::create_dir_all(dir)?;
     let tmp = dir.join(format!(".whiteboxed-{}.tmp", std::process::id()));
-    let mut file = fs::File::create(&tmp)?;
+    // A leftover from a crash is ours; never write through anything else (a symlink).
+    let _ = fs::remove_file(&tmp);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     fs::rename(&tmp, path)
