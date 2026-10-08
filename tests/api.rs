@@ -362,7 +362,7 @@ fn render_returns_a_bounded_png() -> TestResult {
 }
 
 #[test]
-fn export_needs_an_absolute_folder_and_creates_it() -> TestResult {
+fn export_asks_once_per_folder_and_stays_inside_it() -> TestResult {
     let mut e = Editor::new(None);
     shop(&mut e)?;
     let relative = call(
@@ -373,14 +373,66 @@ fn export_needs_an_absolute_folder_and_creates_it() -> TestResult {
     assert!(matches!(relative, Err(ApiError::Rejected(m)) if m.contains("absolute")));
     let dir = tempfile::tempdir()?;
     let target = dir.path().join("arc42/images");
-    let out = call(
-        &mut e,
-        "export_docs",
-        json!({"folder": target.to_string_lossy(), "format": "asciidoc"}),
-    )?;
+    let args = json!({"folder": target.to_string_lossy(), "format": "asciidoc"});
+    // Not allowed yet: the user is asked, nothing is written.
+    let asked = call(&mut e, "export_docs", args.clone());
+    assert!(matches!(asked, Err(ApiError::Rejected(m)) if m.contains("asking them")));
+    assert!(e.ai_export_request.is_some());
+    assert!(!target.exists());
+    // The user allows the repository folder; anything below it is fine.
+    e.ai_export_request = None;
+    e.allow_ai_export(dir.path())?;
+    let out = call(&mut e, "export_docs", args)?;
     assert_eq!(out["index"], "index.adoc");
     assert!(target.join("index.adoc").exists());
     assert!(target.join("context.svg").exists());
+    // `..` never resolves out of an allowed folder.
+    let escape = format!("{}/arc42/../../outside", dir.path().display());
+    let refused = call(
+        &mut e,
+        "export_docs",
+        json!({"folder": escape, "format": "markdown"}),
+    );
+    assert!(matches!(refused, Err(ApiError::Rejected(m)) if m.contains("..")));
+    // A sibling folder is a new question.
+    let other = tempfile::tempdir()?;
+    let sibling = call(
+        &mut e,
+        "export_docs",
+        json!({"folder": other.path().to_string_lossy(), "format": "markdown"}),
+    );
+    assert!(sibling.is_err());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn export_never_follows_symlinks_out_of_the_allowed_folder() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let allowed = tempfile::tempdir()?;
+    let outside = tempfile::tempdir()?;
+    e.allow_ai_export(allowed.path())?;
+    // A linked folder inside the allowed one points outside: not allowed.
+    std::os::unix::fs::symlink(outside.path(), allowed.path().join("link"))?;
+    let via_link = call(
+        &mut e,
+        "export_docs",
+        json!({"folder": allowed.path().join("link").to_string_lossy(), "format": "markdown"}),
+    );
+    assert!(via_link.is_err());
+    assert_eq!(std::fs::read_dir(outside.path())?.count(), 0);
+    // A file that is a link is never written through.
+    let victim = outside.path().join("victim.md");
+    std::fs::write(&victim, "keep me")?;
+    std::os::unix::fs::symlink(&victim, allowed.path().join("index.md"))?;
+    let through = call(
+        &mut e,
+        "export_docs",
+        json!({"folder": allowed.path().to_string_lossy(), "format": "markdown"}),
+    );
+    assert!(matches!(through, Err(ApiError::Rejected(m)) if m.contains("symbolic link")));
+    assert_eq!(std::fs::read_to_string(&victim)?, "keep me");
     Ok(())
 }
 

@@ -143,7 +143,38 @@ impl Ai {
         }
     }
 
-    pub fn dialog(&mut self, ctx: &Context) {
+    /// Asks the user when an AI client wants to export into a new folder.
+    pub fn export_prompt(&mut self, ctx: &Context, editor: &mut Editor) {
+        let Some(folder) = editor.ai_export_request.clone() else {
+            return;
+        };
+        let mut answer = None;
+        egui::Window::new("AI export")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("The AI client wants to write the exported documentation into:");
+                ui.label(RichText::new(folder.display().to_string()).monospace());
+                ui.label("It can then write into this folder and below until you quit.");
+                ui.horizontal(|ui| {
+                    if ui.button("Allow for this session").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("Don't allow").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        if let Some(allow) = answer {
+            editor.ai_export_request = None;
+            if allow && let Err(e) = editor.allow_ai_export(&folder) {
+                editor.message = Some(format!("Cannot allow {}: {e}", folder.display()));
+            }
+        }
+    }
+
+    pub fn dialog(&mut self, ctx: &Context, editor: &mut Editor) {
         if !self.dialog {
             return;
         }
@@ -157,7 +188,11 @@ impl Ai {
             .default_width(520.0)
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.content_rect().center())
-            .show(ctx, |ui| action = self.dialog_body(ui, command));
+            .show(ctx, |ui| {
+                action = self.dialog_body(ui, command);
+                ui.separator();
+                export_folders(ui, editor);
+            });
         match action {
             Some(DialogAction::Toggle) => {
                 if self.is_on() {
@@ -257,4 +292,30 @@ enum DialogAction {
     Port(u16),
     NewToken,
     Copy(String),
+}
+
+/// The folders AI exports may go into this session, with revoke and add.
+fn export_folders(ui: &mut Ui, editor: &mut Editor) {
+    ui.label("Folders the AI may export into (this session):");
+    let mut revoke = None;
+    if editor.ai_export_roots.is_empty() {
+        ui.label(RichText::new("None yet. The AI asks when it first exports.").weak());
+    }
+    for (i, root) in editor.ai_export_roots.iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(root.display().to_string()).monospace());
+            if ui.button("Revoke").clicked() {
+                revoke = Some(i);
+            }
+        });
+    }
+    if let Some(i) = revoke {
+        editor.ai_export_roots.remove(i);
+    }
+    if ui.button("Allow a folder\u{2026}").clicked()
+        && let Some(dir) = rfd::FileDialog::new().pick_folder()
+        && let Err(e) = editor.allow_ai_export(&dir)
+    {
+        editor.message = Some(format!("Cannot allow {}: {e}", dir.display()));
+    }
 }

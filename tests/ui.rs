@@ -622,3 +622,23 @@ fn ai_changes_show_up_and_the_view_follows() -> TestResult {
     assert!(refused.is_err());
     Ok(())
 }
+
+#[test]
+fn an_ai_export_request_is_answered_in_the_window() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    e.ai_export_request = Some(dir.path().to_path_buf());
+    let mut h = harness(e);
+    h.run();
+    button(&h, "Don't allow").click();
+    h.run();
+    assert!(h.state().editor.ai_export_request.is_none());
+    assert!(h.state().editor.ai_export_roots.is_empty());
+    h.state_mut().editor.ai_export_request = Some(dir.path().to_path_buf());
+    h.run();
+    button(&h, "Allow for this session").click();
+    h.run();
+    let allowed = std::fs::canonicalize(dir.path())?;
+    assert_eq!(h.state().editor.ai_export_roots, vec![allowed]);
+    Ok(())
+}

@@ -167,7 +167,8 @@ impl App {
             });
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
-        self.ai.dialog(&ctx);
+        self.ai.dialog(&ctx, &mut self.editor);
+        self.ai.export_prompt(&ctx, &mut self.editor);
         self.leave_dialog(&ctx);
     }
 
@@ -891,7 +892,10 @@ impl App {
     }
 
     fn reset(&mut self, editor: Editor) {
+        // Folders allowed for AI exports belong to the session, not the project.
+        let roots = std::mem::take(&mut self.editor.ai_export_roots);
         self.editor = editor;
+        self.editor.ai_export_roots = roots;
         self.draft = None;
         self.view = None;
         self.drag = None;

@@ -384,7 +384,8 @@ lists them as dangling) to the box that handles it. \
 3. Give every box a one or two sentence responsibility and every diagram a motivation \
 (why it is split this way). \
 4. Check the result with render_diagram and tidy it with move_box when lines cross. \
-5. Finish with export_docs into the repository's documentation folder. \
+5. Finish with export_docs into the repository's documentation folder; the user is \
+asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
 connect on decides where the partner sits; layout is automatic. Every call is one undo \
 step for the user; saving the project is up to the user.";
@@ -473,7 +474,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "export_docs",
-            description: "Write images, one arc42 text file per diagram and an index into a folder.",
+            description: "Write images, one arc42 text file per diagram and an index into a folder. The user must allow the folder: the first call for a new folder asks them and fails; call again after they agreed.",
             schema: schema::<ExportArgs>(),
         },
     ]
@@ -740,10 +741,18 @@ fn delete_relation(editor: &mut Editor, a: DeleteRelationArgs) -> ApiResult<Outp
 }
 
 fn export_docs(editor: &mut Editor, a: ExportArgs) -> ApiResult<Output> {
-    let dir = Path::new(&a.folder);
-    if !dir.is_absolute() {
-        return rejected("folder must be an absolute path");
+    let target = crate::editor::resolve_folder(Path::new(&a.folder))
+        .map_err(|e| ApiError::Rejected(e.to_string()))?;
+    if !editor.ai_export_allowed(&target) {
+        let msg = format!(
+            "the user has not allowed exports into {} yet; whiteboxed is asking them now. \
+             Call export_docs again once they agreed.",
+            target.display()
+        );
+        editor.ai_export_request = Some(target);
+        return rejected(msg);
     }
+    let dir = target.as_path();
     std::fs::create_dir_all(dir).map_err(|e| ApiError::Rejected(e.to_string()))?;
     let format = match a.format {
         ApiFormat::Asciidoc => DocFormat::AsciiDoc,
@@ -759,7 +768,7 @@ fn export_docs(editor: &mut Editor, a: ExportArgs) -> ApiResult<Output> {
         block: None,
     });
     Ok(Output::Json(
-        json!({"diagrams": n, "folder": a.folder, "index": format!("index.{}", format.extension())}),
+        json!({"diagrams": n, "folder": dir.display().to_string(), "index": format!("index.{}", format.extension())}),
     ))
 }
 

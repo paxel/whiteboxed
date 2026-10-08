@@ -138,6 +138,10 @@ pub struct Editor {
     layout_cache: Option<(Project, DiagramId, Layout)>,
     /// What an AI client changed last, for the status bar and "Follow AI".
     pub last_ai: Option<AiAction>,
+    /// Folders the user allowed AI exports into, this session.
+    pub ai_export_roots: Vec<PathBuf>,
+    /// A folder an AI client wants to export into, waiting for the user's answer.
+    pub ai_export_request: Option<PathBuf>,
 }
 
 /// One change made through the AI interface.
@@ -167,6 +171,8 @@ impl Editor {
             autosave_at: None,
             layout_cache: None,
             last_ai: None,
+            ai_export_roots: Vec::new(),
+            ai_export_request: None,
         };
         editor.offer_recovery();
         editor
@@ -197,6 +203,8 @@ impl Editor {
             autosave_at: None,
             layout_cache: None,
             last_ai: None,
+            ai_export_roots: Vec::new(),
+            ai_export_request: None,
         }
     }
 
@@ -814,13 +822,13 @@ impl Editor {
 
     pub fn export_svg(&mut self, path: &Path) -> Result<(), ExportError> {
         let svg = export::to_svg(&scene::scene(self.layout()));
-        std::fs::write(path, svg)?;
+        write_file(path, svg)?;
         Ok(())
     }
 
     pub fn export_png(&mut self, path: &Path) -> Result<(), ExportError> {
         let png = export::to_png(&scene::scene(self.layout()), 2.0)?;
-        std::fs::write(path, png)?;
+        write_file(path, png)?;
         Ok(())
     }
 
@@ -835,10 +843,10 @@ impl Editor {
             let l = layout::layout(&self.project, &view::diagram_view(&self.project, *diagram));
             let s = scene::scene(&l);
             let name = self.file_name_for(*diagram);
-            std::fs::write(dir.join(format!("{name}.svg")), export::to_svg(&s))?;
-            std::fs::write(dir.join(format!("{name}.png")), export::to_png(&s, 2.0)?)?;
+            write_file(&dir.join(format!("{name}.svg")), export::to_svg(&s))?;
+            write_file(&dir.join(format!("{name}.png")), export::to_png(&s, 2.0)?)?;
             let text = doc::diagram_doc(&self.project, *diagram, &format!("{name}.svg"), format);
-            std::fs::write(dir.join(format!("{name}.{ext}")), text)?;
+            write_file(&dir.join(format!("{name}.{ext}")), text)?;
             entries.push((*diagram, name));
         }
         let title = self.path.as_ref().and_then(|p| p.file_stem()).map_or_else(
@@ -846,7 +854,7 @@ impl Editor {
             |s| s.to_string_lossy().into_owned(),
         );
         let index = doc::index_doc(&self.project, &title, &entries, format);
-        std::fs::write(dir.join(format!("index.{ext}")), index)?;
+        write_file(&dir.join(format!("index.{ext}")), index)?;
         Ok(diagrams.len())
     }
 
@@ -869,6 +877,63 @@ impl Editor {
                 }
             })
             .collect()
+    }
+}
+
+/// Writes a file, but never through a symlink: an export must not land elsewhere.
+fn write_file(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::other(format!(
+            "{} is a symbolic link; whiteboxed does not write through links",
+            path.display()
+        )));
+    }
+    std::fs::write(path, bytes)
+}
+
+/// An absolute folder with every existing part resolved (symlinks included), so
+/// it can be compared with allowed folders. `..` is refused outright.
+pub fn resolve_folder(dir: &Path) -> std::io::Result<PathBuf> {
+    use std::path::Component;
+    if !dir.is_absolute() {
+        return Err(std::io::Error::other("the folder must be an absolute path"));
+    }
+    if dir.components().any(|c| c == Component::ParentDir) {
+        return Err(std::io::Error::other("the folder must not contain .."));
+    }
+    let mut existing = dir.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        let Some(name) = existing.file_name().map(|n| n.to_owned()) else {
+            break;
+        };
+        rest.push(name);
+        if !existing.pop() {
+            break;
+        }
+    }
+    let mut out = std::fs::canonicalize(&existing)?;
+    for name in rest.into_iter().rev() {
+        out.push(name);
+    }
+    Ok(out)
+}
+
+impl Editor {
+    /// Lets AI clients export into `dir` and below for the rest of the session.
+    pub fn allow_ai_export(&mut self, dir: &Path) -> std::io::Result<()> {
+        let root = resolve_folder(dir)?;
+        if !self.ai_export_roots.contains(&root) {
+            self.ai_export_roots.push(root);
+        }
+        Ok(())
+    }
+
+    /// Whether an AI export into the resolved folder `dir` is allowed.
+    pub fn ai_export_allowed(&self, dir: &Path) -> bool {
+        self.ai_export_roots
+            .iter()
+            .any(|root| dir.starts_with(root))
     }
 }
 
