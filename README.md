@@ -44,6 +44,8 @@ levels cannot drift apart.
   exported arc42 images.
 - [Guide](docs/guide.md): levels, box types, relations, layout rules, AI access, keys
   and the file format.
+- [Security audit](docs/security-audit.md): what an AI client with access can and
+  cannot do, findings, dependency checks and how CI enforces them.
 
 ## Install
 
