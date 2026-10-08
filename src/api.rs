@@ -838,14 +838,20 @@ pub fn resolve(project: &Project, r: &BoxRef) -> ApiResult<BlockId> {
 }
 
 fn match_text(project: &Project, diagram: DiagramId, rest: &str, hits: &mut Vec<BlockId>) {
-    let lower = rest.to_lowercase();
+    // Split only at '/' in the original text: lowercasing can change byte lengths
+    // ('İ' becomes two characters), so positions in a lowercased copy are wrong.
+    let splits: Vec<usize> = rest.match_indices('/').map(|(i, _)| i).collect();
     for (id, b) in project.blocks_in(diagram) {
         let name = b.name.to_lowercase();
-        if lower == name {
+        if rest.to_lowercase() == name {
             hits.push(id);
-        } else if let Some(tail) = lower.strip_prefix(&format!("{name}/")) {
-            let offset = rest.len() - tail.len();
-            match_text(project, Some(id), &rest[offset..], hits);
+        }
+        for &i in &splits {
+            if let (Some(head), Some(tail)) = (rest.get(..i), rest.get(i + 1..))
+                && head.to_lowercase() == name
+            {
+                match_text(project, Some(id), tail, hits);
+            }
         }
     }
 }

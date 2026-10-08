@@ -383,3 +383,28 @@ fn export_needs_an_absolute_folder_and_creates_it() -> TestResult {
     assert!(target.join("context.svg").exists());
     Ok(())
 }
+
+#[test]
+fn paths_whose_case_changes_byte_length_do_not_crash() -> TestResult {
+    let mut e = Editor::new(None);
+    call(&mut e, "add_box", json!({"name": "é", "kind": "component"}))?;
+    call(
+        &mut e,
+        "add_box",
+        json!({"diagram": "é", "name": "İİ", "kind": "component"}),
+    )?;
+    // 'İ' lowercases to two characters: lengths of the lowercased path differ.
+    let found = call(
+        &mut e,
+        "set_responsibility",
+        json!({"box": "é/İİ", "text": "x"}),
+    )?;
+    assert_eq!(found["path"], json!(["é", "İİ"]));
+    let found = call(
+        &mut e,
+        "set_responsibility",
+        json!({"box": "É/i̇i̇", "text": "y"}),
+    )?;
+    assert_eq!(found["path"], json!(["é", "İİ"]));
+    Ok(())
+}
