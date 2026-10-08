@@ -202,6 +202,10 @@ pub struct AddBoxArgs {
     /// What this building block is responsible for.
     #[serde(default)]
     pub responsibility: Option<String>,
+    /// A cross-cutting concern (logging, security …) drawn as a band across the
+    /// bottom of the diagram. Bands have no relations but can be opened like boxes.
+    #[serde(default)]
+    pub band: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -302,6 +306,9 @@ pub struct EditBoxArgs {
     /// A tag name; an empty string removes the tag.
     #[serde(default)]
     pub tag: Option<String>,
+    /// Make it a cross-cutting band (it must have no relations) or a grid box again.
+    #[serde(default)]
+    pub band: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -436,6 +443,8 @@ interface text. \
 2. Then each whitebox level by level: add_box with diagram set to the box, connect the \
 building blocks, and attach every relation that enters from the level above (get_diagram \
 lists them as dangling) to the box that handles it. \
+Concerns that every part of a level uses (logging, security, monitoring) are \
+add_box with band: true; bands have no relations. \
 3. Give every box a one or two sentence responsibility and every diagram a motivation \
 (why it is split this way). \
 4. Check the result with render_diagram and tidy it with move_box when lines cross. \
@@ -616,6 +625,7 @@ fn spec(name: &str, kind: ApiKind, tag: &Option<String>) -> BlockSpec {
         name: name.to_owned(),
         kind: kind.into(),
         tag: tag.clone(),
+        band: false,
     }
 }
 
@@ -632,7 +642,10 @@ fn placement(p: Option<ApiPlacement>) -> Placement {
 
 fn add_box(editor: &mut Editor, a: AddBoxArgs) -> ApiResult<Output> {
     let d = diagram_of(&editor.project, a.diagram.as_ref())?;
-    let s = spec(&a.name, a.kind, &a.tag);
+    let s = BlockSpec {
+        band: a.band,
+        ..spec(&a.name, a.kind, &a.tag)
+    };
     let id = editor.apply_ai(|p| {
         let id = p.add_block(d, &s)?;
         if let Some(text) = &a.responsibility {
@@ -761,6 +774,7 @@ fn edit_box(editor: &mut Editor, a: EditBoxArgs) -> ApiResult<Output> {
         name: a.name.unwrap_or_else(|| b.name.clone()),
         kind: a.kind.map_or(b.kind, BlockKind::from),
         tag: a.tag.or(current_tag),
+        band: a.band.unwrap_or(b.band),
     };
     editor.apply_ai(|p| p.edit_block(id, &s))?;
     done(editor, "edited", Some(id))
@@ -1026,9 +1040,13 @@ fn box_json(project: &Project, id: BlockId) -> Value {
         "name": b.name,
         "kind": kind_name(b.kind),
         "level": project.level(b.parent),
-        "cell": {"col": b.cell.col, "row": b.cell.row},
         "has_whitebox_content": project.has_content(id),
     });
+    if b.band {
+        v["band"] = json!(true);
+    } else {
+        v["cell"] = json!({"col": b.cell.col, "row": b.cell.row});
+    }
     if let Some(tag) = b.tag.and_then(|t| project.tags.get(&t)) {
         v["tag"] = json!(tag.name);
     }

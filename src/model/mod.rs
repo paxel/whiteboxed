@@ -260,7 +260,10 @@ pub struct Block {
     pub kind: BlockKind,
     pub tag: Option<TagId>,
     pub parent: DiagramId,
+    /// Unused for a band.
     pub cell: Cell,
+    /// A cross-cutting band across the bottom of the diagram, without lines.
+    pub band: bool,
     /// What this building block is responsible for (arc42 blackbox description).
     pub responsibility: String,
     /// Why the whitebox of this block is decomposed the way it is.
@@ -418,6 +421,14 @@ pub enum ModelError {
     OutsideGrid,
     #[error("a diagram can hold at most {MAX_RELATIONS_PER_DIAGRAM} relations")]
     TooManyRelations,
+    #[error("{0} boxes cannot be cross-cutting bands")]
+    BandKind(&'static str),
+    #[error("cross-cutting bands have no lines")]
+    BandHasNoLines,
+    #[error("delete the lines of this box before making it a cross-cutting band")]
+    LinesOnBand,
+    #[error("cross-cutting bands stay at the bottom of the diagram")]
+    BandStays,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;
@@ -489,7 +500,7 @@ impl Project {
     /// person nor an external system. It follows that box's renames.
     pub fn auto_name(&self) -> Option<String> {
         self.blocks_in(None)
-            .find(|(_, b)| b.kind.can_drill())
+            .find(|(_, b)| b.kind.can_drill() && !b.band)
             .map(|(_, b)| b.name.clone())
     }
 

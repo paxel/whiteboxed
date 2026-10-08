@@ -13,6 +13,8 @@ pub struct BlockSpec {
     pub name: String,
     pub kind: BlockKind,
     pub tag: Option<String>,
+    /// A cross-cutting band across the bottom of the diagram instead of a grid box.
+    pub band: bool,
 }
 
 impl BlockSpec {
@@ -21,11 +23,17 @@ impl BlockSpec {
             name: name.to_owned(),
             kind,
             tag: None,
+            band: false,
         }
     }
 
     pub fn tagged(mut self, tag: &str) -> Self {
         self.tag = Some(tag.to_owned());
+        self
+    }
+
+    pub fn as_band(mut self) -> Self {
+        self.band = true;
         self
     }
 }
@@ -44,11 +52,21 @@ impl Project {
 
     /// Adds a box without a relation (the "+ add box" of an empty diagram).
     pub fn add_block(&mut self, diagram: DiagramId, spec: &BlockSpec) -> ModelResult<BlockId> {
-        let cell = match self.blocks_in(diagram).map(|(_, b)| b.cell.col).max() {
+        let cell = self.next_column(diagram);
+        self.insert_block(diagram, spec, cell)
+    }
+
+    /// The first cell right of every box of the diagram.
+    fn next_column(&self, diagram: DiagramId) -> Cell {
+        match self
+            .blocks_in(diagram)
+            .filter(|(_, b)| !b.band)
+            .map(|(_, b)| b.cell.col)
+            .max()
+        {
             Some(max_col) => Cell::new(max_col + 1, 0),
             None => Cell::new(0, 0),
-        };
-        self.insert_block(diagram, spec, cell)
+        }
     }
 
     /// Adds a box without a relation in `cell`, or in the nearest free cell next to it
@@ -80,11 +98,31 @@ impl Project {
         if let Some(tag) = &spec.tag {
             check_name_text(tag)?;
         }
+        let was_band = self.block(id)?.band;
+        if spec.band {
+            check_band_kind(spec.kind)?;
+        }
+        if spec.band && !was_band {
+            let touched = self.relations.values().any(|r| {
+                r.a.anchors
+                    .iter()
+                    .chain(&r.b.anchors)
+                    .any(|a| a.block == id)
+            });
+            if touched {
+                return Err(ModelError::LinesOnBand);
+            }
+        }
+        let cell = (was_band && !spec.band).then(|| self.next_column(parent));
         let tag = self.resolve_tag(spec.tag.as_deref());
         let block = self.blocks.get_mut(&id).ok_or(ModelError::UnknownBlock)?;
         block.name = name;
         block.kind = spec.kind;
         block.tag = tag;
+        block.band = spec.band;
+        if let Some(cell) = cell {
+            block.cell = cell;
+        }
         Ok(())
     }
 
@@ -96,10 +134,13 @@ impl Project {
             return Err(ModelError::OutsideGrid);
         }
         let block = self.block(id)?;
+        if block.band {
+            return Err(ModelError::BandStays);
+        }
         let (parent, old) = (block.parent, block.cell);
         let occupant = self
             .blocks_in(parent)
-            .find(|(other, b)| *other != id && b.cell == cell)
+            .find(|(other, b)| *other != id && !b.band && b.cell == cell)
             .map(|(other, _)| other);
         if let Some(other) = occupant
             && let Some(b) = self.blocks.get_mut(&other)
@@ -209,6 +250,9 @@ impl Project {
         text: &str,
     ) -> ModelResult<(BlockId, RelationId)> {
         let origin = self.block(from)?;
+        if origin.band {
+            return Err(ModelError::BandHasNoLines);
+        }
         let diagram = origin.parent;
         let text = check_text(text)?;
         self.check_relation_room(diagram)?;
@@ -299,6 +343,7 @@ impl Project {
         text: &str,
     ) -> ModelResult<RelationId> {
         let parent = self.block(from)?.parent;
+        self.check_lines(from)?;
         let text = check_text(text)?;
         self.check_relation_room(None)?;
         let mut anchors: Vec<Anchor> = self
@@ -395,6 +440,7 @@ impl Project {
         inner: BlockId,
         side: Side,
     ) -> ModelResult<()> {
+        self.check_lines(inner)?;
         if self.block(inner)?.parent != Some(outer) {
             return Err(ModelError::DifferentDiagrams);
         }
@@ -563,6 +609,9 @@ impl Project {
         if self.blocks_in(diagram).count() >= MAX_BLOCKS_PER_DIAGRAM {
             return Err(ModelError::DiagramFull);
         }
+        if spec.band {
+            check_band_kind(spec.kind)?;
+        }
         let tag = self.resolve_tag(spec.tag.as_deref());
         let id = BlockId(self.allocate());
         self.blocks.insert(
@@ -572,7 +621,8 @@ impl Project {
                 kind: spec.kind,
                 tag,
                 parent: diagram,
-                cell,
+                cell: if spec.band { Cell::new(0, 0) } else { cell },
+                band: spec.band,
                 responsibility: String::new(),
                 motivation: String::new(),
             },
@@ -640,10 +690,20 @@ impl Project {
         Ok(())
     }
 
+    /// Bands have no lines.
+    fn check_lines(&self, id: BlockId) -> ModelResult<()> {
+        if self.block(id)?.band {
+            return Err(ModelError::BandHasNoLines);
+        }
+        Ok(())
+    }
+
     fn check_pair(&self, from: BlockId, target: BlockId) -> ModelResult<DiagramId> {
         if from == target {
             return Err(ModelError::SelfRelation);
         }
+        self.check_lines(from)?;
+        self.check_lines(target)?;
         let diagram = self.block(from)?.parent;
         if self.block(target)?.parent != diagram {
             return Err(ModelError::DifferentDiagrams);
@@ -653,7 +713,7 @@ impl Project {
 
     fn occupied(&self, diagram: DiagramId, cell: Cell, except: Option<BlockId>) -> bool {
         self.blocks_in(diagram)
-            .any(|(id, b)| Some(id) != except && b.cell == cell)
+            .any(|(id, b)| Some(id) != except && !b.band && b.cell == cell)
     }
 
     /// The first free cell at `target`, else the nearest free cell of a block that
@@ -770,6 +830,14 @@ impl Project {
         }
         Ok(())
     }
+}
+
+/// People and external systems are neighbours, never cross-cutting bands.
+fn check_band_kind(kind: BlockKind) -> ModelResult<()> {
+    if kind.is_neighbour() {
+        return Err(ModelError::BandKind(kind.label()));
+    }
+    Ok(())
 }
 
 /// The near (connected) and the far (open) endpoint of a stub.

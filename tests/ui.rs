@@ -929,3 +929,28 @@ fn the_relation_dialog_offers_no_direction() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn the_add_box_dialog_makes_a_band() -> TestResult {
+    let (e, _) = one_box()?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("+ Box").click();
+    h.run();
+    h.event(Event::Text("Logging".into()));
+    h.run();
+    h.get_by_label("Cross-cutting band").click();
+    h.run();
+    h.get_by_label("Add").click();
+    h.run();
+    let band = h
+        .state()
+        .editor
+        .project
+        .blocks
+        .values()
+        .find(|b| b.name == "Logging")
+        .map(|b| b.band);
+    assert_eq!(band, Some(true));
+    Ok(())
+}

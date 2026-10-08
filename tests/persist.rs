@@ -210,3 +210,36 @@ fn a_line_without_direction_is_written_as_none() -> TestResult {
     assert_eq!(rel.direction, Direction::Undirected);
     Ok(())
 }
+
+#[test]
+fn bands_are_saved_without_a_cell() -> TestResult {
+    let mut p = sample()?;
+    p.add_block(
+        None,
+        &BlockSpec::new("Logging", BlockKind::Component).as_band(),
+    )?;
+    let yaml = persist::to_yaml(&p)?;
+    let band = yaml
+        .split("- id: ")
+        .find(|b| b.contains("name: Logging"))
+        .ok_or("band entry")?;
+    assert!(
+        band.contains("band: true") && !band.contains("cell:"),
+        "{band}"
+    );
+    let back = persist::from_yaml(&yaml)?;
+    assert_eq!(back.blocks, p.blocks);
+    Ok(())
+}
+
+#[test]
+fn a_band_with_lines_is_rejected() -> TestResult {
+    let p = sample()?;
+    let yaml =
+        persist::to_yaml(&p)?.replacen("  kind: person\n", "  kind: component\n  band: true\n", 1);
+    assert!(matches!(
+        persist::from_yaml(&yaml),
+        Err(PersistError::Invalid(_))
+    ));
+    Ok(())
+}

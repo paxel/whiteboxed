@@ -47,6 +47,10 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
         if !r.expand(border).contains(p) {
             continue;
         }
+        // Bands have no lines, so no border to start one from.
+        if b.band {
+            return Hit::Block(b.id);
+        }
         let distances = [
             (Side::Top, (p.y - r.min.y).abs()),
             (Side::Right, (p.x - r.max.x).abs()),

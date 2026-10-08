@@ -65,10 +65,12 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
     match popup {
         Popup::AddBlock(form, _) => {
             block_form(ui, editor, form, focus);
+            band_row(ui, &mut form.band);
             ok_cancel(ui, "Add")
         }
         Popup::EditBlock(_, form) => {
             block_form(ui, editor, form, focus);
+            band_row(ui, &mut form.band);
             ok_cancel(ui, "Save")
         }
         Popup::Connect(form) => {
@@ -220,6 +222,13 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             action
         }
     }
+}
+
+fn band_row(ui: &mut Ui, band: &mut bool) {
+    ui.checkbox(band, "Cross-cutting band").on_hover_text(
+        "A concern every part uses, such as logging or security: drawn as a band \
+             across the bottom of the diagram, without lines",
+    );
 }
 
 fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bool) {

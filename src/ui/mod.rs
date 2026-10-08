@@ -657,7 +657,12 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             let start = ui.input(|i| i.pointer.press_origin());
             self.drag = match start.map(|p| hit_with(view, p)) {
-                Some(Hit::Block(b)) if !self.picking => Some(b),
+                // Bands stay at the bottom; they cannot be dragged.
+                Some(Hit::Block(b))
+                    if !self.picking && project.blocks.get(&b).is_some_and(|x| !x.band) =>
+                {
+                    Some(b)
+                }
                 _ => None,
             };
         }
@@ -855,7 +860,10 @@ impl App {
                 }
                 resp.ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
-            Hit::Block(_) => resp.ctx.set_cursor_icon(CursorIcon::Grab),
+            Hit::Block(b) if layout.block(b).is_some_and(|g| !g.band) => {
+                resp.ctx.set_cursor_icon(CursorIcon::Grab);
+            }
+            Hit::Block(_) => {}
             Hit::Line(rel) => {
                 if let Some(line) = layout.lines.iter().find(|l| l.relation == rel) {
                     let pts: Vec<Pos2> = line.points.iter().map(|q| view.screen(*q)).collect();

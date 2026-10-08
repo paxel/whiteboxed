@@ -60,6 +60,17 @@ Every box has a **name**, unique within its diagram (case does not matter), a
 **type**, and at most one **tag**. A small mark in the lower right corner shows that a
 box has content in its whitebox.
 
+### Cross-cutting bands
+
+A concern that every part of a level uses, such as logging, security or monitoring,
+can be a **cross-cutting band**: tick **Cross-cutting band** when you add or edit a
+box. A band runs across the bottom of the diagram, below the grid; several bands stack
+in the order you added them. A band is a real building block: it has a name, a type
+and a responsibility, it can be opened into its own whitebox, and it appears in the
+building-block table of the export. It has no lines, so it cannot be connected, and it
+does not move. A box with lines has to lose them before it can become a band; a band
+that becomes a box again goes to the next free cell.
+
 ## Relations
 
 A relation connects two boxes of the same diagram. It has:
@@ -347,4 +358,5 @@ default `round12`) and `label_limit` (default 24; `never` turns shortening off).
   lists the box on that level, then the box it is attached to inside, and so on. An
   empty end (`b: []`) is an open stub end.
 - `side`: `top`, `right`, `bottom`, `left`.
+- A cross-cutting band has `band: true` and no `cell`.
 - Empty texts (`motivation`, `responsibility`, `text`) are left out.

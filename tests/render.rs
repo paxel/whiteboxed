@@ -125,6 +125,11 @@ fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
         "",
     )?;
     p.attach(buy, End::B, shop, ui, Side::Left)?;
+    let logging = p.add_block(
+        Some(shop),
+        &spec("Logging and Monitoring", BlockKind::Component).as_band(),
+    )?;
+    p.set_responsibility(logging, "Collects logs and metrics of every part of the shop.")?;
     p.set_motivation(
         None,
         "Customers buy through the web shop; payment and shipping are external services.",

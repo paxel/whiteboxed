@@ -673,3 +673,45 @@ fn a_line_without_direction_has_no_arrowheads() -> TestResult {
     assert_eq!(arrows, 0);
     Ok(())
 }
+
+#[test]
+fn bands_run_across_the_bottom_inside_the_frame() -> TestResult {
+    let (mut p, shop) = sample()?;
+    let ctx_before = render(&p, None).bounds;
+    let log = p.add_block(None, &spec("Logging", BlockKind::Component).as_band())?;
+    let sec = p.add_block(
+        Some(shop),
+        &spec("Security", BlockKind::Component).as_band(),
+    )?;
+    let audit = p.add_block(Some(shop), &spec("Audit", BlockKind::Component).as_band())?;
+
+    let ctx = render(&p, None);
+    let band = ctx.block(log).ok_or("logging")?;
+    assert!(band.band);
+    assert!(ctx.bounds.height() > ctx_before.height());
+    for b in ctx.blocks.iter().filter(|b| !b.band) {
+        assert!(
+            b.rect.max.y < band.rect.min.y,
+            "{} is below the band",
+            b.name
+        );
+    }
+    assert!(band.rect.width() >= ctx_before.width() - layout::GAP - 0.01);
+
+    let wb = render(&p, Some(shop));
+    let frame = wb.frame.ok_or("frame")?;
+    let (s, a) = (
+        wb.block(sec).ok_or("security")?.rect,
+        wb.block(audit).ok_or("audit")?.rect,
+    );
+    assert!(frame.contains(s.min) && frame.contains(a.max));
+    // In the order they were added, one below the other.
+    assert!(s.max.y < a.min.y);
+    // A click on a band's border selects it; it offers no line to start.
+    let edge = Pos::new(s.center().x, s.min.y + 1.0);
+    assert_eq!(
+        whiteboxed::hit::hit(&p, &wb, edge, 1.0),
+        whiteboxed::hit::Hit::Block(sec)
+    );
+    Ok(())
+}

@@ -590,3 +590,28 @@ fn relations_can_have_no_direction() -> TestResult {
     assert!(out.to_string().contains("Ops"));
     Ok(())
 }
+
+#[test]
+fn add_box_can_make_a_band() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let out = call(
+        &mut e,
+        "add_box",
+        json!({"name": "Logging", "kind": "component", "band": true}),
+    )?;
+    assert_eq!(out["band"], true);
+    assert!(out.get("cell").is_none());
+    assert!(
+        call(
+            &mut e,
+            "connect_existing",
+            json!({"from": "Web Shop", "side": "bottom", "target": "Logging", "direction": "out"}),
+        )
+        .is_err()
+    );
+    let out = call(&mut e, "edit_box", json!({"box": "Logging", "band": false}))?;
+    assert!(out.get("band").is_none());
+    assert!(out.get("cell").is_some());
+    Ok(())
+}

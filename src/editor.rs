@@ -24,6 +24,8 @@ pub struct BlockForm {
     pub name: String,
     pub kind: BlockKind,
     pub tag: String,
+    /// A cross-cutting band instead of a grid box.
+    pub band: bool,
 }
 
 impl Default for BlockForm {
@@ -32,6 +34,7 @@ impl Default for BlockForm {
             name: String::new(),
             kind: BlockKind::Component,
             tag: String::new(),
+            band: false,
         }
     }
 }
@@ -42,6 +45,7 @@ impl BlockForm {
             name: self.name.clone(),
             kind: self.kind,
             tag: Some(self.tag.clone()),
+            band: self.band,
         }
     }
 }
@@ -481,6 +485,7 @@ impl Editor {
                     name: b.name.clone(),
                     kind: b.kind,
                     tag,
+                    band: b.band,
                 },
             ));
         }
@@ -543,7 +548,7 @@ impl Editor {
         let filter = filter.trim().to_lowercase();
         let mut out = Vec::new();
         for (id, b) in self.project.blocks_in(self.diagram) {
-            if id != from {
+            if id != from && !b.band {
                 out.push((Target::Block(id), b.name.clone()));
             }
         }
@@ -598,7 +603,9 @@ impl Editor {
         };
         self.project
             .blocks_in(self.diagram)
-            .filter(|(id, b)| Some(*id) != near && b.name.to_lowercase().contains(&filter))
+            .filter(|(id, b)| {
+                Some(*id) != near && !b.band && b.name.to_lowercase().contains(&filter)
+            })
             .map(|(id, b)| (id, b.name.clone()))
             .collect()
     }

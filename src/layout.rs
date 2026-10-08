@@ -12,6 +12,9 @@ use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
 pub const GAP: f32 = 110.0;
 pub const PORT_SPACING: f32 = 40.0;
+/// Height of a cross-cutting band, and the space between two of them.
+pub const BAND_H: f32 = 56.0;
+const BAND_GAP: f32 = 12.0;
 pub const MIN_W: f32 = 150.0;
 pub const MIN_H: f32 = 80.0;
 pub const PAD: f32 = 18.0;
@@ -37,6 +40,8 @@ pub struct BlockGeom {
     pub kind: BlockKind,
     pub fill: Rgb,
     pub has_content: bool,
+    /// A cross-cutting band across the bottom; it has no lines.
+    pub band: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,7 +274,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     // Box sizes.
     let mut sizes = BTreeMap::new();
     for id in &view.blocks {
-        let Some(b) = project.blocks.get(id) else {
+        let Some(b) = project.blocks.get(id).filter(|b| !b.band) else {
             continue;
         };
         let o = Owner::Block(*id);
@@ -317,10 +322,48 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             kind: b.kind,
             fill,
             has_content: project.has_content(*id),
+            band: false,
         });
     }
 
-    let bounds = Rect::from_min_size(Pos::new(0.0, 0.0), grid.width, grid.height);
+    // Cross-cutting bands: one below the other under the grid, as wide as the picture.
+    let bands: Vec<(BlockId, &crate::model::Block)> = view
+        .blocks
+        .iter()
+        .filter_map(|id| project.blocks.get(id).filter(|b| b.band).map(|b| (*id, b)))
+        .collect();
+    let mut width = grid.width;
+    for (_, b) in &bands {
+        let text_w = text::width(&b.name, NAME_SIZE)
+            .max(text::width(&kind_caption(b.kind), KIND_SIZE))
+            + 2.0 * PAD;
+        width = width.max(text_w + GAP);
+    }
+    let mut y = grid.height;
+    for (id, b) in &bands {
+        let rect = Rect::from_min_size(Pos::new(GAP / 2.0, y), width - GAP, BAND_H);
+        y += BAND_H + BAND_GAP;
+        blocks.push(BlockGeom {
+            id: *id,
+            rect,
+            name: b.name.clone(),
+            kind: b.kind,
+            fill: b
+                .tag
+                .and_then(|t| project.tags.get(&t))
+                .map_or(DEFAULT_FILL, |t| t.color),
+            has_content: project.has_content(*id),
+            band: true,
+        });
+    }
+    // Below the bands a full gap, so ends entering through the bottom of a whitebox
+    // frame have room before they reach the bands.
+    let height = if bands.is_empty() {
+        grid.height
+    } else {
+        y - BAND_GAP + GAP
+    };
+    let bounds = Rect::from_min_size(Pos::new(0.0, 0.0), width, height);
     let frame = view.diagram.map(|_| bounds);
 
     // Port positions: (line index, end) -> (point, channel entry). A port sits where

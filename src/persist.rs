@@ -65,7 +65,11 @@ struct BlockDto {
     parent: Option<BlockId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tag: Option<TagId>,
-    cell: Cell,
+    /// Every box but a band has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cell: Option<Cell>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    band: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     responsibility: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -159,7 +163,8 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 kind: b.kind,
                 parent: b.parent,
                 tag: b.tag,
-                cell: b.cell,
+                cell: (!b.band).then_some(b.cell),
+                band: b.band,
                 responsibility: b.responsibility.clone(),
                 motivation: b.motivation.clone(),
             })
@@ -219,6 +224,13 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     }
     for b in dto.blocks {
         fresh(b.id.0)?;
+        let cell = match (b.cell, b.band) {
+            (Some(cell), false) => cell,
+            (_, true) => Cell::new(0, 0),
+            (None, false) => {
+                return Err(PersistError::Invalid(format!("box {} has no cell", b.id.0)));
+            }
+        };
         project.blocks.insert(
             b.id,
             Block {
@@ -226,7 +238,8 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 kind: b.kind,
                 tag: b.tag,
                 parent: b.parent,
-                cell: b.cell,
+                cell,
+                band: b.band,
                 responsibility: b.responsibility,
                 motivation: b.motivation,
             },
@@ -285,9 +298,23 @@ fn check(project: &Project) -> Result<(), PersistError> {
         }
     }
     let mut cells = BTreeMap::new();
-    for (id, b) in &project.blocks {
+    for (id, b) in project.blocks.iter().filter(|(_, b)| !b.band) {
         if let Some(other) = cells.insert((b.parent, b.cell), *id) {
             return invalid(format!("boxes {} and {} share a cell", other.0, id.0));
+        }
+    }
+    for (id, b) in project.blocks.iter().filter(|(_, b)| b.band) {
+        if b.kind.is_neighbour() {
+            return invalid(format!("box {} cannot be a band", id.0));
+        }
+        let touched = project.relations.values().any(|r| {
+            r.a.anchors
+                .iter()
+                .chain(&r.b.anchors)
+                .any(|a| a.block == *id)
+        });
+        if touched {
+            return invalid(format!("band {} has lines", id.0));
         }
     }
     let mut per_owner: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();

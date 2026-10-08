@@ -542,3 +542,58 @@ fn the_project_is_named_after_its_system_until_named_by_hand() -> TestResult {
     assert_eq!(p.display_name().as_deref(), Some("Store"));
     Ok(())
 }
+
+#[test]
+fn bands_are_building_blocks_without_lines_or_cells() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let log = p.add_block(None, &component("Logging").as_band())?;
+    assert!(p.block(log)?.band);
+    // A band takes no cell: the next box goes right of the shop.
+    let billing = p.add_block(None, &component("Billing"))?;
+    assert_eq!(cell(&p, billing)?, Cell::new(1, 0));
+    // No lines from, to or into a band.
+    assert_eq!(
+        p.connect_new(log, Side::Top, &component("X"), Direction::Out, ""),
+        Err(ModelError::BandHasNoLines)
+    );
+    assert_eq!(
+        p.connect_existing(shop, Side::Bottom, log, Direction::Out, "", Placement::Move),
+        Err(ModelError::BandHasNoLines)
+    );
+    assert_eq!(
+        p.add_stub(log, Side::Top, Direction::Out, ""),
+        Err(ModelError::BandHasNoLines)
+    );
+    assert_eq!(
+        p.move_block(log, Cell::new(3, 3)),
+        Err(ModelError::BandStays)
+    );
+    // A band can be opened like any box.
+    p.add_block(Some(log), &component("Collector"))?;
+    assert!(p.has_content(log));
+    assert_eq!(
+        p.add_block(None, &BlockSpec::new("Ops", BlockKind::Person).as_band()),
+        Err(ModelError::BandKind("person"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_box_becomes_a_band_only_without_lines_and_back_into_the_grid() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &component("Shop"))?;
+    let (billing, rel) =
+        p.connect_new(shop, Side::Right, &component("Billing"), Direction::Out, "")?;
+    assert_eq!(
+        p.edit_block(billing, &component("Billing").as_band()),
+        Err(ModelError::LinesOnBand)
+    );
+    p.remove_line(rel, None)?;
+    p.edit_block(billing, &component("Billing").as_band())?;
+    assert!(p.block(billing)?.band);
+    p.edit_block(billing, &component("Billing"))?;
+    assert!(!p.block(billing)?.band);
+    assert_eq!(cell(&p, billing)?, Cell::new(1, 0));
+    Ok(())
+}

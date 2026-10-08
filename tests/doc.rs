@@ -186,3 +186,20 @@ fn a_line_without_arrows_counts_as_input_and_output() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn bands_are_listed_as_building_blocks() -> TestResult {
+    let (mut p, _) = shop()?;
+    let log = p.add_block(
+        None,
+        &BlockSpec::new("Logging", BlockKind::Component).as_band(),
+    )?;
+    p.set_responsibility(log, "Collects every log line.")?;
+    let md = doc::diagram_doc(&p, None, "context.svg", DocFormat::Markdown);
+    assert!(
+        md.lines()
+            .any(|l| l.contains("Logging") && l.contains("Collects every log line.")),
+        "{md}"
+    );
+    Ok(())
+}
