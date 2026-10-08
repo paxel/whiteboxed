@@ -151,6 +151,8 @@ impl Ai {
             .collapsible(false)
             .resizable(false)
             .default_width(520.0)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| action = self.dialog_body(ui, command));
         match action {
             Some(DialogAction::Toggle) => {
