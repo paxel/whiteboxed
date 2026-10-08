@@ -319,3 +319,25 @@ fn export_all_writes_every_diagram() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn tag_colours_change_with_undo() -> TestResult {
+    let mut e = Editor::new(None);
+    e.start_add_block();
+    if let Some(Popup::AddBlock(form)) = &mut e.popup {
+        form.name = "Shop".into();
+        form.tag = "core".into();
+    }
+    e.confirm();
+    let tag = e.project.tag_by_name("core").ok_or("tag")?;
+    let before = e.project.tags[&tag].color;
+    let pick = whiteboxed::model::PALETTE[3];
+    e.set_tag_color(tag, pick);
+    assert_eq!(e.project.tags[&tag].color, pick);
+    let fill = e.layout().blocks.first().ok_or("block")?.fill;
+    assert_eq!(fill, pick);
+    e.undo();
+    assert_eq!(e.project.tags[&tag].color, before);
+    assert_eq!(e.tag_suggestions("c"), vec!["core".to_owned()]);
+    Ok(())
+}
