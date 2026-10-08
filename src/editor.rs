@@ -136,6 +136,18 @@ pub struct Editor {
     recovery_dir: Option<PathBuf>,
     autosave_at: Option<Instant>,
     layout_cache: Option<(Project, DiagramId, Layout)>,
+    /// What an AI client changed last, for the status bar and "Follow AI".
+    pub last_ai: Option<AiAction>,
+}
+
+/// One change made through the AI interface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiAction {
+    pub summary: String,
+    /// The diagram the change happened in.
+    pub diagram: DiagramId,
+    /// The box it was about, if any.
+    pub block: Option<BlockId>,
 }
 
 impl Editor {
@@ -154,6 +166,7 @@ impl Editor {
             recovery_dir,
             autosave_at: None,
             layout_cache: None,
+            last_ai: None,
         };
         editor.offer_recovery();
         editor
@@ -183,6 +196,7 @@ impl Editor {
             recovery_dir,
             autosave_at: None,
             layout_cache: None,
+            last_ai: None,
         }
     }
 
@@ -311,6 +325,18 @@ impl Editor {
                 None
             }
         }
+    }
+
+    /// Like a user action, one undo step, but the error goes back to the caller (an
+    /// AI client) instead of the status bar.
+    pub fn apply_ai<T>(
+        &mut self,
+        change: impl FnOnce(&mut Project) -> Result<T, ModelError>,
+    ) -> Result<T, ModelError> {
+        let mut next = self.project.clone();
+        let value = change(&mut next)?;
+        self.change_to(next);
+        Ok(value)
     }
 
     fn change_to(&mut self, next: Project) {
