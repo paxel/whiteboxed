@@ -223,3 +223,83 @@ fn serve_for_manual_clients() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn a_call_its_client_gave_up_on_changes_nothing() -> TestResult {
+    let mut editor = Editor::new(None);
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    drop(answer);
+    Call {
+        tool: "add_box".into(),
+        args: json!({"name": "Late", "kind": "component"}),
+        reply,
+    }
+    .run(&mut editor);
+    assert!(editor.project.blocks.is_empty());
+    assert!(!editor.can_undo());
+    Ok(())
+}
+
+#[test]
+fn stopping_with_a_call_in_flight_is_quick_and_frees_the_port() -> TestResult {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")?
+        .local_addr()?
+        .port();
+    // Nobody pumps this channel: the call stays in flight.
+    let (tx, _rx) = mpsc::channel::<Call>();
+    let server = Server::start(port, TOKEN.into(), tx, Arc::new(|| {}))?;
+    let addr = server.addr;
+    let auth = format!("Bearer {TOKEN}");
+    let init = rpc(
+        1,
+        "initialize",
+        json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}),
+    );
+    let session = post(addr, "/mcp", &init, &[("Authorization", &auth)])?
+        .session
+        .ok_or("session")?;
+    let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+    let h = [
+        ("Authorization", auth.clone()),
+        ("Mcp-Session-Id", session),
+        ("MCP-Protocol-Version", "2025-06-18".to_owned()),
+    ];
+    let headers: Vec<(&str, &str)> = h.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    post(addr, "/mcp", &note, &headers)?;
+    let owned: Vec<(String, String)> = h
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), v.clone()))
+        .collect();
+    let pending = std::thread::spawn(move || {
+        let headers: Vec<(&str, &str)> = owned
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        let call = rpc(
+            2,
+            "tools/call",
+            json!({"name": "get_model", "arguments": {}}),
+        );
+        post(addr, "/mcp", &call, &headers).map(|r| r.body)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let started = std::time::Instant::now();
+    drop(server);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "took {:?}",
+        started.elapsed()
+    );
+    let body = pending.join().map_err(|_| "client thread")??;
+    if let Some(answer) = message(&body, 2) {
+        assert!(
+            answer["result"]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("turned off"))
+        );
+    }
+    let (tx, _rx) = mpsc::channel::<Call>();
+    let again = Server::start(port, TOKEN.into(), tx, Arc::new(|| {}));
+    assert!(again.is_ok(), "the port is free again");
+    Ok(())
+}

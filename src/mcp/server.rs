@@ -40,9 +40,18 @@ pub struct Call {
 impl Call {
     /// Runs the call against an editor and sends the answer back.
     pub fn run(self, editor: &mut crate::editor::Editor) {
+        // A call whose client gave up (timeout, server stopped) must not change the
+        // model any more: the client was told it did not happen and may retry.
+        if self.reply.is_closed() {
+            return;
+        }
         let result = api::call(editor, &self.tool, self.args);
-        // The client may have given up already; nothing to do then.
         let _ = self.reply.send(result);
+    }
+
+    /// Answers without running, e.g. when AI access is turned off.
+    pub fn refuse(self, why: &str) {
+        let _ = self.reply.send(Err(ApiError::Rejected(why.to_owned())));
     }
 }
 
@@ -53,6 +62,7 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 struct Handler {
     calls: Sender<Call>,
     wake: Wake,
+    stop: CancellationToken,
 }
 
 impl ServerHandler for Handler {
@@ -90,15 +100,19 @@ impl ServerHandler for Handler {
             return Err(ErrorData::internal_error("whiteboxed is closing", None));
         }
         (self.wake)();
-        let result = match tokio::time::timeout(CALL_TIMEOUT, answer).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => return Err(ErrorData::internal_error("the call was dropped", None)),
-            Err(_) => {
-                return Ok(CallToolResult::error(vec![ContentBlock::text(
-                    "whiteboxed did not answer in time; is the window minimised?",
-                )])
-                .into());
-            }
+        let not_done = |why: &str| -> Result<CallToolResponse, ErrorData> {
+            Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "{why} Nothing was changed; the call can be repeated."
+            ))])
+            .into())
+        };
+        let result = tokio::select! {
+            r = tokio::time::timeout(CALL_TIMEOUT, answer) => match r {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => return not_done("whiteboxed dropped the call."),
+                Err(_) => return not_done("whiteboxed did not answer in time; is the window minimised?"),
+            },
+            () = self.stop.cancelled() => return not_done("AI access was turned off."),
         };
         Ok(match result {
             Ok(Output::Json(v)) => CallToolResult::success(vec![ContentBlock::text(
@@ -149,7 +163,11 @@ impl Server {
                     let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
                         return;
                     };
-                    let handler = Handler { calls, wake };
+                    let handler = Handler {
+                        calls,
+                        wake,
+                        stop: stop.clone(),
+                    };
                     let config = StreamableHttpServerConfig::default()
                         .with_cancellation_token(stop.child_token());
                     let service: StreamableHttpService<Handler, LocalSessionManager> =

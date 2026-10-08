@@ -78,7 +78,7 @@ impl Ai {
             }
             return;
         };
-        self.server = None;
+        self.stop();
         let wake_ctx = ctx.clone();
         match Server::start(
             s.port,
@@ -100,6 +100,10 @@ impl Ai {
     }
 
     pub fn stop(&mut self) {
+        // Answer what is still queued, so no client waits on a server that is going.
+        while let Ok(call) = self.incoming.try_recv() {
+            call.refuse("AI access was turned off. Nothing was changed.");
+        }
         self.server = None;
     }
 
