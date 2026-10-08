@@ -683,3 +683,16 @@ fn moving_a_landing_box_faces_the_frame() -> TestResult {
     assert_eq!(sides, vec![Side::Top, Side::Left]);
     Ok(())
 }
+
+#[test]
+fn a_box_moved_by_connecting_faces_all_its_partners() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    p.set_side_at(ab, b, Side::Top)?;
+    let c = p.add_block(None, &component("C"))?;
+    p.connect_existing(c, Side::Bottom, b, Direction::Out, "", Placement::Move)?;
+    assert_eq!(cell(&p, b)?, Cell::new(2, 1));
+    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    Ok(())
+}

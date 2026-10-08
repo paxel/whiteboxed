@@ -837,19 +837,18 @@ impl Project {
         if placement == Placement::Keep {
             return Ok(());
         }
-        let broken = self.conflicts(from, side, target)?;
-        if let Some(cell) = self.partner_cell(from, side, target)? {
-            if !cell.in_grid() {
-                return Err(ModelError::OutsideGrid);
-            }
-            if let Some(block) = self.blocks.get_mut(&target) {
-                block.cell = cell;
-            }
+        let Some(cell) = self.partner_cell(from, side, target)? else {
+            return Ok(());
+        };
+        if !cell.in_grid() {
+            return Err(ModelError::OutsideGrid);
         }
-        for rel in broken {
-            self.reside(rel)?;
+        let diagram = self.block(target)?.parent;
+        if let Some(block) = self.blocks.get_mut(&target) {
+            block.cell = cell;
         }
-        Ok(())
+        // Like any move: the moved box's lines face their partners.
+        self.reface(diagram, &[target])
     }
 
     /// The side of `target` a new relation from `side` of `from` arrives at.
