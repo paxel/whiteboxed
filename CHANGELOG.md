@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Lines between boxes that face each other are straight, and relations from the level above enter a whitebox opposite the box that takes them, instead of being spread evenly along the side.
+- Several new boxes on one side of a box fill a block that stays as square as possible (2×2, 3×2, 3×3 …) instead of one long row.
 - Moving a box turns its lines to the sides that face their partners (or the frame side a line from outside enters at). A side can also be chosen by hand in the relation dialog and through the AI's edit_relation, until the next move.
 - Lines avoid crossing each other where a short detour or a different lane order allows it; where lines still cross, the horizontal one jumps over the other in a small arc.
 - The question about unsaved changes before quitting, starting a new project or opening another one is now a large dialog over the dimmed window, with buttons that say what they do; Enter saves, Esc keeps editing.

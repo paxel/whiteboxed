@@ -631,8 +631,9 @@ impl Project {
             .any(|(id, b)| Some(id) != except && b.cell == cell)
     }
 
-    /// The first free cell at `target`, else next to it across `side`'s axis: a box
-    /// requested to the right goes above or below a taken cell, in the same column.
+    /// The first free cell at `target`, else the nearest free cell of a block that
+    /// grows from `target` away from the origin on `side` as squarely as possible:
+    /// 1, 2 side by side, 2x2, 3x2, 3x3 … boxes.
     fn free_cell_near(
         &self,
         diagram: DiagramId,
@@ -640,21 +641,32 @@ impl Project {
         side: Side,
         except: Option<BlockId>,
     ) -> Cell {
-        let step = |k: i32| {
-            if side.is_horizontal() {
-                Cell::new(target.col, target.row + k)
-            } else {
-                Cell::new(target.col + k, target.row)
-            }
+        // `across` runs along the side (0, 1, -1, 2, -2 …), `depth` away from it.
+        let at = |across: i32, depth: i32| {
+            let (dc, dr) = match side {
+                Side::Right => (depth, across),
+                Side::Left => (-depth, across),
+                Side::Bottom => (across, depth),
+                Side::Top => (across, -depth),
+            };
+            Cell::new(target.col + dc, target.row + dr)
         };
-        let mut k = 0;
+        let across = |k: i32| if k % 2 == 1 { (k + 1) / 2 } else { -(k / 2) };
+        let (mut wide, mut deep) = (1, 1);
         loop {
-            for candidate in [step(k), step(-k)] {
-                if !self.occupied(diagram, candidate, except) {
-                    return candidate;
+            for depth in 0..deep {
+                for k in 0..wide {
+                    let cell = at(across(k), depth);
+                    if !self.occupied(diagram, cell, except) {
+                        return cell;
+                    }
                 }
             }
-            k += 1;
+            if wide > deep {
+                deep += 1;
+            } else {
+                wide += 1;
+            }
         }
     }
 

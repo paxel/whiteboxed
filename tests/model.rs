@@ -83,14 +83,49 @@ fn connect_new_places_the_partner_on_the_clicked_side() -> TestResult {
 }
 
 #[test]
-fn taken_cell_puts_the_new_box_next_to_it_in_the_same_column() -> TestResult {
+fn new_boxes_on_one_side_fill_a_square_block() -> TestResult {
     let mut p = Project::new();
     let a = p.add_block(None, &component("A"))?;
-    p.connect_new(a, Side::Right, &component("C"), Direction::Out, "")?;
-    let (b, _) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
-    assert_eq!(cell(&p, b)?, Cell::new(1, 1));
-    let (d, _) = p.connect_new(a, Side::Right, &component("D"), Direction::Out, "")?;
-    assert_eq!(cell(&p, d)?, Cell::new(1, -1));
+    let mut cells = Vec::new();
+    for i in 0..9 {
+        let (b, _) = p.connect_new(
+            a,
+            Side::Right,
+            &component(&format!("B{i}")),
+            Direction::Out,
+            "",
+        )?;
+        cells.push(cell(&p, b)?);
+    }
+    let c = |col, row| Cell::new(col, row);
+    // 1, then 2 along the side, 2x2, 3x2, 3x3.
+    assert_eq!(
+        cells,
+        vec![
+            c(1, 0),
+            c(1, 1),
+            c(2, 0),
+            c(2, 1),
+            c(1, -1),
+            c(2, -1),
+            c(3, 0),
+            c(3, 1),
+            c(3, -1),
+        ]
+    );
+    // Above A the block grows upward, around cells already taken: B4 holds (1, -1).
+    let mut top = Vec::new();
+    for i in 0..3 {
+        let (t, _) = p.connect_new(
+            a,
+            Side::Top,
+            &component(&format!("T{i}")),
+            Direction::Out,
+            "",
+        )?;
+        top.push(cell(&p, t)?);
+    }
+    assert_eq!(top, vec![c(0, -1), c(0, -2), c(1, -2)]);
     Ok(())
 }
 
