@@ -1,0 +1,122 @@
+use whiteboxed::doc::{self, DocFormat};
+use whiteboxed::model::{BlockId, BlockKind, BlockSpec, Direction, End, Project, Side};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
+    let mut p = Project::new();
+    let spec = BlockSpec::new;
+    let user = p.add_block(None, &spec("Customer", BlockKind::Person))?;
+    let (shop, buy) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Web Shop", BlockKind::Component),
+        Direction::Out,
+        "orders",
+    )?;
+    p.connect_new(
+        shop,
+        Side::Right,
+        &spec("Payment", BlockKind::ExternalSystem),
+        Direction::Bi,
+        "REST | JSON",
+    )?;
+    p.connect_new(
+        shop,
+        Side::Bottom,
+        &spec("Warehouse", BlockKind::ExternalSystem),
+        Direction::Out,
+        "shipping orders",
+    )?;
+    p.set_motivation(None, "Who talks to the shop.")?;
+    p.set_responsibility(shop, "Sells things.\nShips them.")?;
+    let ui = p.add_block(Some(shop), &spec("Storefront", BlockKind::Ui))?;
+    p.set_responsibility(ui, "Shows the catalog.")?;
+    p.connect_new(
+        ui,
+        Side::Right,
+        &spec("Orders", BlockKind::Component),
+        Direction::Out,
+        "place order",
+    )?;
+    p.attach(buy, End::B, shop, ui, Side::Left)?;
+    p.set_motivation(Some(shop), "Split by capability.")?;
+    Ok((p, shop))
+}
+
+#[test]
+fn the_context_lists_partners_with_input_and_output() -> TestResult {
+    let (p, _) = shop()?;
+    let md = doc::diagram_doc(&p, None, "context.svg", DocFormat::Markdown);
+    assert!(
+        md.starts_with("### Context\n\n![Context view](<context.svg>)\n\nWho talks to the shop.\n")
+    );
+    assert!(md.contains(
+        "| Partner   | Input        | Output          |\n\
+         |-----------|--------------|-----------------|\n\
+         | Customer  | orders       | \u{2013}               |\n\
+         | Payment   | REST \\| JSON | REST \\| JSON    |\n\
+         | Warehouse | \u{2013}            | shipping orders |\n"
+    ));
+    assert!(md.contains("| Web Shop | Sells things.<br>Ships them. |"));
+    Ok(())
+}
+
+#[test]
+fn a_whitebox_has_blocks_external_interfaces_and_internal_relations() -> TestResult {
+    let (p, shop) = shop()?;
+    let adoc = doc::diagram_doc(
+        &p,
+        Some(shop),
+        "context - Web Shop.svg",
+        DocFormat::AsciiDoc,
+    );
+    assert!(adoc.starts_with(
+        "=== Whitebox Web Shop\n\nimage::context - Web Shop.svg[Whitebox Web Shop]\n\n"
+    ));
+    assert!(adoc.contains("==== Motivation\n\nSplit by capability.\n"));
+    assert!(adoc.contains("|Storefront\n|Shows the catalog.\n"));
+    assert!(adoc.contains("|Orders\n|\u{2013}\n"));
+    assert!(adoc.contains("==== External interfaces"));
+    assert!(adoc.contains("|Customer\n|Storefront\n|in\n|orders\n"));
+    assert!(adoc.contains("|Payment\n|not assigned\n|bi\n|REST \\| JSON\n"));
+    assert!(adoc.contains("|Warehouse\n|not assigned\n|out\n|shipping orders\n"));
+    assert!(adoc.contains("==== Internal relations"));
+    assert!(adoc.contains("|Storefront\n|Orders\n|out\n|place order\n"));
+    Ok(())
+}
+
+#[test]
+fn the_index_includes_or_links_every_diagram_in_level_order() -> TestResult {
+    let (p, shop) = shop()?;
+    let order: Vec<_> = doc::diagrams(&p);
+    assert_eq!(order, vec![None, Some(shop)]);
+    let entries = vec![
+        (None, "context".to_owned()),
+        (Some(shop), "context - Web Shop".to_owned()),
+    ];
+    let adoc = doc::index_doc(&p, "Shop", &entries, DocFormat::AsciiDoc);
+    assert_eq!(
+        adoc,
+        "= Shop\n\n== Context and scope\n\ninclude::context.adoc[]\n\n\
+         == Building block view\n\ninclude::context - Web Shop.adoc[]\n\n"
+    );
+    let md = doc::index_doc(&p, "Shop", &entries, DocFormat::Markdown);
+    assert!(md.contains("- [Context](<context.md>)"));
+    assert!(md.contains("- [Whitebox Web Shop](<context - Web Shop.md>)"));
+    Ok(())
+}
+
+#[test]
+#[ignore = "prints the sample documents"]
+fn print_samples() -> TestResult {
+    let (p, shop) = shop()?;
+    for f in [DocFormat::AsciiDoc, DocFormat::Markdown] {
+        println!("{}", doc::diagram_doc(&p, None, "context.svg", f));
+        println!(
+            "{}",
+            doc::diagram_doc(&p, Some(shop), "context - Web Shop.svg", f)
+        );
+    }
+    Ok(())
+}

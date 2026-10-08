@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use whiteboxed::doc::DocFormat;
 use whiteboxed::editor::{ConnectMode, Editor, OpenEnd, Popup, Target};
 use whiteboxed::geom::Pos;
 use whiteboxed::hit::{self, Hit};
@@ -302,7 +303,7 @@ fn export_all_writes_every_diagram() -> TestResult {
     let shop = add_first(&mut e, "Shop")?;
     e.open_diagram(Some(shop));
     add_first(&mut e, "Orders/Billing")?;
-    assert_eq!(e.export_all(dir.path())?, 2);
+    assert_eq!(e.export_all(dir.path(), DocFormat::Markdown)?, 2);
     let mut names: Vec<String> = std::fs::read_dir(dir.path())?
         .filter_map(|f| f.ok())
         .map(|f| f.file_name().to_string_lossy().into_owned())
@@ -311,10 +312,13 @@ fn export_all_writes_every_diagram() -> TestResult {
     assert_eq!(
         names,
         vec![
+            "context - Shop.md",
             "context - Shop.png",
             "context - Shop.svg",
+            "context.md",
             "context.png",
-            "context.svg"
+            "context.svg",
+            "index.md"
         ]
     );
     Ok(())

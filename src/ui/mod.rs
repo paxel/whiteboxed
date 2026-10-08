@@ -11,6 +11,7 @@ use egui::{
     Sense, Stroke, Ui, ViewportCommand, vec2,
 };
 
+use crate::doc::DocFormat;
 use crate::editor::{Editor, Popup, Target};
 use crate::geom;
 use crate::hit::{self, Hit};
@@ -245,8 +246,11 @@ impl App {
                 if ui.button("Export diagram as PNG\u{2026}").clicked() {
                     self.export("png");
                 }
-                if ui.button("Export all diagrams\u{2026}").clicked() {
-                    self.export_all();
+                if ui.button("Export all as AsciiDoc\u{2026}").clicked() {
+                    self.export_all(DocFormat::AsciiDoc);
+                }
+                if ui.button("Export all as Markdown\u{2026}").clicked() {
+                    self.export_all(DocFormat::Markdown);
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
@@ -879,11 +883,11 @@ impl App {
         });
     }
 
-    fn export_all(&mut self) {
+    fn export_all(&mut self, format: DocFormat) {
         let Some(dir) = rfd::FileDialog::new().pick_folder() else {
             return;
         };
-        self.editor.message = Some(match self.editor.export_all(&dir) {
+        self.editor.message = Some(match self.editor.export_all(&dir, format) {
             Ok(n) => format!("Exported {n} diagrams to {}", dir.display()),
             Err(e) => format!("Export failed: {e}"),
         });

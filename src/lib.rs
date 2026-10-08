@@ -1,5 +1,6 @@
 //! whiteboxed: a WYSIWYG editor for arc42 building-block views.
 
+pub mod doc;
 pub mod editor;
 pub mod export;
 pub mod geom;

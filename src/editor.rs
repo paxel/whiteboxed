@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::doc::{self, DocFormat};
 use crate::export::{self, ExportError};
 use crate::layout::{self, Layout};
 use crate::model::{
@@ -789,24 +790,29 @@ impl Editor {
         Ok(())
     }
 
-    /// Exports every diagram that has content as `<path>.svg` and `<path>.png` into
-    /// `dir`. Returns the number of diagrams written.
-    pub fn export_all(&self, dir: &Path) -> Result<usize, ExportError> {
-        let mut diagrams: Vec<DiagramId> = vec![None];
-        diagrams.extend(
-            self.project
-                .blocks
-                .keys()
-                .filter(|id| self.project.has_content(**id))
-                .map(|id| Some(*id)),
-        );
+    /// Exports the context view and every whitebox with content into `dir`: an SVG
+    /// and a PNG each, a text file each in `format`, and an index over the texts.
+    /// Returns the number of diagrams written.
+    pub fn export_all(&self, dir: &Path, format: DocFormat) -> Result<usize, ExportError> {
+        let diagrams = doc::diagrams(&self.project);
+        let ext = format.extension();
+        let mut entries = Vec::new();
         for diagram in &diagrams {
             let l = layout::layout(&self.project, &view::diagram_view(&self.project, *diagram));
             let s = scene::scene(&l);
             let name = self.file_name_for(*diagram);
             std::fs::write(dir.join(format!("{name}.svg")), export::to_svg(&s))?;
             std::fs::write(dir.join(format!("{name}.png")), export::to_png(&s, 2.0)?)?;
+            let text = doc::diagram_doc(&self.project, *diagram, &format!("{name}.svg"), format);
+            std::fs::write(dir.join(format!("{name}.{ext}")), text)?;
+            entries.push((*diagram, name));
         }
+        let title = self.path.as_ref().and_then(|p| p.file_stem()).map_or_else(
+            || "Architecture".to_owned(),
+            |s| s.to_string_lossy().into_owned(),
+        );
+        let index = doc::index_doc(&self.project, &title, &entries, format);
+        std::fs::write(dir.join(format!("index.{ext}")), index)?;
         Ok(diagrams.len())
     }
 
