@@ -597,3 +597,89 @@ fn a_box_becomes_a_band_only_without_lines_and_back_into_the_grid() -> TestResul
     assert_eq!(cell(&p, billing)?, Cell::new(1, 0));
     Ok(())
 }
+
+/// The project, the customer relation, the shop, UI and API.
+type FanOut = (Project, RelationId, BlockId, BlockId, BlockId);
+
+/// Shop in the context view with a customer relation, and two boxes inside the shop.
+fn fan_out() -> Result<FanOut, Box<dyn std::error::Error>> {
+    let mut p = Project::new();
+    let user = p.add_block(None, &BlockSpec::new("Customer", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &component("Shop"),
+        Direction::Out,
+        "orders",
+    )?;
+    let ui = p.add_block(Some(shop), &component("UI"))?;
+    let api = p.add_block(Some(shop), &component("API"))?;
+    Ok((p, rel, shop, ui, api))
+}
+
+fn landed(p: &Project, rel: RelationId, outer: BlockId) -> Result<Vec<BlockId>, ModelError> {
+    Ok(p.landings(&p.relation(rel)?.b, outer)
+        .into_iter()
+        .map(|a| a.block)
+        .collect())
+}
+
+#[test]
+fn attaching_again_fans_the_line_out() -> TestResult {
+    let (mut p, rel, shop, ui, api) = fan_out()?;
+    p.attach(rel, End::B, shop, ui, Side::Left)?;
+    p.attach(rel, End::B, shop, api, Side::Left)?;
+    assert_eq!(landed(&p, rel, shop)?, vec![ui, api]);
+    // The same box again only changes the side.
+    p.attach(rel, End::B, shop, api, Side::Top)?;
+    assert_eq!(landed(&p, rel, shop)?, vec![ui, api]);
+    let view = whiteboxed::view::diagram_view(&p, Some(shop));
+    assert_eq!(view.lines.iter().filter(|l| l.relation == rel).count(), 2);
+    Ok(())
+}
+
+#[test]
+fn detaching_one_landing_keeps_the_others() -> TestResult {
+    let (mut p, rel, shop, ui, api) = fan_out()?;
+    p.attach(rel, End::B, shop, ui, Side::Left)?;
+    p.attach(rel, End::B, shop, api, Side::Left)?;
+    // API is opened too and the line lands inside it.
+    let handler = p.add_block(Some(api), &component("Handler"))?;
+    p.attach(rel, End::B, api, handler, Side::Left)?;
+    p.detach(rel, Some(shop), Some(api))?;
+    assert_eq!(landed(&p, rel, shop)?, vec![ui]);
+    let chain: Vec<BlockId> = p.relation(rel)?.b.anchors.iter().map(|a| a.block).collect();
+    assert_eq!(chain, vec![shop, ui], "the landing inside API went with it");
+    // Detaching without a box detaches every landing in the whitebox.
+    p.attach(rel, End::B, shop, api, Side::Left)?;
+    p.remove_line(rel, Some(shop))?;
+    assert_eq!(landed(&p, rel, shop)?, Vec::<BlockId>::new());
+    assert_eq!(p.detach(rel, None, None), Err(ModelError::NotOnChain));
+    Ok(())
+}
+
+#[test]
+fn deleting_a_landing_box_keeps_the_other_landings() -> TestResult {
+    let (mut p, rel, shop, ui, api) = fan_out()?;
+    p.attach(rel, End::B, shop, ui, Side::Left)?;
+    p.attach(rel, End::B, shop, api, Side::Left)?;
+    p.delete_block(ui)?;
+    assert_eq!(landed(&p, rel, shop)?, vec![api]);
+    Ok(())
+}
+
+#[test]
+fn moving_a_landing_box_faces_the_frame() -> TestResult {
+    let (mut p, rel, shop, ui, api) = fan_out()?;
+    p.attach(rel, End::B, shop, ui, Side::Top)?;
+    p.attach(rel, End::B, shop, api, Side::Bottom)?;
+    p.move_block(api, Cell::new(0, 3))?;
+    let sides: Vec<Side> = p
+        .landings(&p.relation(rel)?.b, shop)
+        .iter()
+        .map(|a| a.side)
+        .collect();
+    // UI did not move and keeps its side; API faces the frame side the line enters at.
+    assert_eq!(sides, vec![Side::Top, Side::Left]);
+    Ok(())
+}

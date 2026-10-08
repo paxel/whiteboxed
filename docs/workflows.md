@@ -41,6 +41,10 @@ them only there.
    `Customer (outside): orders via browser` from the list.
 5. Build the rest from the storefront's borders, e.g. **New box** `Orders` on its right,
    `Order DB` (**database**) below `Orders`.
+   If a relation from outside is handled by more than one box, connect it again from
+   another box (**Existing**, the same `Customer (outside)` entry): the line fans out
+   from its frame point to each of them. Right-click one branch > **Delete** removes
+   only that one.
 6. **Backspace** or the breadcrumb takes you back up.
 
 ## Connect two boxes that already exist

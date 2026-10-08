@@ -61,7 +61,8 @@ pub enum ConnectMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
     Block(BlockId),
-    /// An inherited end that is not attached to a box yet.
+    /// An end that comes in from the level above, whether it lands on a box here yet
+    /// or not; connecting it adds a landing.
     Dangling(RelationId, End),
     /// The open end of a stub.
     Stub(RelationId),
@@ -553,17 +554,32 @@ impl Editor {
             }
         }
         let view = view::diagram_view(&self.project, self.diagram);
+        // Relations from outside, also those that already land on other boxes here:
+        // connecting one adds a landing on `from`.
+        let lands_on_from = |rel: RelationId| {
+            view.lines.iter().any(|l| {
+                l.relation == rel
+                    && [&l.a, &l.b]
+                        .into_iter()
+                        .any(|e| matches!(e, ViewEnd::Block { block, .. } if *block == from))
+            })
+        };
+        let mut listed = std::collections::BTreeSet::new();
         for line in &view.lines {
             for end in [End::A, End::B] {
-                if *line.end(end) != ViewEnd::Dangling {
+                let ViewEnd::Frame { partner, .. } = line.end(end.other()) else {
+                    continue;
+                };
+                if !matches!(line.end(end), ViewEnd::Dangling | ViewEnd::Block { .. })
+                    || lands_on_from(line.relation)
+                    || !listed.insert((line.relation, end))
+                {
                     continue;
                 }
-                if let ViewEnd::Frame { partner, .. } = line.end(end.other()) {
-                    out.push((
-                        Target::Dangling(line.relation, end),
-                        with_text(&format!("{partner} (outside)"), &line.text),
-                    ));
-                }
+                out.push((
+                    Target::Dangling(line.relation, end),
+                    with_text(&format!("{partner} (outside)"), &line.text),
+                ));
             }
         }
         for (rel, r) in &self.project.relations {
@@ -823,6 +839,23 @@ impl Editor {
     pub fn remove_line(&mut self, rel: RelationId) {
         let diagram = self.diagram;
         self.apply(|p| p.remove_line(rel, diagram));
+    }
+
+    /// Removes the line that was clicked: for a relation from outside, only its landing
+    /// on `landing` (the other boxes it lands on keep theirs).
+    pub fn remove_line_at(&mut self, rel: RelationId, landing: Option<BlockId>) {
+        let diagram = self.diagram;
+        let inherited = self
+            .project
+            .relations
+            .get(&rel)
+            .is_some_and(|r| r.owner != diagram);
+        match landing {
+            Some(inner) if inherited => {
+                self.apply(|p| p.detach(rel, diagram, Some(inner)));
+            }
+            _ => self.remove_line(rel),
+        }
     }
 
     pub fn move_block(&mut self, block: BlockId, cell: Cell) {

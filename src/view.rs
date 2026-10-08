@@ -77,37 +77,46 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
         let Some(owner) = diagram else { continue };
         for end in [End::A, End::B] {
             let anchors = &rel.end(end).anchors;
-            let Some(i) = anchors.iter().position(|a| a.block == owner) else {
+            let Some(side) = anchors.iter().find(|a| a.block == owner).map(|a| a.side) else {
                 continue;
             };
-            let side = anchors[i].side;
-            let inner = match anchors.get(i + 1) {
-                Some(next) => ViewEnd::Block {
-                    block: next.block,
-                    side: next.side,
-                },
-                None => ViewEnd::Dangling,
-            };
+            // One line per box it lands on inside, or one dangling line.
+            let mut inners: Vec<ViewEnd> = project
+                .landings(rel.end(end), owner)
+                .into_iter()
+                .map(|a| ViewEnd::Block {
+                    block: a.block,
+                    side: a.side,
+                })
+                .collect();
+            if inners.is_empty() {
+                inners.push(ViewEnd::Dangling);
+            }
             let partner = rel
                 .end(end.other())
                 .anchors
                 .first()
                 .and_then(|a| project.blocks.get(&a.block))
                 .map_or_else(|| OPEN_PARTNER.to_owned(), |b| b.name.clone());
-            let frame = ViewEnd::Frame { side, partner };
-            let (a, b) = match end {
-                End::A => (inner, frame),
-                End::B => (frame, inner),
-            };
-            lines.push(ViewLine {
-                relation: *id,
-                a,
-                b,
-                direction: rel.direction,
-                text: rel.text.clone(),
-                style: rel.style.unwrap_or(project.line_style),
-                short: rel.short.clone(),
-            });
+            for inner in inners {
+                let frame = ViewEnd::Frame {
+                    side,
+                    partner: partner.clone(),
+                };
+                let (a, b) = match end {
+                    End::A => (inner, frame),
+                    End::B => (frame, inner),
+                };
+                lines.push(ViewLine {
+                    relation: *id,
+                    a,
+                    b,
+                    direction: rel.direction,
+                    text: rel.text.clone(),
+                    style: rel.style.unwrap_or(project.line_style),
+                    short: rel.short.clone(),
+                });
+            }
         }
     }
     DiagramView {

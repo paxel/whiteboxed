@@ -102,10 +102,11 @@ documentation export always carry the full texts.
 When a relation reaches a box, it also shows up inside that box's whitebox: it enters
 through the frame on the same side, labelled with the partner outside. Inside, you
 **attach** it to the box that actually handles it. Until then it ends in an orange
-warning marker, and the status bar counts it.
+warning marker, and the status bar counts it. Attaching it to further boxes fans the
+line out: one frame point, one label, a branch to each box.
 
-Deleting such a line inside a whitebox only detaches it there; the relation itself
-stays on its own level.
+Deleting such a line inside a whitebox only detaches it there (a branch: only from
+that box); the relation itself stays on its own level.
 
 ### Stubs
 

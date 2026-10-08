@@ -276,7 +276,9 @@ pub struct Anchor {
     pub side: Side,
 }
 
-/// One end of a relation: a chain of anchors from the owner diagram inward. Empty
+/// One end of a relation: anchors from the owner diagram inward. The first is the box
+/// on the owner's level; every other anchor lies directly inside the box of an earlier
+/// one, so a line that fans out to several boxes of a whitebox forms a tree. Empty
 /// means open (a stub).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Endpoint {
@@ -543,6 +545,26 @@ impl Project {
         }
         path.reverse();
         path
+    }
+
+    /// Whether `block` is `ancestor` or lies inside it, at any depth.
+    pub fn within(&self, block: BlockId, ancestor: BlockId) -> bool {
+        self.path(Some(block)).contains(&ancestor)
+    }
+
+    /// Where an endpoint lands inside the whitebox of `outer`: its anchors on boxes
+    /// directly inside `outer`. One incoming line can land on several boxes.
+    pub fn landings(&self, endpoint: &Endpoint, outer: BlockId) -> Vec<Anchor> {
+        endpoint
+            .anchors
+            .iter()
+            .filter(|a| {
+                self.blocks
+                    .get(&a.block)
+                    .is_some_and(|b| b.parent == Some(outer))
+            })
+            .copied()
+            .collect()
     }
 
     /// `block` and every block nested inside it, at any depth.

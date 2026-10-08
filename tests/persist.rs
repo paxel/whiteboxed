@@ -243,3 +243,25 @@ fn a_band_with_lines_is_rejected() -> TestResult {
     ));
     Ok(())
 }
+
+#[test]
+fn a_fanned_out_relation_round_trips_and_bad_trees_are_rejected() -> TestResult {
+    let mut p = sample()?;
+    let rel = *p.relations.keys().next().ok_or("relation")?;
+    let shop = p.relation(rel)?.b.anchors[0].block;
+    let extra = p.add_block(Some(shop), &BlockSpec::new("Extra", BlockKind::Component))?;
+    p.attach(rel, End::B, shop, extra, Side::Left)?;
+    let yaml = persist::to_yaml(&p)?;
+    assert_eq!(persist::from_yaml(&yaml)?.relations, p.relations);
+    // The same box twice in one end.
+    let mut bad = p.clone();
+    if let Some(r) = bad.relations.get_mut(&rel) {
+        let again = r.b.anchors[1];
+        r.b.anchors.push(again);
+    }
+    assert!(matches!(
+        persist::from_yaml(&persist::to_yaml(&bad)?),
+        Err(PersistError::Invalid(_))
+    ));
+    Ok(())
+}

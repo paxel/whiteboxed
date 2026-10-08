@@ -327,17 +327,27 @@ fn check(project: &Project) -> Result<(), PersistError> {
             ));
         }
     }
+    // Each end is a tree: the first box on the owner's level, every other one directly
+    // inside a box named before it, none twice.
     for (id, r) in &project.relations {
         for end in [&r.a, &r.b] {
-            let mut expected_parent = r.owner;
-            for anchor in &end.anchors {
+            let mut seen: Vec<BlockId> = Vec::new();
+            for (k, anchor) in end.anchors.iter().enumerate() {
                 let Some(block) = project.blocks.get(&anchor.block) else {
                     return invalid(format!("relation {} names an unknown box", id.0));
                 };
-                if block.parent != expected_parent {
+                let fits = if k == 0 {
+                    block.parent == r.owner
+                } else {
+                    block.parent.is_some_and(|p| seen.contains(&p))
+                };
+                if !fits {
                     return invalid(format!("relation {} skips a level", id.0));
                 }
-                expected_parent = Some(anchor.block);
+                if seen.contains(&anchor.block) {
+                    return invalid(format!("relation {} names a box twice", id.0));
+                }
+                seen.push(anchor.block);
             }
         }
     }

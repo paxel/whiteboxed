@@ -954,3 +954,62 @@ fn the_add_box_dialog_makes_a_band() -> TestResult {
     assert_eq!(band, Some(true));
     Ok(())
 }
+
+#[test]
+fn deleting_one_branch_of_a_fanned_out_line_keeps_the_other() -> TestResult {
+    use whiteboxed::model::{Direction, End};
+    let mut e = Editor::new(None);
+    let user = e
+        .project
+        .add_block(None, &BlockSpec::new("Customer", BlockKind::Person))?;
+    let (shop, rel) = e.project.connect_new(
+        user,
+        Side::Right,
+        &BlockSpec::new("Shop", BlockKind::Component),
+        Direction::Out,
+        "orders",
+    )?;
+    let ui = e
+        .project
+        .add_block(Some(shop), &BlockSpec::new("UI", BlockKind::Component))?;
+    let (api, _) = e.project.connect_new(
+        ui,
+        Side::Bottom,
+        &BlockSpec::new("API", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    e.project.attach(rel, End::B, shop, ui, Side::Left)?;
+    e.project.attach(rel, End::B, shop, api, Side::Left)?;
+    e.open_diagram(Some(shop));
+    let mut h = harness(e);
+    h.run();
+    let branch = h
+        .state_mut()
+        .editor
+        .layout()
+        .lines
+        .iter()
+        .find(|l| l.landing == Some(api))
+        .map(|l| l.points.clone())
+        .ok_or("branch to API")?;
+    // The last stretch, into API, belongs to this branch alone.
+    let n = branch.len();
+    let mid = Pos::new(
+        (branch[n - 2].x + branch[n - 1].x) / 2.0,
+        (branch[n - 2].y + branch[n - 1].y) / 2.0,
+    );
+    let at = screen(&h, mid)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Delete").click();
+    h.run();
+    let p = &h.state().editor.project;
+    let landed: Vec<BlockId> = p
+        .landings(&p.relation(rel)?.b, shop)
+        .iter()
+        .map(|a| a.block)
+        .collect();
+    assert_eq!(landed, vec![ui]);
+    Ok(())
+}

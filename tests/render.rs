@@ -129,7 +129,10 @@ fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
         Some(shop),
         &spec("Logging and Monitoring", BlockKind::Component).as_band(),
     )?;
-    p.set_responsibility(logging, "Collects logs and metrics of every part of the shop.")?;
+    p.set_responsibility(
+        logging,
+        "Collects logs and metrics of every part of the shop.",
+    )?;
     p.set_motivation(
         None,
         "Customers buy through the web shop; payment and shipping are external services.",

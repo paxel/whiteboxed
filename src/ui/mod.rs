@@ -707,7 +707,7 @@ impl App {
 
         // The full text of a shortened relation, at the pointer.
         let full = resp.hover_pos().and_then(|p| match hit_at(p) {
-            Hit::Line(rel) => layout
+            Hit::Line(rel, _) => layout
                 .lines
                 .iter()
                 .find(|l| l.relation == rel && l.text != l.full_text)
@@ -864,8 +864,12 @@ impl App {
                 resp.ctx.set_cursor_icon(CursorIcon::Grab);
             }
             Hit::Block(_) => {}
-            Hit::Line(rel) => {
-                if let Some(line) = layout.lines.iter().find(|l| l.relation == rel) {
+            Hit::Line(rel, landing) => {
+                let hovered = layout
+                    .lines
+                    .iter()
+                    .find(|l| l.relation == rel && l.landing == landing);
+                if let Some(line) = hovered {
                     let pts: Vec<Pos2> = line.points.iter().map(|q| view.screen(*q)).collect();
                     painter.line(pts, Stroke::new(4.0, ACCENT.gamma_multiply(0.5)));
                 }
@@ -898,7 +902,7 @@ impl App {
                 self.editor.close_popup();
             }
             Hit::OpenEnd(end) => self.editor.start_open_end(end),
-            Hit::Line(_) | Hit::Empty => {
+            Hit::Line(..) | Hit::Empty => {
                 self.editor.selected = None;
                 self.editor.close_popup();
             }
@@ -924,7 +928,7 @@ impl App {
                     self.editor.start_edit_block(b);
                 }
             }
-            Hit::Line(rel) => {
+            Hit::Line(rel, _) => {
                 self.focus = true;
                 self.editor.start_edit_relation(rel);
             }
@@ -952,13 +956,13 @@ impl App {
                     self.editor.request_delete(b);
                 }
             }
-            Some(Hit::Line(rel)) => {
+            Some(Hit::Line(rel, landing)) => {
                 if ui.button("Edit\u{2026}").clicked() {
                     self.focus = true;
                     self.editor.start_edit_relation(rel);
                 }
                 if ui.button("Delete").clicked() {
-                    self.editor.remove_line(rel);
+                    self.editor.remove_line_at(rel, landing);
                 }
             }
             Some(Hit::OpenEnd(end)) => {

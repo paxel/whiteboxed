@@ -715,3 +715,44 @@ fn bands_run_across_the_bottom_inside_the_frame() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_fanned_out_relation_enters_through_one_port_with_one_label() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &spec("Customer", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Shop", BlockKind::Component),
+        Direction::Out,
+        "orders",
+    )?;
+    let ui = p.add_block(Some(shop), &spec("UI", BlockKind::Component))?;
+    let (api, _) = p.connect_new(
+        ui,
+        Side::Bottom,
+        &spec("API", BlockKind::Component),
+        Direction::Out,
+        "calls",
+    )?;
+    p.attach(rel, End::B, shop, ui, Side::Left)?;
+    p.attach(rel, End::B, shop, api, Side::Left)?;
+    let l = render(&p, Some(shop));
+    let branches: Vec<&layout::LineGeom> = l.lines.iter().filter(|g| g.relation == rel).collect();
+    assert_eq!(branches.len(), 2);
+    let ports: Vec<Pos> = branches
+        .iter()
+        .filter_map(|g| g.frame_port.as_ref().map(|(p, _, _)| *p))
+        .collect();
+    assert_eq!(ports.len(), 2);
+    assert!(ports[0].dist(ports[1]) < 0.01, "one frame port: {ports:?}");
+    let labels: Vec<&str> = branches
+        .iter()
+        .map(|g| g.text.as_str())
+        .filter(|t| !t.is_empty())
+        .collect();
+    assert_eq!(labels, vec!["orders"]);
+    let landings: Vec<Option<BlockId>> = branches.iter().map(|g| g.landing).collect();
+    assert_eq!(landings, vec![Some(ui), Some(api)]);
+    Ok(())
+}

@@ -615,3 +615,44 @@ fn add_box_can_make_a_band() -> TestResult {
     assert!(out.get("cell").is_some());
     Ok(())
 }
+
+#[test]
+fn attach_fans_out_and_delete_relation_detaches_one_landing() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    for name in ["Storefront", "Checkout"] {
+        call(
+            &mut e,
+            "add_box",
+            json!({"diagram": "Web Shop", "name": name, "kind": "component"}),
+        )?;
+    }
+    let rel = *e.project.relations.keys().next().ok_or("relation")?;
+    for to in ["Web Shop/Storefront", "Web Shop/Checkout"] {
+        call(
+            &mut e,
+            "attach",
+            json!({"relation": rel.0, "whitebox": "Web Shop", "to": to}),
+        )?;
+    }
+    let lines = |e: &mut Editor| -> Result<usize, ApiError> {
+        let d = call(e, "get_diagram", json!({"diagram": "Web Shop"}))?;
+        Ok(d["lines"]
+            .as_array()
+            .map_or(0, |l| l.iter().filter(|x| x["relation"] == rel.0).count()))
+    };
+    assert_eq!(lines(&mut e)?, 2);
+    call(
+        &mut e,
+        "delete_relation",
+        json!({"relation": rel.0, "detach_in": "Web Shop", "landing": "Web Shop/Checkout"}),
+    )?;
+    assert_eq!(lines(&mut e)?, 1);
+    let refused = call(
+        &mut e,
+        "delete_relation",
+        json!({"relation": rel.0, "landing": "Web Shop/Storefront"}),
+    );
+    assert!(matches!(refused, Err(ApiError::Rejected(_))));
+    Ok(())
+}

@@ -16,7 +16,8 @@ pub enum Hit {
     Side(BlockId, Side),
     Block(BlockId),
     OpenEnd(OpenEnd),
-    Line(RelationId),
+    /// A line, with the box it lands on when it comes in through the frame.
+    Line(RelationId, Option<BlockId>),
     Empty,
 }
 
@@ -76,16 +77,16 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
                 .partial_cmp(&polyline_dist(p, &b.points))
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .map_or(Hit::Empty, |l| Hit::Line(l.relation))
+        .map_or(Hit::Empty, |l| Hit::Line(l.relation, l.landing))
 }
 
 /// Which end of a relation dangles in the diagram of `layout`.
 fn dangling_end(project: &Project, layout: &Layout, rel: RelationId) -> Option<End> {
     let owner = layout.diagram?;
     let r = project.relations.get(&rel)?;
-    [End::A, End::B]
-        .into_iter()
-        .find(|end| r.end(*end).anchors.last().is_some_and(|a| a.block == owner))
+    [End::A, End::B].into_iter().find(|end| {
+        r.end(*end).position_of(owner).is_some() && project.landings(r.end(*end), owner).is_empty()
+    })
 }
 
 /// The grid cell under a point, extending one cell beyond the used grid on every

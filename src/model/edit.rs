@@ -173,11 +173,11 @@ impl Project {
         for rel in self.relations.values_mut() {
             for end in [End::A, End::B] {
                 let anchors = &mut rel.end_mut(end).anchors;
-                if let Some(i) = anchors.iter().position(|a| a.block == outer)
-                    && let Some(side) = anchors.get(i).map(|a| a.side)
-                    && let Some(inner) = anchors.get_mut(i + 1)
-                    && moved.contains(&inner.block)
-                {
+                let Some(side) = anchors.iter().find(|a| a.block == outer).map(|a| a.side) else {
+                    continue;
+                };
+                // Moved boxes of this diagram are directly inside `outer`.
+                for inner in anchors.iter_mut().filter(|a| moved.contains(&a.block)) {
                     inner.side = side;
                 }
             }
@@ -201,11 +201,10 @@ impl Project {
             }
             true
         });
+        // `gone` holds whole subtrees, so landings below a deleted box go with it.
         for rel in self.relations.values_mut() {
             for end in [&mut rel.a, &mut rel.b] {
-                if let Some(k) = end.anchors.iter().position(|a| gone.contains(&a.block)) {
-                    end.anchors.truncate(k);
-                }
+                end.anchors.retain(|a| !gone.contains(&a.block));
             }
         }
         for block in gone {
@@ -407,20 +406,29 @@ impl Project {
             Some(side) => side,
             None => self.partner_side(near.block, near.side, target)?,
         };
+        // The relation now starts at `near`: what lies above it and beside it goes.
+        let relation = self.relation(rel)?;
+        let open_is_b = relation.b.is_open();
+        let near_end = if open_is_b { &relation.a } else { &relation.b };
+        if near_end.position_of(near.block).is_none() {
+            return Err(ModelError::NotOnChain);
+        }
+        let keep: Vec<BlockId> = near_end
+            .anchors
+            .iter()
+            .map(|a| a.block)
+            .filter(|b| self.within(*b, near.block))
+            .collect();
         let relation = self
             .relations
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?;
-        let open_is_b = relation.b.is_open();
         let near_end = if open_is_b {
             &mut relation.a
         } else {
             &mut relation.b
         };
-        let k = near_end
-            .position_of(near.block)
-            .ok_or(ModelError::NotOnChain)?;
-        near_end.anchors.drain(..k);
+        near_end.anchors.retain(|a| keep.contains(&a.block));
         let far = Endpoint::at(target, target_side);
         if open_is_b {
             relation.b = far;
@@ -449,33 +457,77 @@ impl Project {
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?;
         let endpoint = relation.end_mut(end);
-        let i = endpoint.position_of(outer).ok_or(ModelError::NotOnChain)?;
-        endpoint.anchors.truncate(i + 1);
-        endpoint.anchors.push(Anchor { block: inner, side });
+        if endpoint.position_of(outer).is_none() {
+            return Err(ModelError::NotOnChain);
+        }
+        // Another landing: the line fans out to this box as well. Landing on a box it
+        // already reaches only changes the side.
+        match endpoint.anchors.iter_mut().find(|a| a.block == inner) {
+            Some(anchor) => anchor.side = side,
+            None => endpoint.anchors.push(Anchor { block: inner, side }),
+        }
         Ok(())
     }
 
     /// Removes a line as seen in `diagram`: a relation of this diagram is deleted, a
-    /// relation from a parent level is only detached from the inner box here.
+    /// relation from a parent level is only detached from the inner boxes here.
     pub fn remove_line(&mut self, rel: RelationId, diagram: DiagramId) -> ModelResult<()> {
-        let relation = self.relation(rel)?;
-        if relation.owner == diagram {
+        if self.relation(rel)?.owner == diagram {
             self.relations.remove(&rel);
             return Ok(());
         }
-        let blocks = &self.blocks;
-        let in_diagram = |a: &Anchor| blocks.get(&a.block).is_some_and(|b| b.parent == diagram);
-        let hit = [End::A, End::B].into_iter().find_map(|end| {
-            relation
-                .end(end)
-                .anchors
-                .iter()
-                .position(in_diagram)
-                .map(|k| (end, k))
-        });
-        let (end, k) = hit.ok_or(ModelError::NotOnChain)?;
+        self.detach(rel, diagram, None)
+    }
+
+    /// Detaches a relation from a parent level from the boxes of `diagram` it lands on
+    /// (only from `landing`, if given), together with everything it reaches inside
+    /// them.
+    pub fn detach(
+        &mut self,
+        rel: RelationId,
+        diagram: DiagramId,
+        landing: Option<BlockId>,
+    ) -> ModelResult<()> {
+        let relation = self.relation(rel)?;
+        if relation.owner == diagram {
+            return Err(ModelError::NotOnChain);
+        }
+        let landed = |a: &Anchor| {
+            self.blocks
+                .get(&a.block)
+                .is_some_and(|b| b.parent == diagram)
+                && landing.is_none_or(|l| l == a.block)
+        };
+        let mut gone = Vec::new();
+        for end in [End::A, End::B] {
+            for a in relation.end(end).anchors.iter().filter(|a| landed(a)) {
+                gone.push((end, a.block));
+            }
+        }
+        if gone.is_empty() {
+            return Err(ModelError::NotOnChain);
+        }
+        let below: Vec<(End, BlockId)> = [End::A, End::B]
+            .into_iter()
+            .flat_map(|end| {
+                relation
+                    .end(end)
+                    .anchors
+                    .iter()
+                    .map(move |a| (end, a.block))
+            })
+            .filter(|(end, b)| {
+                gone.iter()
+                    .any(|(g_end, g)| g_end == end && self.within(*b, *g))
+            })
+            .collect();
         if let Some(relation) = self.relations.get_mut(&rel) {
-            relation.end_mut(end).anchors.truncate(k);
+            for end in [End::A, End::B] {
+                relation
+                    .end_mut(end)
+                    .anchors
+                    .retain(|a| !below.contains(&(end, a.block)));
+            }
         }
         Ok(())
     }

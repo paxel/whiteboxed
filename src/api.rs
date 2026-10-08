@@ -404,10 +404,14 @@ pub struct DeleteBoxArgs {
 #[schemars(crate = "rmcp::schemars")]
 pub struct DeleteRelationArgs {
     pub relation: u64,
-    /// Omit to delete the relation. Give the whitebox to only detach it from the box
+    /// Omit to delete the relation. Give the whitebox to only detach it from the boxes
     /// inside that whitebox; the relation stays on its own level.
     #[serde(default)]
     pub detach_in: Option<BoxRef>,
+    /// With detach_in: detach it only from this box inside the whitebox; it keeps its
+    /// other landings there.
+    #[serde(default)]
+    pub landing: Option<BoxRef>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -499,7 +503,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "attach",
-            description: "Attach a relation that enters a whitebox from the level above to the box inside that handles it.",
+            description: "Attach a relation that enters a whitebox from the level above to the box inside that handles it. Attaching it to further boxes fans the line out to each of them.",
             schema: schema::<AttachArgs>(),
         },
         ToolInfo {
@@ -534,7 +538,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "delete_relation",
-            description: "Delete a relation, or with detach_in only detach it inside that whitebox.",
+            description: "Delete a relation, or with detach_in only detach it inside that whitebox (with landing: only from that one box).",
             schema: schema::<DeleteRelationArgs>(),
         },
         ToolInfo {
@@ -830,7 +834,15 @@ fn delete_relation(editor: &mut Editor, a: DeleteRelationArgs) -> ApiResult<Outp
         Some(b) => Some(resolve(&editor.project, b)?),
         None => owner,
     };
-    editor.apply_ai(|p| p.remove_line(rel, d))?;
+    let landing = match (&a.landing, &a.detach_in) {
+        (Some(b), Some(_)) => Some(resolve(&editor.project, b)?),
+        (Some(_), None) => return rejected("landing needs detach_in, the whitebox it lies in"),
+        (None, _) => None,
+    };
+    editor.apply_ai(|p| match landing {
+        Some(inner) => p.detach(rel, d, Some(inner)),
+        None => p.remove_line(rel, d),
+    })?;
     let what = if d == owner { "deleted" } else { "detached" };
     note(editor, format!("{what} a relation"), d, None);
     Ok(Output::Json(json!({ what: rel.0 })))

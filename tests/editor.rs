@@ -223,7 +223,7 @@ fn hit_testing_finds_sides_boxes_and_lines() -> TestResult {
     );
     assert_eq!(
         hit::hit(&e.project, &layout, mid, 1.0),
-        Hit::Line(line.relation)
+        Hit::Line(line.relation, line.landing)
     );
     assert_eq!(
         hit::hit(&e.project, &layout, Pos::new(-50.0, -50.0), 1.0),
@@ -440,5 +440,47 @@ fn the_project_name_titles_the_window_the_file_and_the_export() -> TestResult {
     e.export_all(dir.path(), DocFormat::Markdown)?;
     let index = std::fs::read_to_string(dir.path().join("index.md"))?;
     assert!(index.starts_with("# Shop/Backend"), "{index}");
+    Ok(())
+}
+
+#[test]
+fn connect_existing_adds_a_landing_and_one_landing_can_be_removed() -> TestResult {
+    let mut e = Editor::new(None);
+    let shop = add_first(&mut e, "Shop")?;
+    connect_new(&mut e, shop, Side::Left, "User", BlockKind::Person)?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    e.open_diagram(Some(shop));
+    let ui = add_first(&mut e, "UI")?;
+    let api = connect_new(&mut e, ui, Side::Bottom, "API", BlockKind::Component)?;
+    // The relation starts at the shop: its end A enters the shop's whitebox.
+    let end = whiteboxed::model::End::A;
+    connect_existing(&mut e, ui, Side::Left, Target::Dangling(rel, end));
+    // Landed on UI, the relation is still offered to API, but no longer to UI.
+    let offered = |e: &Editor, from| {
+        e.connect_candidates(from, "")
+            .iter()
+            .any(|(t, _)| *t == Target::Dangling(rel, end))
+    };
+    assert!(!offered(&e, ui));
+    assert!(offered(&e, api));
+    connect_existing(&mut e, api, Side::Left, Target::Dangling(rel, end));
+    let landed = |e: &Editor| -> Vec<BlockId> {
+        e.project
+            .relations
+            .get(&rel)
+            .map(|r| {
+                e.project
+                    .landings(&r.a, shop)
+                    .iter()
+                    .map(|a| a.block)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(landed(&e), vec![ui, api]);
+    e.remove_line_at(rel, Some(ui));
+    assert_eq!(landed(&e), vec![api]);
+    e.undo();
+    assert_eq!(landed(&e), vec![ui, api]);
     Ok(())
 }

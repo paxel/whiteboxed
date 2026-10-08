@@ -76,6 +76,9 @@ pub struct LineGeom {
     pub style: LineStyle,
     /// The relation's full text; `text` is what the line shows.
     pub full_text: String,
+    /// For a line from the frame: the box inside it lands on. A relation can land on
+    /// several boxes; each landing is a line of its own from the same frame port.
+    pub landing: Option<BlockId>,
 }
 
 impl LineGeom {
@@ -177,6 +180,9 @@ fn cross_points(h: &[Pos], v: &[Pos]) -> Vec<Pos> {
     }
     out
 }
+
+/// Where a relation wants its port on a side, and the line ends that share it.
+type PortSlot = (f32, RelationId, Vec<(usize, End)>);
 
 /// A port on a side: sort key, relation, line index and which end.
 type PortRef = (i64, RelationId, usize, End);
@@ -415,18 +421,26 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                 continue;
             };
             let (lo, hi) = range(rect, *side);
-            let mut wanted: Vec<(f32, RelationId, usize, End)> = list
-                .iter()
-                .map(|(_, rel, li, end)| {
-                    let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
-                    (at, *rel, *li, *end)
-                })
-                .collect();
+            // A relation that fans out to several boxes of a whitebox enters through
+            // one frame port: its ends there share a slot, at the mean of their wishes.
+            let mut wanted: Vec<PortSlot> = Vec::new();
+            for (_, rel, li, end) in list {
+                let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
+                let shared = *owner == Owner::Frame;
+                match wanted.iter_mut().find(|w| shared && w.1 == *rel) {
+                    Some(w) => {
+                        let n = w.2.len() as f32;
+                        w.0 = (w.0 * n + at) / (n + 1.0);
+                        w.2.push((*li, *end));
+                    }
+                    None => wanted.push((at, *rel, vec![(*li, *end)])),
+                }
+            }
             wanted.sort_by(|a, b| {
                 a.0.partial_cmp(&b.0)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then(a.1.cmp(&b.1))
-                    .then(a.3.cmp(&b.3))
+                    .then(a.2.cmp(&b.2))
             });
             let at: Vec<f32> = wanted.iter().map(|w| w.0).collect();
             let placed = spread(
@@ -435,8 +449,10 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                 hi - PORT_SPACING / 2.0,
                 PORT_SPACING,
             );
-            for ((_, _, li, end), v) in wanted.iter().zip(placed) {
-                out.insert((*li, *end), v);
+            for ((_, _, members), v) in wanted.iter().zip(placed) {
+                for (li, end) in members {
+                    out.insert((*li, *end), v);
+                }
             }
         }
         out
@@ -601,9 +617,15 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         }
     }
 
+    // A relation that lands on several boxes is labelled once.
+    let mut labelled = BTreeSet::new();
     for (li, geom) in lines.iter_mut().enumerate() {
         if let Some(text) = shown.get(li) {
-            geom.text = text.clone();
+            geom.text = if labelled.insert(geom.relation) {
+                text.clone()
+            } else {
+                String::new()
+            };
         }
     }
     // A label over a crossing would hide the jump: move it along its segment.
@@ -1224,10 +1246,14 @@ fn build_line(
         frame_port: None,
         style: line.style,
         full_text: line.text.clone(),
+        landing: match (&line.a, &line.b) {
+            (ViewEnd::Block { block, .. }, ViewEnd::Frame { .. })
+            | (ViewEnd::Frame { .. }, ViewEnd::Block { block, .. }) => Some(*block),
+            _ => None,
+        },
     }
 }
 
-/// Middle of the longest horizontal segment, else of the longest vertical one.
 /// The middle of the longest stretch between crossings on the segment that holds
 /// the label at `at`; `at` itself when no crossing lies on that segment.
 fn clear_of(points: &[Pos], at: Pos, horizontal: bool, marks: &[Pos]) -> Pos {
@@ -1268,6 +1294,7 @@ fn clear_of(points: &[Pos], at: Pos, horizontal: bool, marks: &[Pos]) -> Pos {
     }
 }
 
+/// Middle of the longest horizontal segment, else of the longest vertical one.
 fn label_position(points: &[Pos]) -> (Pos, bool) {
     let longest = |horizontal: bool| {
         points
