@@ -347,3 +347,14 @@ fn doc_screenshot_unsaved_changes() -> TestResult {
     h.run();
     save(&mut h, "unsaved-changes")
 }
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_project_settings() -> TestResult {
+    let (p, _) = shop()?;
+    let mut h = harness(editor_with(p));
+    h.run();
+    h.state_mut().settings.open = true;
+    h.run();
+    save(&mut h, "project-settings")
+}

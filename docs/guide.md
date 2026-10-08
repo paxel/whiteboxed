@@ -61,9 +61,24 @@ A relation connects two boxes of the same diagram. It has:
 
 - a **direction** seen from the box you started at: **out** (arrow to the other box),
   **in** (arrow to your box) or **bi** (both);
-- an optional **text**, shown next to the line.
+- an optional **text**, shown next to the line;
+- an optional **short label**, shown on the line instead of a long text;
+- a **line style**: the project's, or its own (square corners, slightly rounded,
+  rounded or curved);
+- the **side** of each box it leaves from. It follows the layout (see
+  [Layout](#layout)); you can pick another one in the relation's **Edit…** dialog,
+  until one of its boxes moves.
 
 Two boxes can share several relations, e.g. a REST call one way and events the other.
+
+### Long texts and the legend
+
+A text longer than the limit in [Project settings](#project-settings) (24 characters
+out of the box) is not written on the line. The line shows its short label, or a
+number like `[2]` if it has none, and the full text goes to a **legend** below the
+diagram. Numbers count the relations of the diagram in order. In the app, hovering a
+line shows its full text. The legend is part of every export; the tables of the
+documentation export always carry the full texts.
 
 ### Relations across levels
 
@@ -88,18 +103,40 @@ There is nothing to position by pixel.
 
 - Every diagram is a grid. A box occupies one cell; columns and rows take the size of
   their largest box.
-- A box grows along a side as more relations attach to that side.
+- Lines on one side of a box keep 40 px apart, so a box grows along a side from its
+  second relation there. A box never gets smaller than its minimum size.
 - Lines run horizontally and vertically through the gaps between cells and never
-  through a box. Gaps widen to fit long labels.
+  through a box. Gaps widen to fit long labels. A line leaves a box where its partner
+  is, so two boxes facing each other are joined by a straight line.
+- Lines avoid crossing each other where a short detour or a different lane allows it.
+  Where two lines still cross, the horizontal one jumps over the other in a small arc.
+- Labels stay inside the whitebox frame, wrapped onto several lines if needed.
 - The side you click is the side the partner ends up on. A new box goes to the cell
-  next to it; if that cell is taken, to the nearest free cell in the same column (or
-  row, for top and bottom).
+  next to it. Several new boxes on the same side fill a block that stays as square as
+  possible: 2 side by side, then 2×2, 3×2, 3×3 …
+- Relations from the level above enter a whitebox opposite the box that takes them.
 - Connecting an **existing** box on a side moves it there. If that would break the side
   of another relation, the app asks: **move** it (default) or **keep** it and route
   the line around.
 - You can still move a box: drag it to another cell, or select it and use the arrow
-  keys. A box already in that cell swaps places with it.
+  keys. A box already in that cell swaps places with it. After a move, the lines of
+  the moved boxes leave them on the sides facing their partners, also where you had
+  picked a side by hand.
 - The same project always gives the same picture.
+
+## Project settings
+
+**File > Project settings…** holds what applies to the whole project:
+
+![Project settings: line style and when texts get shortened](screenshots/project-settings.png)
+
+- **Line style**: how relation lines bend. A relation can override it in its
+  **Edit…** dialog.
+- **Shorten texts longer than … characters**: from which length a text moves to the
+  legend (see [Long texts and the legend](#long-texts-and-the-legend)). 0 numbers
+  every text; unticked, texts are never shortened.
+- **Use as my default for new projects** keeps the current line style for every new
+  project on this computer.
 
 ## arc42 texts
 
@@ -131,7 +168,10 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
 - Two seconds after every change, the app writes a **recovery file** in your user data
   directory (`whiteboxed/recovery`). Saving removes it. If the app crashes, the next
   start offers to restore the unsaved work.
-- Closing, opening or starting a new project with unsaved changes asks first.
+- Closing, opening or starting a new project with unsaved changes asks first. Enter
+  saves, Esc keeps editing.
+
+![The question about unsaved changes before quitting](screenshots/unsaved-changes.png)
 
 ## Export
 
@@ -281,7 +321,13 @@ relations:
     side: left
   direction: out     # seen from a
   text: orders via browser
+  short: browser     # optional: shown instead of a long text
+  style: curved      # optional: overrides the project's line_style
 ```
+
+Project-wide settings sit at the top of the file and are only written when they
+differ from the defaults: `line_style` (`square`, `round6`, `round12`, `curved`;
+default `round12`) and `label_limit` (default 24; `never` turns shortening off).
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,
   `external_system`.

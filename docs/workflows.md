@@ -76,7 +76,8 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 ## Edit and delete
 
 - Right-click a box: **Edit…** (name, type, tag), **Open whitebox**, **Delete**.
-- Right-click a line: **Edit…** (direction, text), **Delete**. Double-click a line to
+- Right-click a line: **Edit…** (direction, text, short label, line style, the side
+  at each box), **Delete**. Double-click a line to
   edit its text directly.
 - Deleting a box that has content asks first and removes everything inside it.
 - Deleting a line inside a whitebox only detaches it from the box there.
