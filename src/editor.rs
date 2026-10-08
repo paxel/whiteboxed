@@ -158,6 +158,15 @@ pub struct Editor {
     pub ai_export_request: Option<PathBuf>,
 }
 
+/// The state before a batch of AI calls, to undo all of them at once.
+pub struct BatchMark {
+    project: Project,
+    undo_len: usize,
+    redo: Vec<Project>,
+    dirty: bool,
+    last_ai: Option<AiAction>,
+}
+
 /// One change made through the AI interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiAction {
@@ -381,6 +390,35 @@ impl Editor {
         let value = change(&mut next)?;
         self.change_to(next);
         Ok(value)
+    }
+
+    /// Starts a batch: its calls end up as one undo step, or as none at all.
+    pub fn batch_start(&self) -> BatchMark {
+        BatchMark {
+            project: self.project.clone(),
+            undo_len: self.undo.len(),
+            redo: self.redo.clone(),
+            dirty: self.dirty,
+            last_ai: self.last_ai.clone(),
+        }
+    }
+
+    /// Takes back every change since `mark`, as if the batch never ran.
+    pub fn batch_rollback(&mut self, mark: BatchMark) {
+        self.project = mark.project;
+        self.undo.truncate(mark.undo_len);
+        self.redo = mark.redo;
+        self.dirty = mark.dirty;
+        self.last_ai = mark.last_ai;
+        self.fix_view();
+    }
+
+    /// Folds every change since `mark` into one undo step.
+    pub fn batch_commit(&mut self, mark: BatchMark) {
+        if self.undo.len() > mark.undo_len {
+            self.undo.truncate(mark.undo_len);
+            self.undo.push(mark.project);
+        }
     }
 
     fn change_to(&mut self, next: Project) {

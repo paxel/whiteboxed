@@ -180,6 +180,27 @@ pub struct NoArgs {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+pub struct BatchArgs {
+    /// Calls of the editing tools, run in order. A later step can address a box an
+    /// earlier step created, by its path of names.
+    pub steps: Vec<BatchStep>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct BatchStep {
+    /// The tool, e.g. add_box or connect_new.
+    pub tool: String,
+    /// Its arguments, as for a single call.
+    #[serde(default)]
+    pub args: Value,
+}
+
+/// At most this many steps in one batch.
+pub const MAX_BATCH: usize = 200;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct DiagramArgs {
     /// The box whose whitebox to use; omit (or null) for the context view.
     #[serde(default)]
@@ -456,8 +477,8 @@ add_box with band: true; bands have no relations. \
 asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
 connect on decides where the partner sits; layout is automatic, and moving a box turns \
-its lines to the sides facing their partners. Every call is one undo \
-step for the user; saving the project is up to the user.";
+its lines to the sides facing their partners. Every call is one undo step for the user; \
+batch runs several calls as one step, all or nothing. Saving the project is up to the user.";
 
 pub fn tools() -> Vec<ToolInfo> {
     vec![
@@ -546,6 +567,11 @@ pub fn tools() -> Vec<ToolInfo> {
             description: "Write images, one arc42 text file per diagram and an index into a folder. The user must allow the folder: the first call for a new folder asks them and fails; call again after they agreed.",
             schema: schema::<ExportArgs>(),
         },
+        ToolInfo {
+            name: "batch",
+            description: "Run several editing calls as one: all of them or none, and one undo step for the user. If a step fails, nothing is changed and the error names the step. Not for export_docs, render_diagram or batch itself.",
+            schema: schema::<BatchArgs>(),
+        },
     ]
 }
 
@@ -620,6 +646,7 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
         "delete_box" => delete_box(editor, args(arguments)?),
         "delete_relation" => delete_relation(editor, args(arguments)?),
         "export_docs" => export_docs(editor, args(arguments)?),
+        "batch" => batch(editor, args(arguments)?),
         other => Err(ApiError::UnknownTool(other.to_owned())),
     }
 }
@@ -892,6 +919,46 @@ fn done(editor: &mut Editor, verb: &str, id: Option<BlockId>) -> ApiResult<Outpu
     );
     note(editor, summary, d, Some(id));
     Ok(Output::Json(box_json(&editor.project, id)))
+}
+
+fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
+    if a.steps.is_empty() {
+        return rejected("a batch needs at least one step");
+    }
+    if a.steps.len() > MAX_BATCH {
+        return rejected(format!("a batch can hold at most {MAX_BATCH} steps"));
+    }
+    if let Some((i, s)) = a
+        .steps
+        .iter()
+        .enumerate()
+        .find(|(_, s)| matches!(s.tool.as_str(), "batch" | "export_docs" | "render_diagram"))
+    {
+        return rejected(format!("step {} ({}) cannot run in a batch", i + 1, s.tool));
+    }
+    let mark = editor.batch_start();
+    let mut results = Vec::new();
+    for (i, step) in a.steps.into_iter().enumerate() {
+        match call(editor, &step.tool, step.args) {
+            Ok(Output::Json(v)) => results.push(v),
+            Ok(Output::Png(_)) => results.push(json!("png")),
+            Err(e) => {
+                editor.batch_rollback(mark);
+                return rejected(format!(
+                    "step {} ({}) failed, nothing was changed: {e}",
+                    i + 1,
+                    step.tool
+                ));
+            }
+        }
+    }
+    editor.batch_commit(mark);
+    if results.len() > 1
+        && let Some(last) = &mut editor.last_ai
+    {
+        last.summary = format!("{} changes, last: {}", results.len(), last.summary);
+    }
+    Ok(Output::Json(json!({ "steps": results })))
 }
 
 fn note(editor: &mut Editor, summary: String, diagram: DiagramId, block: Option<BlockId>) {

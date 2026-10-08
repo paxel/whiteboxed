@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 18);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -654,5 +654,69 @@ fn attach_fans_out_and_delete_relation_detaches_one_landing() -> TestResult {
         json!({"relation": rel.0, "landing": "Web Shop/Storefront"}),
     );
     assert!(matches!(refused, Err(ApiError::Rejected(_))));
+    Ok(())
+}
+
+#[test]
+fn batch_runs_all_steps_as_one_undo_step() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let before = e.project.clone();
+    let out = call(
+        &mut e,
+        "batch",
+        json!({"steps": [
+            {"tool": "add_box", "args": {"diagram": "Web Shop", "name": "Orders", "kind": "component"}},
+            {"tool": "connect_new", "args": {"from": "Web Shop/Orders", "side": "bottom", "name": "Order DB", "kind": "database", "text": "SQL"}},
+            {"tool": "set_responsibility", "args": {"box": "Web Shop/Orders", "text": "Takes orders."}}
+        ]}),
+    )?;
+    assert_eq!(out["steps"].as_array().map(Vec::len), Some(3));
+    assert!(e.project.blocks.values().any(|b| b.name == "Order DB"));
+    assert!(
+        e.last_ai
+            .as_ref()
+            .is_some_and(|a| a.summary.starts_with("3 changes"))
+    );
+    e.undo();
+    assert_eq!(e.project, before, "one undo takes back the whole batch");
+    Ok(())
+}
+
+#[test]
+fn a_failing_step_changes_nothing_and_is_named() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let before = e.project.clone();
+    let failed = call(
+        &mut e,
+        "batch",
+        json!({"steps": [
+            {"tool": "add_box", "args": {"diagram": "Web Shop", "name": "Orders", "kind": "component"}},
+            {"tool": "add_box", "args": {"diagram": "Web Shop", "name": "orders", "kind": "component"}}
+        ]}),
+    );
+    assert!(
+        matches!(&failed, Err(ApiError::Rejected(m)) if m.starts_with("step 2 (add_box) failed, nothing was changed")),
+        "{failed:?}"
+    );
+    assert_eq!(e.project, before);
+    // Undo still takes back the last call before the batch: connecting Payment.
+    e.undo();
+    assert!(!e.project.blocks.values().any(|b| b.name == "Payment"));
+    assert!(
+        e.project.blocks.is_empty() || e.project != before,
+        "the undo stack is as before the batch"
+    );
+    for tool in ["batch", "export_docs", "render_diagram"] {
+        let refused = call(
+            &mut e,
+            "batch",
+            json!({"steps": [{"tool": tool, "args": {}}]}),
+        );
+        assert!(
+            matches!(refused, Err(ApiError::Rejected(m)) if m.contains("cannot run in a batch"))
+        );
+    }
     Ok(())
 }

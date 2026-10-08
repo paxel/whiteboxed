@@ -291,6 +291,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts and index into a folder you allowed           |
+| `batch`              | Several editing calls as one undo step, all or nothing            |
 
 Boxes are addressed by id or by their path of names from the context view, as a list
 (`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare
