@@ -116,3 +116,37 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 4. With one: include the files where they belong, e.g. in section 3
    `include::context.adoc[]` and in section 5 `include::context - Web Shop.adoc[]`.
 5. Export again after changes; the names stay the same.
+
+## Let an AI document a repository
+
+You need Claude Code (or another MCP client) and the repository it should read.
+
+1. Open or start a project in whiteboxed, then **AI > Allow AI access**. The dialog
+   shows the endpoint and a command.
+2. **Copy command** and run it once in a terminal inside the repository:
+
+   ```sh
+   claude mcp add --transport http whiteboxed http://127.0.0.1:7342/mcp --header "Authorization: Bearer <token>"
+   ```
+
+   It registers whiteboxed for this repository (`--scope user` registers it for all
+   of them).
+3. Start `claude` in the repository and check with `/mcp` that whiteboxed is
+   connected.
+4. Ask for the documentation, for example:
+
+   > Read this repository and build its arc42 building-block view in whiteboxed:
+   > the context view with users and external systems, then a whitebox for the
+   > system and for every major module. Give every box a responsibility and every
+   > diagram a motivation. Check each diagram with render_diagram, then export the
+   > docs as AsciiDoc to docs/arc42 in this repository.
+
+5. Watch the diagrams appear; with **Follow AI** on, the window shows each change.
+   Correct anything by hand, or undo the AI's steps one by one with **Ctrl+Z**.
+6. **Ctrl+S** saves the project. The AI cannot save; the recovery file protects the
+   work until you do.
+7. **AI > Allow AI access** again turns the access off.
+
+A new token or port (from the dialog) means running the `claude mcp add` command
+again; remove the old entry first with `claude mcp remove whiteboxed`.
+

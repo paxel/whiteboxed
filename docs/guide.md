@@ -167,6 +167,52 @@ Each file starts at heading level 3 (`===` / `###`), so it fits under a chapter 
 your own arc42 document: `include::context - Web Shop.adoc[]` in AsciiDoc. In
 Markdown, which has no includes, the index links the files.
 
+## AI access (MCP)
+
+An AI client can build and change the open project while you watch. whiteboxed offers
+its editing operations as [MCP](https://modelcontextprotocol.io) tools on
+`http://127.0.0.1:<port>/mcp`.
+
+![The AI access dialog with the endpoint and the command for Claude Code](screenshots/ai-access.png)
+
+- **Off by default.** **AI > Allow AI access** turns it on until you turn it off or
+  quit; the next start begins with it off.
+- **Token.** Every request needs the access token, as `Authorization: Bearer <token>`
+  or as `?token=<token>` in the URL. The token is made once per user and stored in
+  your user data directory (`whiteboxed/ai.yaml`), never in a project. **Generate new
+  token** in the dialog replaces it; clients then need the new one.
+- **Port.** 7342 unless you choose another in the dialog. A port that is taken shows an
+  error instead of silently moving.
+- **Same rules as a click.** Every tool call goes through the same checks as the GUI
+  and is **one undo step**. A refused call changes nothing and tells the AI why.
+- **Follow AI** (AI menu, on by default) shows the diagram the AI just changed. The
+  status bar shows "AI access on" and the last change; click it to go there.
+- **What the AI may not do:** save, open or start a project. That stays with you.
+
+| Tool                 | Does                                                              |
+|----------------------|-------------------------------------------------------------------|
+| `get_model`          | The whole project as JSON                                         |
+| `get_diagram`        | One diagram: boxes, cells, lines, open and unassigned ends        |
+| `render_diagram`     | One diagram as PNG, as you see it                                 |
+| `add_box`            | A box without relation                                            |
+| `connect_new`        | A new box on one side of a box, connected                         |
+| `connect_existing`   | Two boxes of a diagram; `placement` move (default) or keep        |
+| `add_stub`           | A relation that leaves the level                                  |
+| `connect_open_end`   | A stub's open end to a box                                        |
+| `attach`             | A relation from the level above to the box inside that handles it |
+| `edit_box`           | Name, type, tag                                                   |
+| `edit_relation`      | Direction, text                                                   |
+| `set_responsibility` | A box's responsibility                                            |
+| `set_motivation`     | A diagram's motivation                                            |
+| `move_box`           | A box to another grid cell                                        |
+| `delete_box`         | A box; one with content only with `recursive: true`               |
+| `delete_relation`    | A relation, or with `detach_in` only its end in a whitebox        |
+| `export_docs`        | Images, arc42 texts and index into an absolute folder             |
+
+Boxes are addressed by id or by their path of names from the context view, as a list
+(`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare
+without case. The context view is the default diagram.
+
 ## Keys
 
 | Key                   | Does                                   |

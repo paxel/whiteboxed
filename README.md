@@ -29,6 +29,9 @@ levels cannot drift apart.
   pixel coordinates. Unsaved work is recovered after a crash.
 - **arc42 texts.** A responsibility per box and a motivation per diagram, typed in a
   details panel; undo and redo from the toolbar arrows or the keyboard.
+- **AI access.** An MCP endpoint lets Claude Code or another AI client read a repository
+  and build the model while you watch; every AI step is one undo step, and access is
+  off by default and needs a token.
 - **Export** every diagram as SVG and PNG, together with arc42 text files
   (AsciiDoc or Markdown) holding the partner, building-block and interface tables,
   and an index that ties them together.
@@ -39,8 +42,8 @@ levels cannot drift apart.
 
 - [Workflows](docs/workflows.md): step-by-step recipes, from the first box to the
   exported arc42 images.
-- [Guide](docs/guide.md): levels, box types, relations, layout rules, keys and the
-  file format.
+- [Guide](docs/guide.md): levels, box types, relations, layout rules, AI access, keys
+  and the file format.
 
 ## Install
 

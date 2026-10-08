@@ -296,3 +296,34 @@ fn doc_screenshot_empty_project() -> TestResult {
     h.run();
     save(&mut h, "empty")
 }
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_ai_access() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    whiteboxed::mcp::settings::save(
+        dir.path(),
+        &whiteboxed::mcp::settings::AiSettings {
+            port: 7342,
+            token: "5e7c2a91d04b4f3c8a1e6b0d9f27c4a85b3e1f60c7d24a9e8b16f05c3d72a4e1".into(),
+        },
+    )?;
+    let (p, shop) = shop()?;
+    let mut e = editor_with(p);
+    e.last_ai = Some(whiteboxed::editor::AiAction {
+        summary: "added Orders next to Storefront".into(),
+        diagram: Some(shop),
+        block: None,
+    });
+    let app = App::new(e, None).with_ai_dir(Some(dir.path().to_path_buf()));
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.show(ui), app);
+    h.ctx.set_theme(egui::Theme::Light);
+    h.run();
+    let ctx = h.ctx.clone();
+    h.state_mut().ai.start(&ctx);
+    h.run();
+    save(&mut h, "ai-access")
+}

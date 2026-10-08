@@ -20,5 +20,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Unlimited undo and redo, from the arrows in the toolbar or the keyboard.
 - Projects saved as readable YAML files, with automatic recovery of unsaved changes after a crash.
 - Export of the current diagram as SVG and PNG, and of all diagrams as images plus arc42 text files (AsciiDoc or Markdown) with an index.
+- AI access: an MCP endpoint on localhost, off by default and guarded by a token, through which an AI client can build and change the model while you watch.
 - An app icon; on Linux the app adds itself to the application menu.
 - Installation with Homebrew (Linux, macOS) and Scoop (Windows).
