@@ -240,15 +240,21 @@ fn context_doc(w: &mut Writer, project: &Project, image: &str) {
                 output.push(item);
             }
         }
+        let description = project
+            .blocks
+            .get(&partner)
+            .map(|b| b.responsibility.clone())
+            .unwrap_or_default();
         rows.push(vec![
             name(project, partner),
+            description,
             input.join("; "),
             output.join("; "),
         ]);
     }
     if !rows.is_empty() {
         w.heading(3, "Communication partners");
-        w.table(&["Partner", "Input", "Output"], &rows);
+        w.table(&["Partner", "Description", "Input", "Output"], &rows);
     }
     let blocks = responsibilities(project, None, true);
     if !blocks.is_empty() {

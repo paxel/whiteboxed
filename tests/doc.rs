@@ -29,6 +29,13 @@ fn shop() -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
         "shipping orders",
     )?;
     p.set_motivation(None, "Who talks to the shop.")?;
+    p.set_responsibility(user, "Buys things.")?;
+    let warehouse = p
+        .blocks_in(None)
+        .find(|(_, b)| b.name == "Warehouse")
+        .map(|(id, _)| id)
+        .ok_or("warehouse")?;
+    p.set_responsibility(warehouse, "Ships what was bought.")?;
     p.set_responsibility(shop, "Sells things.\nShips them.")?;
     let ui = p.add_block(Some(shop), &spec("Storefront", BlockKind::Ui))?;
     p.set_responsibility(ui, "Shows the catalog.")?;
@@ -52,11 +59,11 @@ fn the_context_lists_partners_with_input_and_output() -> TestResult {
         md.starts_with("### Context\n\n![Context view](<context.svg>)\n\nWho talks to the shop.\n")
     );
     assert!(md.contains(
-        "| Partner   | Input        | Output          |\n\
-         |-----------|--------------|-----------------|\n\
-         | Customer  | orders       | \u{2013}               |\n\
-         | Payment   | REST \\| JSON | REST \\| JSON    |\n\
-         | Warehouse | \u{2013}            | shipping orders |\n"
+        "| Partner   | Description            | Input        | Output          |\n\
+         |-----------|------------------------|--------------|-----------------|\n\
+         | Customer  | Buys things.           | orders       | \u{2013}               |\n\
+         | Payment   | \u{2013}                      | REST \\| JSON | REST \\| JSON    |\n\
+         | Warehouse | Ships what was bought. | \u{2013}            | shipping orders |\n"
     ));
     assert!(md.contains("| Web Shop | Sells things.<br>Ships them. |"));
     Ok(())

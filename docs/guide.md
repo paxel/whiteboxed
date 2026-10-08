@@ -146,12 +146,13 @@ view and every whitebox with content, into one folder:
 - `index.adoc` or `index.md`, which puts them in order: the context first, then the
   whiteboxes level by level.
 
-The context file holds the image, the motivation as explanation, and two tables:
+The context file holds the image, the motivation as explanation, and two tables. A
+partner's description is the responsibility typed for that person or external system.
 
-| Table                  | Columns                | From                                         |
-|------------------------|------------------------|----------------------------------------------|
-| Communication partners | Partner, Input, Output | the arrows between neighbours and your boxes |
-| Building blocks        | Name, Responsibility   | your own boxes                               |
+| Table                  | Columns                             | From                                                      |
+|------------------------|-------------------------------------|-----------------------------------------------------------|
+| Communication partners | Partner, Description, Input, Output | the partners' responsibility and the arrows to your boxes |
+| Building blocks        | Name, Responsibility                | your own boxes                                            |
 
 A whitebox file holds the image, the motivation and three tables:
 
