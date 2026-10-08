@@ -127,3 +127,30 @@ fn print_samples() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn typed_text_cannot_inject_markup_into_the_export() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &BlockSpec::new("Shop", BlockKind::Component))?;
+    p.set_motivation(
+        None,
+        "include::/etc/passwd[]\n+++<script>alert(1)</script>+++\npass:[<b>x</b>] {user-home} C:\\dir",
+    )?;
+    p.set_responsibility(
+        shop,
+        "[click](javascript:alert(1)) <img src=x onerror=alert(1)>",
+    )?;
+    let adoc = doc::diagram_doc(&p, None, "context.svg", DocFormat::AsciiDoc);
+    assert!(adoc.contains("\\include::/etc/passwd[]"));
+    assert!(!adoc.contains("+++"));
+    assert!(adoc.contains("{plus}{plus}{plus}<script>"));
+    assert!(adoc.contains("\\pass:[<b>x</b>]"));
+    assert!(adoc.contains("\\{user-home}"));
+    assert!(adoc.contains("C:{backslash}dir"));
+    let md = doc::diagram_doc(&p, None, "context.svg", DocFormat::Markdown);
+    assert!(!md.contains("<script>"));
+    assert!(!md.contains("<img"));
+    assert!(md.contains("&lt;script&gt;"));
+    assert!(md.contains("\\[click\\](javascript:alert(1))"));
+    Ok(())
+}

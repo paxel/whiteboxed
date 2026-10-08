@@ -21,6 +21,40 @@ impl DocFormat {
 
 const NONE: &str = "\u{2013}";
 
+/// Makes text typed by a person (or an AI) inert: no includes, passthroughs or
+/// attribute references in AsciiDoc, no raw HTML or links in Markdown.
+fn inert(format: DocFormat, text: &str) -> String {
+    match format {
+        // Control characters never reach the model, so U+0001 is a safe placeholder.
+        DocFormat::AsciiDoc => text
+            .replace('\\', "\u{1}")
+            .replace('{', "\\{")
+            .replace('+', "{plus}")
+            .replace("pass:", "\\pass:")
+            .replace('\u{1}', "{backslash}")
+            .lines()
+            .map(|line| {
+                let start = line.trim_start();
+                let directive = ["include::", "ifdef::", "ifndef::", "ifeval::", "endif::"]
+                    .iter()
+                    .any(|d| start.starts_with(d));
+                if directive {
+                    format!("\\{start}")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        DocFormat::Markdown => text
+            .replace('\\', "\\\\")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('[', "\\[")
+            .replace(']', "\\]"),
+    }
+}
+
 /// A small writer that knows both markups.
 struct Writer {
     format: DocFormat,
@@ -37,6 +71,7 @@ impl Writer {
 
     /// `level` 0 is the document title, 1 a chapter, 2 a diagram, 3 its parts.
     fn heading(&mut self, level: usize, text: &str) {
+        let text = inert(self.format, text);
         let mark = match self.format {
             DocFormat::AsciiDoc => "=",
             DocFormat::Markdown => "#",
@@ -46,11 +81,13 @@ impl Writer {
     }
 
     fn paragraph(&mut self, text: &str) {
-        self.out.push_str(text.trim());
+        let text = inert(self.format, text.trim());
+        self.out.push_str(&text);
         self.out.push_str("\n\n");
     }
 
     fn image(&mut self, file: &str, alt: &str) {
+        let alt = inert(self.format, alt).replace(']', "\\]");
         match self.format {
             DocFormat::AsciiDoc => self.out.push_str(&format!("image::{file}[{alt}]\n\n")),
             DocFormat::Markdown => self.out.push_str(&format!("![{alt}](<{file}>)\n\n")),
@@ -58,6 +95,7 @@ impl Writer {
     }
 
     fn link_item(&mut self, file: &str, text: &str) {
+        let text = inert(self.format, text);
         self.out.push_str(&format!("- [{text}](<{file}>)\n"));
     }
 
@@ -72,7 +110,7 @@ impl Writer {
             } else {
                 text.trim()
             };
-            let escaped = text.replace('|', "\\|");
+            let escaped = inert(self.format, text).replace('|', "\\|");
             match self.format {
                 DocFormat::AsciiDoc => escaped.lines().collect::<Vec<_>>().join(" +\n"),
                 DocFormat::Markdown => escaped.lines().collect::<Vec<_>>().join("<br>"),
