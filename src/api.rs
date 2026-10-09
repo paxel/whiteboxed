@@ -187,6 +187,27 @@ pub struct BoxArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+pub struct SplitArgs {
+    pub relation: u64,
+    pub parts: Vec<SplitPartArgs>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct SplitPartArgs {
+    /// A box at end a: its owner-level box, or a box it lands on inside.
+    pub from: BoxRef,
+    /// A box at end b, the same way.
+    pub to: BoxRef,
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Seen from `from`; default out.
+    #[serde(default)]
+    pub direction: Option<ApiDirection>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct GroupArgs {
     /// The boxes to group, all of one diagram.
     pub boxes: Vec<BoxRef>,
@@ -594,6 +615,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<MoveBoxArgs>(),
         },
         ToolInfo {
+            name: "split_relation",
+            description: "Split one relation into several precise ones, e.g. one coarse A-B relation into provide and require. Each part names a box at end a (the owner-level box or a box the relation lands on inside it) and one at end b, with its own text and direction (seen from a). The first part keeps the relation's id.",
+            schema: schema::<SplitArgs>(),
+        },
+        ToolInfo {
             name: "dissolve",
             description: "Dissolve a box's whitebox: its boxes take the box's place one level up, keeping their arrangement, and the box with its responsibility and motivation is removed. A line that landed on several inner boxes becomes one relation per box; a line that reached no box inside becomes an open end. Returns the diagram one level up.",
             schema: schema::<BoxArgs>(),
@@ -703,6 +729,33 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
             let id = resolve(&editor.project, &a.target)?;
             editor.apply_ai(|p| p.move_block(id, Cell::new(a.col, a.row)))?;
             done(editor, "moved", Some(id))
+        }
+        "split_relation" => {
+            let a: SplitArgs = args(arguments)?;
+            let rel = RelationId(a.relation);
+            let parts = a
+                .parts
+                .iter()
+                .map(|p| {
+                    Ok(crate::model::SplitPart {
+                        a: resolve(&editor.project, &p.from)?,
+                        b: resolve(&editor.project, &p.to)?,
+                        text: p.text.clone().unwrap_or_default(),
+                        direction: direction(p.direction),
+                    })
+                })
+                .collect::<ApiResult<Vec<_>>>()?;
+            let owner = editor.project.relation(rel)?.owner;
+            let ids = editor.apply_ai(|p| p.split_relation(rel, &parts))?;
+            note(
+                editor,
+                format!("split a relation into {}", ids.len()),
+                owner,
+                None,
+            );
+            Ok(Output::Json(json!({
+                "relations": ids.iter().map(|r| relation_json(&editor.project, *r)).collect::<Vec<_>>(),
+            })))
         }
         "dissolve" => {
             let a: BoxArgs = args(arguments)?;

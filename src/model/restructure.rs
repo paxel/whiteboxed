@@ -10,6 +10,16 @@ use super::{
     Relation, RelationId, Side,
 };
 
+/// One relation a split makes: between `a` (a box at end A: its owner-level box or a
+/// box it lands on inside) and `b` (the same at end B).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitPart {
+    pub a: BlockId,
+    pub b: BlockId,
+    pub text: String,
+    pub direction: super::Direction,
+}
+
 /// The deepest boxes each end of a relation reaches, with their sides, taken before
 /// the nesting changes.
 type Leaves = [Vec<Anchor>; 2];
@@ -183,6 +193,78 @@ impl Project {
             return Err(ModelError::OutsideGrid);
         }
         self.reface(up, &children)
+    }
+
+    /// The boxes a split can choose from at one end: the boxes it lands on inside its
+    /// owner-level box, or that box itself if it lands nowhere inside.
+    pub fn split_choices(&self, rel: RelationId, end: End) -> ModelResult<Vec<BlockId>> {
+        let e = self.relation(rel)?.end(end);
+        let root = e.anchors.first().ok_or(ModelError::SplitOpen)?.block;
+        let inside: Vec<BlockId> = self.landings(e, root).iter().map(|a| a.block).collect();
+        Ok(if inside.is_empty() {
+            vec![root]
+        } else {
+            inside
+        })
+    }
+
+    /// Splits `rel` into one relation per part, each landing on exactly its two boxes
+    /// (and on whatever the original reached inside them). The first part keeps the
+    /// relation's id. Returns the ids in the order of `parts`.
+    pub fn split_relation(
+        &mut self,
+        rel: RelationId,
+        parts: &[SplitPart],
+    ) -> ModelResult<Vec<RelationId>> {
+        let old = self.relation(rel)?.clone();
+        if old.a.is_open() || old.b.is_open() {
+            return Err(ModelError::SplitOpen);
+        }
+        if parts.is_empty() {
+            return Err(ModelError::SplitEmpty);
+        }
+        let (rows, cols) = (
+            self.split_choices(rel, End::A)?,
+            self.split_choices(rel, End::B)?,
+        );
+        let mut made = Vec::new();
+        for part in parts {
+            if !rows.contains(&part.a) || !cols.contains(&part.b) {
+                return Err(ModelError::NotOnChain);
+            }
+            let text = super::edit::check_text(&part.text)?;
+            // An end: its owner-level box, then the chosen box and what lies inside it.
+            let end = |e: &Endpoint, pick: BlockId| -> Endpoint {
+                let root = e.anchors[0];
+                Endpoint {
+                    anchors: e
+                        .anchors
+                        .iter()
+                        .copied()
+                        .filter(|x| x.block == root.block || self.within(x.block, pick))
+                        .collect(),
+                }
+            };
+            made.push(Relation {
+                a: end(&old.a, part.a),
+                b: end(&old.b, part.b),
+                direction: part.direction,
+                text,
+                short: String::new(),
+                ..old.clone()
+            });
+        }
+        self.relations.remove(&rel);
+        let mut ids = Vec::new();
+        for (i, r) in made.into_iter().enumerate() {
+            if i == 0 {
+                self.relations.insert(rel, r);
+                ids.push(rel);
+            } else {
+                ids.push(self.insert_relation(r));
+            }
+        }
+        Ok(ids)
     }
 
     /// The box of the same diagram that `id` has the most relations with.

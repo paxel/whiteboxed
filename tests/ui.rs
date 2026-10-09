@@ -1310,3 +1310,44 @@ fn a_bundled_line_lists_its_relations() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn right_click_splits_a_relation() -> TestResult {
+    use whiteboxed::model::{Direction, End};
+    let (mut e, shop) = one_box()?;
+    let (db, rel) = e.project.connect_new(
+        shop,
+        Side::Right,
+        &BlockSpec::new("DB", BlockKind::Database),
+        Direction::Out,
+        "data",
+    )?;
+    for name in ["Reader", "Writer"] {
+        let id = e
+            .project
+            .add_block(Some(shop), &BlockSpec::new(name, BlockKind::Component))?;
+        e.project.attach(rel, End::A, shop, id, Side::Right)?;
+    }
+    let mut h = harness(e);
+    h.run();
+    let pts = h.state_mut().editor.layout().lines[0].points.clone();
+    let mid = Pos::new(
+        (pts[0].x + pts[1].x) / 2.0,
+        (pts[0].y + pts[1].y) / 2.0 + 1.0,
+    );
+    let at = screen(&h, mid)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Split relation\u{2026}").click();
+    h.run();
+    for check in h.get_all_by_role(egui::accesskit::Role::CheckBox) {
+        check.click();
+    }
+    h.run();
+    h.get_by_label("Split").click();
+    h.run();
+    let p = &h.state().editor.project;
+    assert_eq!(p.relations.len(), 2);
+    assert!(p.relations.values().all(|r| r.b.anchors[0].block == db));
+    Ok(())
+}

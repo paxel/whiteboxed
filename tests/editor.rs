@@ -625,3 +625,50 @@ fn dissolving_from_inside_shows_the_level_above() -> TestResult {
     assert_eq!(e.project.block(inner)?.parent, Some(shop));
     Ok(())
 }
+
+#[test]
+fn the_split_dialog_turns_ticked_pairs_into_relations() -> TestResult {
+    use whiteboxed::model::{Direction, End};
+    let mut e = Editor::new(None);
+    let a = add_first(&mut e, "A")?;
+    let b = connect_new(&mut e, a, Side::Right, "B", BlockKind::Component)?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    let a1 = e.project.add_block(
+        Some(a),
+        &whiteboxed::model::BlockSpec::new("a1", BlockKind::Component),
+    )?;
+    let b1 = e.project.add_block(
+        Some(b),
+        &whiteboxed::model::BlockSpec::new("b1", BlockKind::Component),
+    )?;
+    let b2 = e.project.add_block(
+        Some(b),
+        &whiteboxed::model::BlockSpec::new("b2", BlockKind::Component),
+    )?;
+    e.project.attach(rel, End::A, a, a1, Side::Right)?;
+    e.project.attach(rel, End::B, b, b1, Side::Left)?;
+    e.project.attach(rel, End::B, b, b2, Side::Left)?;
+    e.start_split(rel);
+    let Some(Popup::Split(form)) = &mut e.popup else {
+        return Err("no split popup".into());
+    };
+    assert_eq!(form.rows.len() * form.cols.len(), 2);
+    form.pairs[0].on = true;
+    form.pairs[0].text = "provide".into();
+    form.pairs[1].on = true;
+    form.pairs[1].text = "require".into();
+    form.pairs[1].direction = Direction::In;
+    e.confirm();
+    assert!(e.popup.is_none(), "{:?}", e.message);
+    let mut texts: Vec<String> = e
+        .project
+        .relations
+        .values()
+        .map(|r| r.text.clone())
+        .collect();
+    texts.sort();
+    assert_eq!(texts, vec!["provide", "require"]);
+    e.undo();
+    assert_eq!(e.project.relations.len(), 1);
+    Ok(())
+}

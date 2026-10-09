@@ -395,3 +395,35 @@ fn sample_html() -> TestResult {
     )?;
     Ok(())
 }
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_split() -> TestResult {
+    let (p, shop) = shop()?;
+    let mut e = editor_with(p);
+    let rel = *e
+        .project
+        .relations
+        .iter()
+        .find(|(_, r)| r.text == "orders via browser")
+        .ok_or("relation")?
+        .0;
+    let orders = e
+        .project
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Orders")
+        .map(|(id, _)| *id)
+        .ok_or("orders")?;
+    e.project.attach(rel, End::B, shop, orders, Side::Top)?;
+    e.start_split(rel);
+    if let Some(whiteboxed::editor::Popup::Split(form)) = &mut e.popup {
+        form.pairs[0].on = true;
+        form.pairs[0].text = "browse".into();
+        form.pairs[1].on = true;
+        form.pairs[1].text = "order".into();
+    }
+    let mut h = harness(e);
+    h.run();
+    save(&mut h, "split")
+}

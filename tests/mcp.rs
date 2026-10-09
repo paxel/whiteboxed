@@ -171,7 +171,7 @@ fn a_client_lists_and_calls_tools() -> TestResult {
 
     let list = post(f.server.addr, "/mcp", &rpc(2, "tools/list", json!({})), &h)?;
     let tools = message(&list.body, 2).ok_or("no tools/list result")?;
-    assert_eq!(tools["result"]["tools"].as_array().map(Vec::len), Some(22));
+    assert_eq!(tools["result"]["tools"].as_array().map(Vec::len), Some(23));
 
     let call = rpc(
         3,

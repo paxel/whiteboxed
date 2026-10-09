@@ -113,6 +113,16 @@ with the full name in the legend. Inside, you
 warning marker, and the status bar counts it. Attaching it to further boxes fans the
 line out: one frame point, one label, a branch to each box.
 
+When one coarse relation turns out to be several flows, **Split relation…** (right-click
+the line) makes them precise. A grid lists the boxes the relation reaches at both ends
+(rows and columns); every pair you tick becomes its own relation with its own text and
+direction, landing on exactly those two boxes.
+
+![Splitting the customer's relation into browse and order](screenshots/split.png)
+
+On the level above they are still drawn as one line (see bundling above); inside, every
+box sees exactly its partner.
+
 Deleting such a line inside a whitebox only detaches it there (a branch: only from
 that box); the relation itself stays on its own level.
 
@@ -370,6 +380,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `move_into`          | A box into the whitebox of a neighbour                            |
 | `group`              | Boxes of one diagram into the whitebox of a new box               |
 | `dissolve`           | A whitebox: its boxes take the box's place one level up           |
+| `split_relation`     | One relation into several, one per pair of boxes                  |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |

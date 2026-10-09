@@ -39,6 +39,7 @@ pub fn show(
         Popup::ConfirmDelete { .. } => ("Delete box", "delete"),
         Popup::ConfirmDissolve { .. } => ("Dissolve whitebox", "dissolve"),
         Popup::ChooseRelation(_) => ("Which relation?", "choose"),
+        Popup::Split(_) => ("Split relation", "split"),
         Popup::OpenEnd { .. } => ("Connect open end", "open-end"),
         Popup::Restore(_) => ("Unsaved changes found", "restore"),
     };
@@ -197,6 +198,50 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 if *count == 1 { "" } else { "es" }
             ));
             ok_cancel(ui, "Delete")
+        }
+        Popup::Split(form) => {
+            ui.label("Tick who talks to whom. Every ticked pair becomes its own relation.");
+            let n = form.cols.len();
+            egui::Grid::new("split-grid").striped(true).show(ui, |ui| {
+                ui.label("");
+                for (_, name) in &form.cols {
+                    ui.label(RichText::new(name).strong());
+                }
+                ui.end_row();
+                for (r, (_, name)) in form.rows.iter().enumerate() {
+                    ui.label(RichText::new(name).strong());
+                    for c in 0..n {
+                        if let Some(pair) = form.pairs.get_mut(r * n + c) {
+                            ui.checkbox(&mut pair.on, "");
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+            for (i, pair) in form.pairs.iter_mut().enumerate().filter(|(_, p)| p.on) {
+                let from = form.rows.get(i / n.max(1)).map_or("", |r| r.1.as_str());
+                let to = form.cols.get(i % n.max(1)).map_or("", |c| c.1.as_str());
+                ui.separator();
+                ui.label(RichText::new(format!("{from} \u{2013} {to}")).strong());
+                ui.push_id(i, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Text");
+                        ui.text_edit_singleline(&mut pair.text);
+                    });
+                    direction_row(ui, &mut pair.direction);
+                });
+            }
+            ui.add_space(6.0);
+            if form.pairs.iter().any(|p| p.on) {
+                ok_cancel(ui, "Split")
+            } else {
+                ui.label(RichText::new("Tick at least one pair.").weak());
+                if ui.button("Cancel").clicked() {
+                    Some(Action::Cancel)
+                } else {
+                    None
+                }
+            }
         }
         Popup::ChooseRelation(rels) => {
             ui.label("This line stands for several relations. Edit:");

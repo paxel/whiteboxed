@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 22);
+    assert_eq!(tools.len(), 23);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -859,5 +859,42 @@ fn dissolve_lets_the_inner_boxes_take_the_place() -> TestResult {
             .as_ref()
             .is_some_and(|a| a.summary == "dissolved Web Shop")
     );
+    Ok(())
+}
+
+#[test]
+fn split_relation_makes_precise_relations() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    for name in ["Storefront", "Checkout"] {
+        call(
+            &mut e,
+            "add_box",
+            json!({"diagram": "Web Shop", "name": name, "kind": "component"}),
+        )?;
+    }
+    let rel = *e.project.relations.keys().next().ok_or("relation")?;
+    for to in ["Web Shop/Storefront", "Web Shop/Checkout"] {
+        call(
+            &mut e,
+            "attach",
+            json!({"relation": rel.0, "whitebox": "Web Shop", "to": to}),
+        )?;
+    }
+    let out = call(
+        &mut e,
+        "split_relation",
+        json!({"relation": rel.0, "parts": [
+            {"from": "Web Shop/Storefront", "to": "Customer", "text": "pages", "direction": "out"},
+            {"from": "Web Shop/Checkout", "to": "Customer", "text": "pay", "direction": "in"}
+        ]}),
+    )?;
+    let texts: Vec<&str> = out["relations"]
+        .as_array()
+        .ok_or("relations")?
+        .iter()
+        .filter_map(|r| r["text"].as_str())
+        .collect();
+    assert_eq!(texts, vec!["pages", "pay"]);
     Ok(())
 }

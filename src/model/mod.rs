@@ -16,6 +16,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use edit::{BlockSpec, Placement};
+pub use restructure::SplitPart;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -436,6 +437,10 @@ pub enum ModelError {
     AtTop,
     #[error("the box to group at must be one of the grouped boxes")]
     NotInGroup,
+    #[error("a relation with an open end cannot be split")]
+    SplitOpen,
+    #[error("say at least one pair of boxes to split into")]
+    SplitEmpty,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;

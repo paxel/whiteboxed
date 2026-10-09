@@ -1076,6 +1076,10 @@ impl App {
                         self.focus = true;
                         self.editor.start_edit_relation(rel);
                     }
+                    if ui.button("Split relation\u{2026}").clicked() {
+                        self.focus = true;
+                        self.editor.start_split(rel);
+                    }
                     if ui.button("Delete").clicked() {
                         self.editor.remove_line_at(rel, landing);
                     }
@@ -1087,6 +1091,14 @@ impl App {
                         if ui.button(format!("Edit {name}\u{2026}")).clicked() {
                             self.focus = true;
                             self.editor.start_edit_relation(*r);
+                        }
+                    }
+                    ui.separator();
+                    for r in &all {
+                        let name = self.editor.relation_label(*r);
+                        if ui.button(format!("Split {name}\u{2026}")).clicked() {
+                            self.focus = true;
+                            self.editor.start_split(*r);
                         }
                     }
                     ui.separator();

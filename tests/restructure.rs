@@ -346,3 +346,95 @@ fn dissolving_refuses_names_that_are_taken_above() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn splitting_a_relation_makes_one_per_pair_of_boxes() -> TestResult {
+    use whiteboxed::model::SplitPart;
+    let mut p = Project::new();
+    let s = p.add_block(None, &component("S"))?;
+    let a = p.add_block(Some(s), &component("A"))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &component("B"), Direction::Bi, "talks")?;
+    let inside = |p: &mut Project, outer, name: &str, end, side| -> Result<BlockId, ModelError> {
+        let id = p.add_block(Some(outer), &component(name))?;
+        p.attach(rel, end, outer, id, side)?;
+        Ok(id)
+    };
+    let a1 = inside(&mut p, a, "a1", End::A, Side::Right)?;
+    let a2 = inside(&mut p, a, "a2", End::A, Side::Right)?;
+    let b1 = inside(&mut p, b, "b1", End::B, Side::Left)?;
+    let b2 = inside(&mut p, b, "b2", End::B, Side::Left)?;
+    assert_eq!(p.split_choices(rel, End::A)?, vec![a1, a2]);
+    let ids = p.split_relation(
+        rel,
+        &[
+            SplitPart {
+                a: a1,
+                b: b1,
+                text: "provide".into(),
+                direction: Direction::Out,
+            },
+            SplitPart {
+                a: a2,
+                b: b2,
+                text: "require".into(),
+                direction: Direction::In,
+            },
+        ],
+    )?;
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids[0], rel);
+    assert_eq!(chain(&p, rel, End::A)?, vec![a, a1]);
+    assert_eq!(chain(&p, rel, End::B)?, vec![b, b1]);
+    assert_eq!(chain(&p, ids[1], End::A)?, vec![a, a2]);
+    assert_eq!(chain(&p, ids[1], End::B)?, vec![b, b2]);
+    assert_eq!(p.relation(ids[1])?.direction, Direction::In);
+    // On the level of A and B they are still one line, with both texts.
+    let l = whiteboxed::layout::layout(&p, &diagram_view(&p, Some(s)));
+    assert_eq!(l.lines.len(), 1);
+    assert_eq!(l.lines[0].text, "provide, require");
+    // Inside A every box sees exactly its partner.
+    let view = diagram_view(&p, Some(a));
+    let partners: Vec<String> = view
+        .lines
+        .iter()
+        .filter_map(|l| match &l.b {
+            ViewEnd::Frame { partner, .. } => Some(partner.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(partners, vec!["B \u{203a} b1", "B \u{203a} b2"]);
+    whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    Ok(())
+}
+
+#[test]
+fn splitting_refuses_open_ends_and_strangers() -> TestResult {
+    use whiteboxed::model::SplitPart;
+    let Shop {
+        mut p,
+        customer,
+        business,
+        logic,
+        uses,
+        ..
+    } = shop()?;
+    let part = |a, b| SplitPart {
+        a,
+        b,
+        text: String::new(),
+        direction: Direction::Out,
+    };
+    // End B of "uses" lands on Logic inside Business: Business itself is no choice.
+    assert_eq!(
+        p.split_relation(uses, &[part(customer, business)]),
+        Err(ModelError::NotOnChain)
+    );
+    assert_eq!(p.split_relation(uses, &[]), Err(ModelError::SplitEmpty));
+    p.split_relation(uses, &[part(customer, logic)])?;
+    let stub = p.add_stub(business, Side::Top, Direction::Out, "metrics")?;
+    assert_eq!(
+        p.split_relation(stub, &[part(business, business)]),
+        Err(ModelError::SplitOpen)
+    );
+    Ok(())
+}

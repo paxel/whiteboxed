@@ -51,6 +51,24 @@ impl BlockForm {
     }
 }
 
+/// The split dialog: boxes at end A (rows) and end B (columns), and for every pair
+/// whether it becomes a relation, with its text and direction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitForm {
+    pub rel: RelationId,
+    pub rows: Vec<(BlockId, String)>,
+    pub cols: Vec<(BlockId, String)>,
+    /// Row-major: `pairs[row * cols.len() + col]`.
+    pub pairs: Vec<SplitPair>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitPair {
+    pub on: bool,
+    pub text: String,
+    pub direction: Direction,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectMode {
     New,
@@ -136,6 +154,8 @@ pub enum Popup {
         block: BlockId,
         count: usize,
     },
+    /// Split a relation into one per pair of boxes.
+    Split(SplitForm),
     /// Choose which of several relations drawn as one line to edit.
     ChooseRelation(Vec<RelationId>),
     /// Dissolve the whitebox of `block`; its own texts are lost.
@@ -784,6 +804,26 @@ impl Editor {
                 }
             }
             Popup::ChooseRelation(_) => {}
+            Popup::Split(form) => {
+                let n = form.cols.len();
+                let parts: Vec<crate::model::SplitPart> = form
+                    .pairs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.on)
+                    .filter_map(|(i, p)| {
+                        Some(crate::model::SplitPart {
+                            a: form.rows.get(i / n.max(1))?.0,
+                            b: form.cols.get(i % n.max(1))?.0,
+                            text: p.text.clone(),
+                            direction: p.direction,
+                        })
+                    })
+                    .collect();
+                if self.apply(|p| p.split_relation(form.rel, &parts)).is_some() {
+                    self.popup = None;
+                }
+            }
             Popup::ConfirmDissolve { block } => {
                 let up = self.project.blocks.get(&block).map(|b| b.parent);
                 let inside = self.diagram == Some(block);
@@ -1011,6 +1051,41 @@ impl Editor {
             boxes,
             at,
         });
+    }
+
+    /// Asks how to split `rel`: which boxes at both ends talk to each other.
+    pub fn start_split(&mut self, rel: RelationId) {
+        let named = |p: &Project, ids: Vec<BlockId>| -> Vec<(BlockId, String)> {
+            ids.into_iter()
+                .map(|b| {
+                    let name = p
+                        .blocks
+                        .get(&b)
+                        .map_or_else(String::new, |x| x.name.clone());
+                    (b, name)
+                })
+                .collect()
+        };
+        let (Ok(rows), Ok(cols), Some(r)) = (
+            self.project.split_choices(rel, End::A),
+            self.project.split_choices(rel, End::B),
+            self.project.relations.get(&rel),
+        ) else {
+            self.message = Some(ModelError::SplitOpen.to_string());
+            return;
+        };
+        let pair = SplitPair {
+            on: false,
+            text: r.text.clone(),
+            direction: r.direction,
+        };
+        let pairs = vec![pair; rows.len() * cols.len()];
+        self.popup = Some(Popup::Split(SplitForm {
+            rel,
+            rows: named(&self.project, rows),
+            cols: named(&self.project, cols),
+            pairs,
+        }));
     }
 
     /// A relation's name for menus: its text, or a number when it has none.

@@ -924,7 +924,7 @@ fn check_name_text(name: &str) -> ModelResult<()> {
 }
 
 /// A free text: line breaks and tabs allowed, other control characters not.
-fn check_text(text: &str) -> ModelResult<String> {
+pub(super) fn check_text(text: &str) -> ModelResult<String> {
     let text = text.trim().replace("\r\n", "\n");
     if text
         .chars()
