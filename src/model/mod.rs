@@ -8,6 +8,7 @@
 //! chain is an open end (a stub).
 
 mod edit;
+mod restructure;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -431,6 +432,8 @@ pub enum ModelError {
     LinesOnBand,
     #[error("cross-cutting bands stay at the bottom of the diagram")]
     BandStays,
+    #[error("this box is already in the context view")]
+    AtTop,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;

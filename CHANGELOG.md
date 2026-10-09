@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Move up a level: right-click a box inside a whitebox to take it, with its content, into the diagram one level up; its relations follow. Also an AI tool, move_up.
 - A readability score per diagram (green, yellow, red) from the number of boxes, crossing lines and the busiest box. A dot in the structure tree and next to the breadcrumb shows it, the details panel says what helps, the limits are project settings, and the AI gets it in get_diagram together with modelling advice.
 - HTML document export: one self-contained file with every diagram, text and table. Boxes, lines and frame ends are clickable, a tree and breadcrumbs lead through the levels, and it follows light or dark mode with a switch in the top right corner. The AI's export_docs writes it with html: true.
 - AI access can be opened to Docker containers (listening on the Docker bridge, reachable as host.docker.internal) or to an address you type, with a warning; this computer only stays the default and the token is always needed.

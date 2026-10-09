@@ -180,6 +180,13 @@ pub struct NoArgs {}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+pub struct BoxArgs {
+    #[serde(rename = "box")]
+    pub target: BoxRef,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct BatchArgs {
     /// Calls of the editing tools, run in order. A later step can address a box an
     /// earlier step created, by its path of names.
@@ -563,6 +570,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<MoveBoxArgs>(),
         },
         ToolInfo {
+            name: "move_up",
+            description: "Move a box out of its whitebox into the diagram one level up, with everything inside it. Its relations follow: a line to a former sibling now enters the old whitebox.",
+            schema: schema::<BoxArgs>(),
+        },
+        ToolInfo {
             name: "delete_box",
             description: "Delete a box and its relations. A box with whitebox content needs recursive: true.",
             schema: schema::<DeleteBoxArgs>(),
@@ -652,6 +664,12 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
             let id = resolve(&editor.project, &a.target)?;
             editor.apply_ai(|p| p.move_block(id, Cell::new(a.col, a.row)))?;
             done(editor, "moved", Some(id))
+        }
+        "move_up" => {
+            let a: BoxArgs = args(arguments)?;
+            let id = resolve(&editor.project, &a.target)?;
+            editor.apply_ai(|p| p.move_up(id))?;
+            done(editor, "moved up", Some(id))
         }
         "delete_box" => delete_box(editor, args(arguments)?),
         "delete_relation" => delete_relation(editor, args(arguments)?),

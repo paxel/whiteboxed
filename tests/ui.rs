@@ -1110,3 +1110,29 @@ fn the_details_panel_explains_readability() -> TestResult {
     assert!(h.query_by_label("10 boxes").is_some());
     Ok(())
 }
+
+#[test]
+fn right_click_moves_a_box_up_a_level() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    let inner = e
+        .project
+        .add_block(Some(shop), &BlockSpec::new("Inner", BlockKind::Component))?;
+    e.open_diagram(Some(shop));
+    let mut h = harness(e);
+    h.run();
+    let c = h
+        .state_mut()
+        .editor
+        .layout()
+        .block(inner)
+        .ok_or("inner")?
+        .rect
+        .center();
+    let at = screen(&h, c)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Move up a level").click();
+    h.run();
+    assert_eq!(h.state().editor.project.block(inner)?.parent, None);
+    Ok(())
+}

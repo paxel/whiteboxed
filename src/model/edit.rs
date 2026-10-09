@@ -57,7 +57,7 @@ impl Project {
     }
 
     /// The first cell right of every box of the diagram.
-    fn next_column(&self, diagram: DiagramId) -> Cell {
+    pub(super) fn next_column(&self, diagram: DiagramId) -> Cell {
         match self
             .blocks_in(diagram)
             .filter(|(_, b)| !b.band)
@@ -156,7 +156,7 @@ impl Project {
 
     /// Gives every line at the `moved` boxes of `diagram` the sides that face its
     /// partner: the partner box, or the frame side a line from outside enters at.
-    fn reface(&mut self, diagram: DiagramId, moved: &[BlockId]) -> ModelResult<()> {
+    pub(super) fn reface(&mut self, diagram: DiagramId, moved: &[BlockId]) -> ModelResult<()> {
         let at_moved = |e: &Endpoint| e.anchors.first().is_some_and(|a| moved.contains(&a.block));
         let own: Vec<RelationId> = self
             .relations
@@ -687,7 +687,7 @@ impl Project {
         Ok(id)
     }
 
-    fn check_relation_room(&self, diagram: DiagramId) -> ModelResult<()> {
+    pub(super) fn check_relation_room(&self, diagram: DiagramId) -> ModelResult<()> {
         let count = self
             .relations
             .values()
@@ -699,7 +699,7 @@ impl Project {
         Ok(())
     }
 
-    fn insert_relation(&mut self, relation: Relation) -> RelationId {
+    pub(super) fn insert_relation(&mut self, relation: Relation) -> RelationId {
         let id = RelationId(self.allocate());
         self.relations.insert(id, relation);
         id
@@ -709,7 +709,7 @@ impl Project {
         tag.and_then(|name| self.ensure_tag(name))
     }
 
-    fn check_diagram(&self, diagram: DiagramId) -> ModelResult<()> {
+    pub(super) fn check_diagram(&self, diagram: DiagramId) -> ModelResult<()> {
         if let Some(owner) = diagram {
             let kind = self.block(owner)?.kind;
             if !kind.can_drill() {
@@ -719,7 +719,7 @@ impl Project {
         Ok(())
     }
 
-    fn check_name(
+    pub(super) fn check_name(
         &self,
         diagram: DiagramId,
         name: &str,
@@ -740,7 +740,7 @@ impl Project {
         Ok(name.to_owned())
     }
 
-    fn check_kind(&self, diagram: DiagramId, kind: BlockKind) -> ModelResult<()> {
+    pub(super) fn check_kind(&self, diagram: DiagramId, kind: BlockKind) -> ModelResult<()> {
         if kind.is_neighbour() && diagram.is_some() {
             return Err(ModelError::NeighbourBelowContext(kind.label()));
         }
@@ -748,7 +748,7 @@ impl Project {
     }
 
     /// Bands have no lines.
-    fn check_lines(&self, id: BlockId) -> ModelResult<()> {
+    pub(super) fn check_lines(&self, id: BlockId) -> ModelResult<()> {
         if self.block(id)?.band {
             return Err(ModelError::BandHasNoLines);
         }
@@ -768,7 +768,7 @@ impl Project {
         Ok(diagram)
     }
 
-    fn occupied(&self, diagram: DiagramId, cell: Cell, except: Option<BlockId>) -> bool {
+    pub(super) fn occupied(&self, diagram: DiagramId, cell: Cell, except: Option<BlockId>) -> bool {
         self.blocks_in(diagram)
             .any(|(id, b)| Some(id) != except && !b.band && b.cell == cell)
     }
@@ -776,7 +776,7 @@ impl Project {
     /// The first free cell at `target`, else the nearest free cell of a block that
     /// grows from `target` away from the origin on `side` as squarely as possible:
     /// 1, 2 side by side, 2x2, 3x2, 3x3 … boxes.
-    fn free_cell_near(
+    pub(super) fn free_cell_near(
         &self,
         diagram: DiagramId,
         target: Cell,
@@ -868,7 +868,7 @@ impl Project {
     }
 
     /// Gives a relation the sides that face each other in the current layout.
-    fn reside(&mut self, rel: RelationId) -> ModelResult<()> {
+    pub(super) fn reside(&mut self, rel: RelationId) -> ModelResult<()> {
         let relation = self.relation(rel)?;
         let (Some(a), Some(b)) = (relation.a.anchors.first(), relation.b.anchors.first()) else {
             return Ok(());

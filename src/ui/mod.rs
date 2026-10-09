@@ -961,6 +961,14 @@ impl App {
                 if drillable && ui.button("Open whitebox").clicked() {
                     self.editor.open_diagram(Some(b));
                 }
+                let nested = self.editor.diagram.is_some();
+                if ui
+                    .add_enabled(nested, Button::new("Move up a level"))
+                    .on_hover_text("Out of this whitebox, into the diagram one level up")
+                    .clicked()
+                {
+                    self.editor.move_up(b);
+                }
                 if ui.button("Delete").clicked() {
                     self.editor.request_delete(b);
                 }

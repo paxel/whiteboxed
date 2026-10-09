@@ -145,6 +145,19 @@ There is nothing to position by pixel.
   picked a side by hand.
 - The same project always gives the same picture.
 
+## Restructure
+
+When a box turns out to be on the wrong level, move it instead of rebuilding:
+
+- **Move up a level** (right-click a box inside a whitebox): the box leaves the
+  whitebox, with everything inside it, and lands next to its old whitebox box on the
+  side its lines point to. Its lines follow: a line to a former neighbour now enters
+  the old whitebox and lands on that neighbour there. A line from outside that landed
+  on it now goes to it directly; if it also landed on other boxes, it becomes one
+  relation per box.
+
+Each restructuring is one step for undo.
+
 ## Readability
 
 Every diagram gets a colour: green (good), yellow (getting crowded) or red (hard to
@@ -326,6 +339,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
+| `move_up`            | A box out of its whitebox, one level up                           |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |

@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 18);
+    assert_eq!(tools.len(), 19);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -767,5 +767,23 @@ fn get_diagram_scores_the_diagram() -> TestResult {
     assert_eq!(d["score"]["busiest_box"]["name"], "Web Shop");
     assert_eq!(d["score"]["causes"], json!([]));
     assert!(api::INSTRUCTIONS.contains("level 1 shows a few major subsystems"));
+    Ok(())
+}
+
+#[test]
+fn move_up_takes_a_box_out_of_its_whitebox() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    call(
+        &mut e,
+        "add_box",
+        json!({"diagram": "Web Shop", "name": "Cache", "kind": "cache"}),
+    )?;
+    let out = call(&mut e, "move_up", json!({"box": "Web Shop/Cache"}))?;
+    assert_eq!(out["path"], json!(["Cache"]));
+    let refused = call(&mut e, "move_up", json!({"box": "Cache"}));
+    assert!(
+        matches!(refused, Err(ApiError::Rejected(m)) if m.contains("already in the context view"))
+    );
     Ok(())
 }
