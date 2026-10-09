@@ -145,6 +145,26 @@ There is nothing to position by pixel.
   picked a side by hand.
 - The same project always gives the same picture.
 
+## Readability
+
+Every diagram gets a colour: green (good), yellow (getting crowded) or red (hard to
+read). It shows as a dot next to the diagram in the structure tree and next to the
+breadcrumb; hovering it names the causes. With nothing selected, the details panel
+lists each cause with what helps.
+
+| Measure                  | Yellow from | Red from | What usually helps                                   |
+|--------------------------|-------------|----------|------------------------------------------------------|
+| Boxes in the diagram     | 8           | 10       | Group boxes, move details into a whitebox, bands     |
+| Lines that cross         | 1           | 3        | Rearrange so partners face each other, or group      |
+| Lines on the busiest box | 6           | 9        | Split the box, or move its partners into its whitebox |
+
+The worst of the three gives the colour. The limits are a rule of thumb, not part of
+arc42: arc42 asks for a level 1 with the major parts of the system and lets you refine
+only the boxes that need it. Change them under [Project settings](#project-settings).
+Concerns that every part uses, such as logging or security, are often better a
+cross-cutting band, or a rule in arc42's crosscutting concepts (section 8), than more
+boxes. The score is a working aid; exports do not show it.
+
 ## Project settings
 
 **File > Project settings…** holds what applies to the whole project:
@@ -160,6 +180,8 @@ There is nothing to position by pixel.
 - **Shorten texts longer than … characters**: from which length a text moves to the
   legend (see [Long texts and the legend](#long-texts-and-the-legend)). 0 numbers
   every text; unticked, texts are never shortened.
+- **Readability**: from how many boxes, crossings and lines on one box a diagram
+  counts as crowded (yellow) or hard to read (red).
 - **Use as my default for new projects** keeps the current line style for every new
   project on this computer.
 
@@ -291,7 +313,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | Tool                 | Does                                                              |
 |----------------------|-------------------------------------------------------------------|
 | `get_model`          | The whole project as JSON                                         |
-| `get_diagram`        | One diagram: boxes, cells, lines, open ends, and its problems     |
+| `get_diagram`        | One diagram: boxes, lines, open ends, problems, readability score |
 | `render_diagram`     | One diagram as PNG, as you see it                                 |
 | `add_box`            | A box without relation, or with `band: true` a cross-cutting band |
 | `connect_new`        | A new box on one side of a box, connected                         |
@@ -389,7 +411,7 @@ Project-wide settings sit at the top of the file and are only written when they
 differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
 default `round12`), `label_limit` (default 24; `never` turns shortening off) and
 `export` (the last choices of File > Export…, including `html: true` for the HTML
-document).
+document) and `score_limits` (each measure as `[yellow from, red from]`).
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,
   `external_system`.

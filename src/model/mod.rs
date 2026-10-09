@@ -465,7 +465,28 @@ pub struct Project {
     pub label_limit: Option<u32>,
     /// The last choices made in File > Export…
     pub export: Option<ExportChoice>,
+    /// From when a diagram counts as crowded or hard to read.
+    pub score_limits: ScoreLimits,
     pub next_id: u64,
+}
+
+/// Readability limits per diagram, each as (yellow from, red from).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScoreLimits {
+    pub boxes: (u32, u32),
+    pub crossings: (u32, u32),
+    /// Lines on the busiest box.
+    pub lines: (u32, u32),
+}
+
+impl Default for ScoreLimits {
+    fn default() -> Self {
+        ScoreLimits {
+            boxes: (8, 10),
+            crossings: (1, 3),
+            lines: (6, 9),
+        }
+    }
 }
 
 /// What File > Export… writes, and where.
@@ -514,6 +535,7 @@ impl Default for Project {
             line_style: LineStyle::default(),
             label_limit: DEFAULT_LABEL_LIMIT,
             export: None,
+            score_limits: ScoreLimits::default(),
             next_id: 0,
         }
     }

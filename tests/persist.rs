@@ -290,3 +290,18 @@ fn the_export_choice_is_saved_with_the_project() -> TestResult {
     assert_eq!(persist::from_yaml(&yaml)?.export, p.export);
     Ok(())
 }
+
+#[test]
+fn score_limits_are_saved_only_when_changed() -> TestResult {
+    use whiteboxed::model::ScoreLimits;
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("score_limits"));
+    p.set_score_limits(ScoreLimits {
+        boxes: (12, 15),
+        ..ScoreLimits::default()
+    });
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("score_limits:"), "{yaml}");
+    assert_eq!(persist::from_yaml(&yaml)?.score_limits, p.score_limits);
+    Ok(())
+}

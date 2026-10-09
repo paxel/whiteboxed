@@ -17,6 +17,7 @@ pub mod persist;
 pub mod prefs;
 pub mod recovery;
 pub mod scene;
+pub mod score;
 pub mod text;
 pub mod ui;
 pub mod view;

@@ -134,4 +134,35 @@ pub fn show(ui: &mut Ui, editor: &mut Editor, draft: &mut Option<Draft>) {
         .weak()
         .small(),
     );
+    if let Target::Diagram(d) = target
+        && let Some(score) = editor.scores().get(&d).cloned()
+    {
+        readability(ui, &score);
+    }
+}
+
+/// How readable the diagram is, and for every problem what helps.
+fn readability(ui: &mut Ui, score: &crate::score::Score) {
+    ui.add_space(12.0);
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Readability").strong());
+        let level = score.level();
+        ui.label(RichText::new(level.label()).color(super::level_color(level)));
+    });
+    let causes = score.causes();
+    if causes.is_empty() {
+        ui.label(
+            RichText::new(format!(
+                "{} boxes, no crossings, no box with too many lines.",
+                score.boxes
+            ))
+            .weak(),
+        );
+        return;
+    }
+    for cause in causes {
+        ui.label(RichText::new(&cause.what).color(super::level_color(cause.level)));
+        ui.label(RichText::new(&cause.help).weak().small());
+    }
 }

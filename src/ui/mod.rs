@@ -450,6 +450,10 @@ impl App {
                     .weak(),
                 );
             }
+            let diagram = self.editor.diagram;
+            if let Some(s) = self.editor.scores().get(&diagram).cloned() {
+                score_dot(ui, &s);
+            }
         });
         if let Some(diagram) = go {
             self.editor.open_diagram(diagram);
@@ -527,16 +531,22 @@ impl App {
             Color(crate::model::TagId, crate::model::Rgb),
         }
         let mut act = None;
+        let scores = self.editor.scores().clone();
         ui.heading("Structure");
         egui::ScrollArea::vertical()
             .id_salt("tree")
             .max_height(ui.available_height() * 0.65)
             .show(ui, |ui| {
-                let root = ui.selectable_label(self.editor.diagram.is_none(), "Context");
-                if root.clicked() {
-                    act = Some(TreeAct::Open(None));
-                }
-                tree(ui, &self.editor, None, 1, &mut act_tree(&mut act));
+                ui.horizontal(|ui| {
+                    let root = ui.selectable_label(self.editor.diagram.is_none(), "Context");
+                    if root.clicked() {
+                        act = Some(TreeAct::Open(None));
+                    }
+                    if let Some(s) = scores.get(&None) {
+                        score_dot(ui, s);
+                    }
+                });
+                tree(ui, &self.editor, &scores, None, 1, &mut act_tree(&mut act));
             });
         ui.separator();
         ui.heading("Tags");
@@ -571,6 +581,7 @@ impl App {
         fn tree(
             ui: &mut Ui,
             editor: &Editor,
+            scores: &std::collections::BTreeMap<DiagramId, crate::score::Score>,
             diagram: DiagramId,
             depth: usize,
             on: &mut impl FnMut(Option<BlockId>, bool),
@@ -587,9 +598,12 @@ impl App {
                     } else if r.clicked() {
                         on(Some(id), false);
                     }
+                    if let Some(s) = scores.get(&Some(id)) {
+                        score_dot(ui, s);
+                    }
                 });
                 if editor.project.has_content(id) {
-                    tree(ui, editor, Some(id), depth + 1, on);
+                    tree(ui, editor, scores, Some(id), depth + 1, on);
                 }
             }
         }
@@ -1134,6 +1148,23 @@ impl App {
             }
         }
     }
+}
+
+/// The colour of a readability level.
+pub fn level_color(level: crate::score::Level) -> Color32 {
+    match level {
+        crate::score::Level::Green => Color32::from_rgb(0x3a, 0xa6, 0x55),
+        crate::score::Level::Yellow => Color32::from_rgb(0xe0, 0xb4, 0x32),
+        crate::score::Level::Red => Color32::from_rgb(0xd0, 0x4a, 0x3a),
+    }
+}
+
+/// A small dot in the colour of a diagram's readability, explained on hover.
+fn score_dot(ui: &mut Ui, score: &crate::score::Score) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), 4.5, level_color(score.level()));
+    resp.on_hover_text(score.summary());
 }
 
 /// What the canvas showed in the last frame.

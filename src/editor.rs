@@ -1,6 +1,7 @@
 //! Editor state and every user action, independent of the GUI toolkit so it can be
 //! tested directly. The egui front end only maps input to these methods.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -150,6 +151,7 @@ pub struct Editor {
     recovery_dir: Option<PathBuf>,
     autosave_at: Option<Instant>,
     layout_cache: Option<(Project, DiagramId, Layout)>,
+    score_cache: Option<(Project, BTreeMap<DiagramId, crate::score::Score>)>,
     /// What an AI client changed last, for the status bar and "Follow AI".
     pub last_ai: Option<AiAction>,
     /// Folders the user allowed AI exports into, this session.
@@ -193,6 +195,7 @@ impl Editor {
             recovery_dir,
             autosave_at: None,
             layout_cache: None,
+            score_cache: None,
             last_ai: None,
             ai_export_roots: Vec::new(),
             ai_export_request: None,
@@ -225,6 +228,7 @@ impl Editor {
             recovery_dir,
             autosave_at: None,
             layout_cache: None,
+            score_cache: None,
             last_ai: None,
             ai_export_roots: Vec::new(),
             ai_export_request: None,
@@ -260,6 +264,32 @@ impl Editor {
     }
 
     // ----- view -----
+
+    /// The readability score of every diagram (and of the open one, even if empty).
+    pub fn scores(&mut self) -> &BTreeMap<DiagramId, crate::score::Score> {
+        let fresh = matches!(&self.score_cache, Some((p, map)) if *p == self.project
+            && map.contains_key(&self.diagram));
+        if !fresh {
+            let mut diagrams = doc::diagrams(&self.project);
+            if !diagrams.contains(&self.diagram) {
+                diagrams.push(self.diagram);
+            }
+            let map = diagrams
+                .into_iter()
+                .map(|d| (d, crate::score::of(&self.project, d)))
+                .collect();
+            self.score_cache = Some((self.project.clone(), map));
+        }
+        static EMPTY: BTreeMap<DiagramId, crate::score::Score> = BTreeMap::new();
+        self.score_cache.as_ref().map_or(&EMPTY, |(_, m)| m)
+    }
+
+    pub fn set_score_limits(&mut self, limits: crate::model::ScoreLimits) {
+        self.apply(|p| {
+            p.set_score_limits(limits);
+            Ok(())
+        });
+    }
 
     pub fn layout(&mut self) -> &Layout {
         let fresh = matches!(&self.layout_cache,

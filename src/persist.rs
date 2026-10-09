@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
     ExportChoice, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation,
-    RelationId, Rgb, Side, Tag, TagId,
+    RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -44,6 +44,9 @@ struct FileDto {
     /// The last choices of File > Export…
     #[serde(default, skip_serializing_if = "Option::is_none")]
     export: Option<ExportDto>,
+    /// Written only when they differ from the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    score_limits: Option<ScoreLimits>,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
@@ -187,6 +190,8 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 None => LimitDto::Never(Never::Never),
             },
         ),
+        score_limits: (project.score_limits != ScoreLimits::default())
+            .then_some(project.score_limits),
         export: project.export.as_ref().map(|e| ExportDto {
             all: e.all,
             svg: e.svg,
@@ -255,6 +260,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         Some(LimitDto::Chars(n)) => Some(n),
         Some(LimitDto::Never(_)) => None,
     };
+    project.score_limits = dto.score_limits.unwrap_or_default();
     project.export = dto.export.map(|e| ExportChoice {
         all: e.all,
         svg: e.svg,

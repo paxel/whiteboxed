@@ -590,6 +590,11 @@ impl Project {
         Ok(())
     }
 
+    /// Sets the readability limits of the project.
+    pub fn set_score_limits(&mut self, limits: super::ScoreLimits) {
+        self.score_limits = limits;
+    }
+
     /// Sets the project's line style.
     pub fn set_line_style(&mut self, style: LineStyle) {
         self.line_style = style;

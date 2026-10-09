@@ -475,8 +475,14 @@ Concerns that every part of a level uses (logging, security, monitoring) are \
 add_box with band: true; bands have no relations. \
 3. Give every box a one or two sentence responsibility and every diagram a motivation \
 (why it is split this way). \
-4. Check the result with render_diagram and the problems that get_diagram lists, and \
-tidy it with move_box. \
+4. Check the result with render_diagram and with the problems and the readability score \
+that get_diagram lists, and tidy it with move_box. \
+Keep every diagram readable: level 1 shows a few major subsystems, not every module; \
+only refine the boxes that need it, the tree may stay partial. A yellow or red score \
+means too many boxes, crossings, or one box with too many lines: group boxes or move \
+details into a whitebox instead of splitting further. Concerns that every part uses \
+(logging, security, monitoring) belong in a cross-cutting band or, as a rule for all \
+parts, in the arc42 crosscutting concepts (section 8) rather than as more boxes. \
 5. Finish with export_docs into the repository's documentation folder; the user is \
 asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
@@ -493,7 +499,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "get_diagram",
-            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs), relations from the level above that no box handles yet (dangling), and problems worth tidying with move_box: crossing lines, overlapping and cut-off labels.",
+            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs), relations from the level above that no box handles yet (dangling), problems worth tidying with move_box (crossing lines, overlapping and cut-off labels), and a readability score (green, yellow, red) with its causes and what helps.",
             schema: schema::<DiagramArgs>(),
         },
         ToolInfo {
@@ -1202,6 +1208,7 @@ fn view_end_json(project: &Project, e: &ViewEnd) -> Value {
 
 pub fn diagram_json(project: &Project, d: DiagramId) -> Value {
     let v = view::diagram_view(project, d);
+    let l = layout::layout(project, &v);
     json!({
         "diagram": d.map(|id| path(project, id)),
         "level": project.level(d),
@@ -1215,7 +1222,31 @@ pub fn diagram_json(project: &Project, d: DiagramId) -> Value {
             "text": l.text,
         })).collect::<Vec<_>>(),
         "dangling": view::dangling_count(&v),
-        "problems": problems(&layout::layout(project, &v)),
+        "problems": problems(&l),
+        "score": score_json(&crate::score::score(project, &l)),
+    })
+}
+
+fn level_name(level: crate::score::Level) -> &'static str {
+    match level {
+        crate::score::Level::Green => "green",
+        crate::score::Level::Yellow => "yellow",
+        crate::score::Level::Red => "red",
+    }
+}
+
+/// How readable the diagram is: the worst level, the three measures, and what helps.
+fn score_json(s: &crate::score::Score) -> Value {
+    json!({
+        "level": level_name(s.level()),
+        "boxes": s.boxes,
+        "crossings": s.crossings,
+        "busiest_box": s.busiest.as_ref().map(|(id, name, n)| json!({"id": id.0, "name": name, "lines": n})),
+        "causes": s.causes().iter().map(|c| json!({
+            "level": level_name(c.level),
+            "what": c.what,
+            "help": c.help,
+        })).collect::<Vec<_>>(),
     })
 }
 

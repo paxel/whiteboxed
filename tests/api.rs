@@ -756,3 +756,16 @@ fn get_diagram_lists_crossing_lines_as_problems() -> TestResult {
     assert_eq!(crossings[0]["relations"].as_array().map(Vec::len), Some(2));
     Ok(())
 }
+
+#[test]
+fn get_diagram_scores_the_diagram() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let d = call(&mut e, "get_diagram", json!({}))?;
+    assert_eq!(d["score"]["level"], "green");
+    assert_eq!(d["score"]["boxes"], 3);
+    assert_eq!(d["score"]["busiest_box"]["name"], "Web Shop");
+    assert_eq!(d["score"]["causes"], json!([]));
+    assert!(api::INSTRUCTIONS.contains("level 1 shows a few major subsystems"));
+    Ok(())
+}

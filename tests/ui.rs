@@ -1093,3 +1093,20 @@ fn the_ai_dialog_chooses_who_may_connect() -> TestResult {
     assert!(cmd.contains("http://127.0.0.1:"), "{cmd}");
     Ok(())
 }
+
+#[test]
+fn the_details_panel_explains_readability() -> TestResult {
+    let mut e = Editor::new(None);
+    for i in 0..10 {
+        e.project.add_block(
+            None,
+            &BlockSpec::new(&format!("B{i}"), BlockKind::Component),
+        )?;
+    }
+    let mut h = harness(e);
+    h.run();
+    assert!(h.query_by_label("Readability").is_some());
+    assert!(h.query_by_label("hard to read").is_some());
+    assert!(h.query_by_label("10 boxes").is_some());
+    Ok(())
+}
