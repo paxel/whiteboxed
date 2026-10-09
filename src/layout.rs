@@ -539,11 +539,23 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             segments.insert(li, vec![stem(a), stem(b)]);
         }
     }
+    // The direction a line leaves an end in: away from a box, into the frame.
+    let heading = |li: usize, end: End, side: Side| match ends.get(&(li, end)) {
+        Some((Owner::Frame, _)) => side.opposite(),
+        _ => side,
+    };
+    let boxes: Vec<Rect> = blocks.iter().map(|b| b.rect).collect();
     for _ in 0..2 {
         for li in 0..view.lines.len() {
             let Some((a, b)) = both(li) else { continue };
-            let others = obstacles(&grid, &segments, li);
-            let chans = route(&grid, (a.0, a.2), (b.0, b.2), &others);
+            // Ends that face each other across empty cells: one straight line.
+            let facing = (a.0, heading(li, End::A, a.1));
+            let chans = if straight(facing, (b.0, heading(li, End::B, b.1)), &boxes) {
+                Vec::new()
+            } else {
+                let others = obstacles(&grid, &segments, li);
+                route(&grid, (a.0, a.2), (b.0, b.2), &others)
+            };
             let points = route_points(&grid, &BTreeMap::new(), li, a.0, b.0, &chans);
             segments.insert(li, points.windows(2).map(|w| (w[0], w[1])).collect());
             routes.insert(li, chans);
@@ -864,6 +876,32 @@ fn axis(sizes: &[f32], gaps: &[f32], empty: f32) -> (Vec<f32>, Vec<(f32, f32)>, 
         x += g;
     }
     (starts, spans, x)
+}
+
+/// Whether two ends, each with the direction it leaves in, face each other on one
+/// line with no box in between, so the line can run straight from one to the other.
+fn straight(a: (Pos, Side), b: (Pos, Side), boxes: &[Rect]) -> bool {
+    let (pa, pb) = (a.0, b.0);
+    let ahead = match a.1 {
+        Side::Right => pb.x > pa.x,
+        Side::Left => pb.x < pa.x,
+        Side::Bottom => pb.y > pa.y,
+        Side::Top => pb.y < pa.y,
+    };
+    let aligned = if a.1.is_horizontal() {
+        (pa.y - pb.y).abs() < 0.5
+    } else {
+        (pa.x - pb.x).abs() < 0.5
+    };
+    if a.1 != b.1.opposite() || !ahead || !aligned {
+        return false;
+    }
+    // Ends lie on box borders; only a box the segment passes through blocks it.
+    let lo = Pos::new(pa.x.min(pb.x), pa.y.min(pb.y));
+    let hi = Pos::new(pa.x.max(pb.x), pa.y.max(pb.y));
+    !boxes.iter().any(|r| {
+        lo.x < r.max.x - 0.5 && hi.x > r.min.x + 0.5 && lo.y < r.max.y - 0.5 && hi.y > r.min.y + 0.5
+    })
 }
 
 /// Straight segments of routed lines, by line index.

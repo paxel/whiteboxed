@@ -776,3 +776,69 @@ fn label_rects_overlap_and_fit_like_the_drawing() -> TestResult {
     assert!(labels.iter().all(|(_, r)| area.holds(r)));
     Ok(())
 }
+
+#[test]
+fn facing_boxes_across_empty_cells_get_a_straight_line() -> TestResult {
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let a = p.add_block(None, &spec("A", k))?;
+    let b = p.add_block(None, &spec("B", k))?;
+    p.move_block(b, Cell::new(2, 0))?;
+    // Column 1 exists because of C below; the cell between A and B stays empty.
+    let c = p.add_block(None, &spec("C", k))?;
+    p.move_block(c, Cell::new(1, 1))?;
+    let rel = p.connect_existing(a, Side::Right, b, Direction::Out, "calls", Placement::Keep)?;
+    let line = |p: &Project| -> Result<Vec<Pos>, Box<dyn std::error::Error>> {
+        let l = render(p, None);
+        Ok(l.lines
+            .iter()
+            .find(|g| g.relation == rel)
+            .ok_or("line")?
+            .points
+            .clone())
+    };
+    let points = line(&p)?;
+    assert_eq!(points.len(), 2, "{points:?}");
+    assert!((points[0].y - points[1].y).abs() < 0.01);
+    // A box in between: the line goes around it.
+    let mid = p.add_block(None, &spec("Mid", k))?;
+    p.move_block(mid, Cell::new(1, 0))?;
+    let around = line(&p)?;
+    assert!(around.len() > 2, "{around:?}");
+    let r = render(&p, None).block(mid).ok_or("mid")?.rect;
+    for w in around.windows(2) {
+        let crosses_mid = w[0].y > r.min.y
+            && w[0].y < r.max.y
+            && w[0].x.min(w[1].x) < r.max.x
+            && w[0].x.max(w[1].x) > r.min.x;
+        assert!(!crosses_mid || (w[0].y - w[1].y).abs() > 0.01);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_line_from_the_frame_runs_straight_across_empty_cells() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &spec("User", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Shop", BlockKind::Component),
+        Direction::Out,
+        "uses",
+    )?;
+    let left = p.add_block(Some(shop), &spec("Left", BlockKind::Component))?;
+    let inner = p.add_block(Some(shop), &spec("Inner", BlockKind::Component))?;
+    p.move_block(left, Cell::new(0, 1))?;
+    p.move_block(inner, Cell::new(2, 0))?;
+    p.attach(rel, End::B, shop, inner, Side::Left)?;
+    let l = render(&p, Some(shop));
+    let points = &l
+        .lines
+        .iter()
+        .find(|g| g.relation == rel)
+        .ok_or("line")?
+        .points;
+    assert_eq!(points.len(), 2, "{points:?}");
+    Ok(())
+}

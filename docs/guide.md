@@ -127,7 +127,8 @@ There is nothing to position by pixel.
   through a box. Only a line that enters a whitebox through the bottom of its frame
   crosses the [cross-cutting bands](#cross-cutting-bands) on its way in. Gaps widen to
   fit long labels. A line leaves a box where its partner
-  is, so two boxes facing each other are joined by a straight line.
+  is, so two boxes facing each other are joined by a straight line, also across empty
+  cells.
 - Lines avoid crossing each other where a short detour or a different lane allows it.
   Where two lines still cross, the horizontal one jumps over the other in a small arc.
 - Labels stay inside the whitebox frame, wrapped onto several lines if needed.
