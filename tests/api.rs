@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 22);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -831,5 +831,33 @@ fn group_puts_boxes_into_a_new_box() -> TestResult {
         json!({"diagram": "Web Shop/Backend"}),
     )?;
     assert_eq!(d["boxes"].as_array().map(Vec::len), Some(2));
+    Ok(())
+}
+
+#[test]
+fn dissolve_lets_the_inner_boxes_take_the_place() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    call(
+        &mut e,
+        "add_box",
+        json!({"diagram": "Web Shop", "name": "Orders", "kind": "component"}),
+    )?;
+    let out = call(&mut e, "dissolve", json!({"box": "Web Shop"}))?;
+    let names: Vec<&str> = out["boxes"]
+        .as_array()
+        .ok_or("boxes")?
+        .iter()
+        .filter_map(|b| b["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"Orders") && !names.contains(&"Web Shop"),
+        "{names:?}"
+    );
+    assert!(
+        e.last_ai
+            .as_ref()
+            .is_some_and(|a| a.summary == "dissolved Web Shop")
+    );
     Ok(())
 }

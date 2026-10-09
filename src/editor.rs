@@ -136,6 +136,10 @@ pub enum Popup {
         block: BlockId,
         count: usize,
     },
+    /// Dissolve the whitebox of `block`; its own texts are lost.
+    ConfirmDissolve {
+        block: BlockId,
+    },
     OpenEnd {
         end: OpenEnd,
         target: Option<BlockId>,
@@ -770,6 +774,18 @@ impl Editor {
                     self.popup = None;
                 }
             }
+            Popup::ConfirmDissolve { block } => {
+                let up = self.project.blocks.get(&block).map(|b| b.parent);
+                let inside = self.diagram == Some(block);
+                if self.apply(|p| p.dissolve(block)).is_some() {
+                    self.popup = None;
+                    self.selected = None;
+                    // Inside the dissolved whitebox: show where its boxes went.
+                    if inside && let Some(up) = up {
+                        self.diagram = up;
+                    }
+                }
+            }
             Popup::OpenEnd { end, target, .. } => self.confirm_open_end(end, target),
             Popup::Restore(_) => self.restore(),
         }
@@ -985,6 +1001,11 @@ impl Editor {
             boxes,
             at,
         });
+    }
+
+    /// Asks before dissolving the whitebox of `block`.
+    pub fn start_dissolve(&mut self, block: BlockId) {
+        self.popup = Some(Popup::ConfirmDissolve { block });
     }
 
     /// Moves a box into the whitebox of a neighbour.

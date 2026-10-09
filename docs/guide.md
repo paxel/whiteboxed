@@ -164,6 +164,15 @@ When a box turns out to be on the wrong level, move it instead of rebuilding:
   the box you right-clicked, and the selected boxes go into its whitebox in the same
   arrangement. Lines between them move inside; lines to the outside now reach the new
   box and land on the right box inside.
+- **Dissolve whitebox…** (right-click a box with content): the boxes inside take the
+  box's place, keeping their arrangement; the boxes around move aside. The box itself
+  goes, with its responsibility and motivation (the confirmation names them). A line
+  that landed on several boxes inside becomes one relation per box; a line that
+  reached no box inside becomes an open end at its partner.
+
+Together they cover moves between levels: to take a database out of Business so that
+Health can use it too, **Move up a level** the database (or dissolve Business, then
+group the rest again).
 
 Each restructuring is one step for undo.
 
@@ -351,6 +360,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `move_up`            | A box out of its whitebox, one level up                           |
 | `move_into`          | A box into the whitebox of a neighbour                            |
 | `group`              | Boxes of one diagram into the whitebox of a new box               |
+| `dissolve`           | A whitebox: its boxes take the box's place one level up           |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |

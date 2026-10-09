@@ -594,6 +594,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<MoveBoxArgs>(),
         },
         ToolInfo {
+            name: "dissolve",
+            description: "Dissolve a box's whitebox: its boxes take the box's place one level up, keeping their arrangement, and the box with its responsibility and motivation is removed. A line that landed on several inner boxes becomes one relation per box; a line that reached no box inside becomes an open end. Returns the diagram one level up.",
+            schema: schema::<BoxArgs>(),
+        },
+        ToolInfo {
             name: "group",
             description: "Put boxes of one diagram into the whitebox of a new box, keeping their arrangement inside. Relations follow: between the boxes they move inside, to the outside they go to the new box and land on the right box inside.",
             schema: schema::<GroupArgs>(),
@@ -698,6 +703,15 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
             let id = resolve(&editor.project, &a.target)?;
             editor.apply_ai(|p| p.move_block(id, Cell::new(a.col, a.row)))?;
             done(editor, "moved", Some(id))
+        }
+        "dissolve" => {
+            let a: BoxArgs = args(arguments)?;
+            let id = resolve(&editor.project, &a.target)?;
+            let label = name(&editor.project, id);
+            let up = parent(&editor.project, id);
+            editor.apply_ai(|p| p.dissolve(id))?;
+            note(editor, format!("dissolved {label}"), up, None);
+            Ok(Output::Json(diagram_json(&editor.project, up)))
         }
         "group" => {
             let a: GroupArgs = args(arguments)?;

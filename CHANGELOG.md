@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Dissolve whitebox: right-click a box with content to let its boxes take its place one level up, in their arrangement; relations follow, a line to several boxes becomes one relation per box, an unassigned one becomes an open end. Also an AI tool, dissolve.
 - Group into new box: Ctrl+click boxes to select several, then right-click > Group into new box… puts them, in their arrangement, into the whitebox of a new box; relations follow. Also an AI tool, group.
 - Move into: right-click a box > Move into…, then click a neighbour, to put the box with its content into that neighbour's whitebox; its relations follow. Also an AI tool, move_into.
 - Move up a level: right-click a box inside a whitebox to take it, with its content, into the diagram one level up; its relations follow. Also an AI tool, move_up.

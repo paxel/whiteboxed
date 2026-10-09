@@ -609,3 +609,19 @@ fn ctrl_selected_boxes_group_into_a_new_box() -> TestResult {
     assert_eq!(e.project.block(a)?.parent, None);
     Ok(())
 }
+
+#[test]
+fn dissolving_from_inside_shows_the_level_above() -> TestResult {
+    let mut e = Editor::new(None);
+    let shop = add_first(&mut e, "Shop")?;
+    e.open_diagram(Some(shop));
+    let inner = add_first(&mut e, "Inner")?;
+    e.start_dissolve(shop);
+    e.confirm();
+    assert!(e.popup.is_none());
+    assert_eq!(e.diagram, None);
+    assert_eq!(e.project.block(inner)?.parent, None);
+    e.undo();
+    assert_eq!(e.project.block(inner)?.parent, Some(shop));
+    Ok(())
+}

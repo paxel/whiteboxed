@@ -120,6 +120,71 @@ impl Project {
         Ok(group)
     }
 
+    /// Dissolves the whitebox of `id`: its boxes take its place, keeping their
+    /// arrangement (the boxes around move aside), and `id` with its own texts is gone.
+    pub fn dissolve(&mut self, id: BlockId) -> ModelResult<()> {
+        let block = self.block(id)?.clone();
+        let up = block.parent;
+        let children: Vec<BlockId> = self.blocks_in(Some(id)).map(|(c, _)| c).collect();
+        for c in &children {
+            let child = self.block(*c)?;
+            if self
+                .blocks_in(up)
+                .any(|(o, b)| o != id && b.name.to_lowercase() == child.name.to_lowercase())
+            {
+                return Err(ModelError::DuplicateName(child.name.clone()));
+            }
+        }
+        if self.blocks_in(up).count() - 1 + children.len() > super::MAX_BLOCKS_PER_DIAGRAM {
+            return Err(ModelError::DiagramFull);
+        }
+        // The children's block in the grid, and how far the others move aside.
+        let cells: Vec<Cell> = children
+            .iter()
+            .filter_map(|c| self.blocks.get(c))
+            .filter(|b| !b.band)
+            .map(|b| b.cell)
+            .collect();
+        let col0 = cells.iter().map(|c| c.col).min().unwrap_or(0);
+        let row0 = cells.iter().map(|c| c.row).min().unwrap_or(0);
+        let wide = cells.iter().map(|c| c.col - col0 + 1).max().unwrap_or(1);
+        let high = cells.iter().map(|c| c.row - row0 + 1).max().unwrap_or(1);
+        let at = block.cell;
+        let others: Vec<BlockId> = self
+            .blocks_in(up)
+            .filter(|(o, b)| *o != id && !b.band)
+            .map(|(o, _)| o)
+            .collect();
+        let moved: Vec<BlockId> = std::iter::once(id)
+            .chain(children.iter().copied())
+            .collect();
+        self.renest(&moved, |p| {
+            for o in &others {
+                if let Some(b) = p.blocks.get_mut(o) {
+                    if b.cell.col > at.col {
+                        b.cell.col += wide - 1;
+                    }
+                    if b.cell.row > at.row {
+                        b.cell.row += high - 1;
+                    }
+                }
+            }
+            for c in &children {
+                if let Some(b) = p.blocks.get_mut(c) {
+                    b.parent = up;
+                    if !b.band {
+                        b.cell = Cell::new(at.col + b.cell.col - col0, at.row + b.cell.row - row0);
+                    }
+                }
+            }
+            p.blocks.remove(&id);
+        })?;
+        if self.blocks.values().any(|b| !b.cell.in_grid()) {
+            return Err(ModelError::OutsideGrid);
+        }
+        self.reface(up, &children)
+    }
+
     /// The box of the same diagram that `id` has the most relations with.
     fn busiest_partner(&self, id: BlockId) -> Option<BlockId> {
         let parent = self.block(id).ok()?.parent;

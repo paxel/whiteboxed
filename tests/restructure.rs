@@ -264,3 +264,85 @@ fn grouping_puts_boxes_into_a_new_whitebox() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn dissolving_lets_the_inner_boxes_take_the_place_of_the_box() -> TestResult {
+    let Shop {
+        mut p,
+        customer,
+        business,
+        logic,
+        db,
+        uses,
+        sql,
+    } = shop()?;
+    // Inside, Cache sits right of Logic: the inner block is two columns wide.
+    p.connect_new(logic, Side::Right, &component("Cache"), Direction::Out, "")?;
+    let right = p.add_block(None, &component("Right"))?;
+    p.move_block(right, p.block(business)?.cell.toward(Side::Right))?;
+    let health = p.add_block(None, &component("Health"))?;
+    let (bcell, rcell) = (p.block(business)?.cell, p.block(right)?.cell);
+    let probe = p.connect_existing(
+        health,
+        Side::Top,
+        business,
+        Direction::Out,
+        "probe",
+        whiteboxed::model::Placement::Keep,
+    )?;
+    p.dissolve(business)?;
+    assert!(p.block(business).is_err());
+    // Logic (top left inside) takes the old cell, the DB sits below it.
+    assert_eq!(p.block(logic)?.cell, bcell);
+    assert_eq!(p.block(logic)?.parent, None);
+    assert_eq!(p.block(db)?.cell, bcell.toward(Side::Bottom));
+    // The box on the right moved aside by one column.
+    assert_eq!(p.block(right)?.cell, rcell.toward(Side::Right));
+    // The customer now uses Logic directly, and SQL is a context relation.
+    assert_eq!(chain(&p, uses, End::A)?, vec![customer]);
+    assert_eq!(chain(&p, uses, End::B)?, vec![logic]);
+    assert_eq!(p.relation(sql)?.owner, None);
+    // Health's probe reached nothing inside: it is an open end at Health now.
+    let r = p.relation(probe)?;
+    assert!(r.b.is_open());
+    assert_eq!(chain(&p, probe, End::A)?, vec![health]);
+    whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    Ok(())
+}
+
+#[test]
+fn dissolving_splits_a_line_that_fanned_out() -> TestResult {
+    let Shop {
+        mut p,
+        business,
+        db,
+        uses,
+        ..
+    } = shop()?;
+    p.attach(uses, End::B, business, db, Side::Left)?;
+    let before = p.relations.len();
+    p.dissolve(business)?;
+    assert_eq!(p.relations.len(), before + 1);
+    let to: Vec<Vec<BlockId>> = p
+        .relations
+        .values()
+        .filter(|r| r.text == "uses")
+        .map(|r| r.b.anchors.iter().map(|a| a.block).collect())
+        .collect();
+    assert_eq!(to.len(), 2);
+    assert!(to.contains(&vec![db]));
+    Ok(())
+}
+
+#[test]
+fn dissolving_refuses_names_that_are_taken_above() -> TestResult {
+    let Shop {
+        mut p, business, ..
+    } = shop()?;
+    p.add_block(None, &component("Logic"))?;
+    assert_eq!(
+        p.dissolve(business),
+        Err(ModelError::DuplicateName("Logic".into()))
+    );
+    Ok(())
+}

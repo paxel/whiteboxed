@@ -1223,3 +1223,37 @@ fn ctrl_click_and_right_click_group_boxes() -> TestResult {
     assert_eq!(p.block(cache)?.parent, Some(backend));
     Ok(())
 }
+
+#[test]
+fn right_click_dissolves_a_whitebox_after_asking() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    e.project.set_responsibility(shop, "Sells.")?;
+    let inner = e
+        .project
+        .add_block(Some(shop), &BlockSpec::new("Inner", BlockKind::Component))?;
+    let mut h = harness(e);
+    h.run();
+    let c = h
+        .state_mut()
+        .editor
+        .layout()
+        .block(shop)
+        .ok_or("shop")?
+        .rect
+        .center();
+    let at = screen(&h, c)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Dissolve whitebox\u{2026}").click();
+    h.run();
+    assert!(
+        h.query_by_label_contains("removed with its responsibility")
+            .is_some()
+    );
+    h.get_by_label("Dissolve").click();
+    h.run();
+    let p = &h.state().editor.project;
+    assert!(p.block(shop).is_err());
+    assert_eq!(p.block(inner)?.parent, None);
+    Ok(())
+}

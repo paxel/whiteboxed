@@ -1036,6 +1036,15 @@ impl App {
                 {
                     self.moving_into = Some(b);
                 }
+                if self.editor.project.has_content(b)
+                    && ui
+                        .button("Dissolve whitebox\u{2026}")
+                        .on_hover_text("Its boxes take its place in this diagram")
+                        .clicked()
+                {
+                    self.focus = true;
+                    self.editor.start_dissolve(b);
+                }
                 let nested = self.editor.diagram.is_some();
                 if ui
                     .add_enabled(nested, Button::new("Move up a level"))

@@ -35,6 +35,7 @@ pub fn show(
         Popup::EditRelation { .. } => ("Edit relation", "edit-rel"),
         Popup::Conflict { .. } => ("Box is in the way", "conflict"),
         Popup::ConfirmDelete { .. } => ("Delete box", "delete"),
+        Popup::ConfirmDissolve { .. } => ("Dissolve whitebox", "dissolve"),
         Popup::OpenEnd { .. } => ("Connect open end", "open-end"),
         Popup::Restore(_) => ("Unsaved changes found", "restore"),
     };
@@ -193,6 +194,31 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 if *count == 1 { "" } else { "es" }
             ));
             ok_cancel(ui, "Delete")
+        }
+        Popup::ConfirmDissolve { block } => {
+            let b = editor.project.blocks.get(block);
+            let name = b.map_or("this box".to_owned(), |b| b.name.clone());
+            let count = editor.project.blocks_in(Some(*block)).count();
+            ui.label(format!(
+                "The {count} box{} inside {name} take its place one level up.",
+                if count == 1 { "" } else { "es" }
+            ));
+            let mut lost = Vec::new();
+            if b.is_some_and(|b| !b.responsibility.trim().is_empty()) {
+                lost.push("responsibility");
+            }
+            if b.is_some_and(|b| !b.motivation.trim().is_empty()) {
+                lost.push("motivation");
+            }
+            if lost.is_empty() {
+                ui.label(format!("{name} itself is removed."));
+            } else {
+                ui.label(format!(
+                    "{name} is removed with its {}. Undo brings it back.",
+                    lost.join(" and ")
+                ));
+            }
+            ok_cancel(ui, "Dissolve")
         }
         Popup::OpenEnd {
             end,
