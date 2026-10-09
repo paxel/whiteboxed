@@ -95,12 +95,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
             if inners.is_empty() {
                 inners.push(ViewEnd::Dangling);
             }
-            let partner = rel
-                .end(end.other())
-                .anchors
-                .first()
-                .and_then(|a| project.blocks.get(&a.block))
-                .map_or_else(|| OPEN_PARTNER.to_owned(), |b| b.name.clone());
+            let partner = partner_name(project, rel.end(end.other()), diagram);
             for inner in inners {
                 let frame = ViewEnd::Frame {
                     side,
@@ -195,6 +190,38 @@ pub fn bundle(view: &DiagramView) -> DiagramView {
         blocks: view.blocks.clone(),
         lines,
     }
+}
+
+/// The name of the far end of a line that leaves `diagram`: its box, followed by the
+/// boxes it lands on inside, down to the depth of the boxes in `diagram`
+/// (`B › b1, b2`).
+fn partner_name(project: &Project, far: &crate::model::Endpoint, diagram: DiagramId) -> String {
+    let depth = |b: BlockId| project.path(Some(b)).len();
+    let Some(root) = far.anchors.first() else {
+        return OPEN_PARTNER.to_owned();
+    };
+    let name = |b: BlockId| {
+        project
+            .blocks
+            .get(&b)
+            .map_or_else(|| "?".to_owned(), |x| x.name.clone())
+    };
+    // Boxes in `diagram` lie one level below it.
+    let limit = project.path(diagram).len() + 1;
+    let mut parts = vec![name(root.block)];
+    for d in depth(root.block) + 1..=limit {
+        let names: Vec<String> = far
+            .anchors
+            .iter()
+            .filter(|a| depth(a.block) == d)
+            .map(|a| name(a.block))
+            .collect();
+        if names.is_empty() {
+            break;
+        }
+        parts.push(names.join(", "));
+    }
+    parts.join(" \u{203a} ")
 }
 
 /// Number of inherited ends in a diagram that are not attached to a box yet.

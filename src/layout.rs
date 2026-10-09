@@ -587,7 +587,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     let offsets = lane_offsets(&lanes);
 
     let mut lines = Vec::new();
-    let (shown, legend_keys) = shown_labels(view, project.label_limit);
+    let (shown, mut legend_keys) = shown_labels(view, project.label_limit);
+    let partners = short_partners(view, project.label_limit, &mut legend_keys);
     for (li, line) in view.lines.iter().enumerate() {
         let pa = port_at.get(&(li, End::A)).copied();
         let pb = port_at.get(&(li, End::B)).copied();
@@ -618,7 +619,14 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         let frame_port = [(End::A, pa), (End::B, pb)]
             .into_iter()
             .find_map(|(end, port)| match (line.end(end), port) {
-                (ViewEnd::Frame { partner, side }, Some(p)) => Some((p.0, *side, partner.clone())),
+                (ViewEnd::Frame { partner, side }, Some(p)) => Some((
+                    p.0,
+                    *side,
+                    partners
+                        .get(partner)
+                        .cloned()
+                        .unwrap_or_else(|| partner.clone()),
+                )),
                 _ => None,
             });
         lines.push(LineGeom { frame_port, ..geom });
@@ -709,6 +717,36 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
 /// What each line of the view shows, and the legend for whatever was shortened:
 /// a short label if the relation has one, the full text up to `limit` characters,
 /// otherwise a number `[n]` (numbered in relation order).
+/// Partner names at frame ends that reach deep (`B › b1, b2`) and are longer than the
+/// label limit: shown as `B › [n]`, with the full name added to the legend.
+fn short_partners(
+    view: &DiagramView,
+    limit: Option<u32>,
+    legend: &mut Vec<(String, String)>,
+) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(limit) = limit else { return out };
+    let sep = " \u{203a} ";
+    for line in &view.lines {
+        for end in [&line.a, &line.b] {
+            let ViewEnd::Frame { partner, .. } = end else {
+                continue;
+            };
+            if out.contains_key(partner) || partner.chars().count() <= limit as usize {
+                continue;
+            }
+            let Some((root, _)) = partner.split_once(sep) else {
+                continue;
+            };
+            let numbered = legend.iter().filter(|(k, _)| k.starts_with('[')).count();
+            let key = format!("[{}]", numbered + 1);
+            legend.push((key.clone(), partner.clone()));
+            out.insert(partner.clone(), format!("{root}{sep}{key}"));
+        }
+    }
+    out
+}
+
 fn shown_labels(view: &DiagramView, limit: Option<u32>) -> (Vec<String>, Vec<(String, String)>) {
     let mut shown = Vec::new();
     let mut legend: Vec<(String, String)> = Vec::new();

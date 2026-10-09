@@ -105,7 +105,10 @@ documentation export always carry the full texts.
 ### Relations across levels
 
 When a relation reaches a box, it also shows up inside that box's whitebox: it enters
-through the frame on the same side, labelled with the partner outside. Inside, you
+through the frame on the same side, labelled with the partner outside. The label goes
+as deep as the boxes around it: if the partner's end lands inside the partner, you see
+where, for example `B › b1, b2`. A name longer than the label limit becomes `B › [3]`,
+with the full name in the legend. Inside, you
 **attach** it to the box that actually handles it. Until then it ends in an orange
 warning marker, and the status bar counts it. Attaching it to further boxes fans the
 line out: one frame point, one label, a branch to each box.
@@ -450,7 +453,7 @@ relations:
 
 Project-wide settings sit at the top of the file and are only written when they
 differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
-default `round12`), `label_limit` (default 24; `never` turns shortening off) and
+default `round12`), `label_limit` (default 24; `never` turns shortening off),
 `export` (the last choices of File > Export…, including `html: true` for the HTML
 document), `score_limits` (each measure as `[yellow from, red from]`) and `bundle: false` when
 relations between the same boxes are drawn separately.

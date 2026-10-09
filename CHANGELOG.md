@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A frame end names its partner down to the depth of the boxes around it (B › b1, b2), so you see what talks to what inside other whiteboxes; long names go into the legend.
 - Relations between the same two boxes are drawn as one bundled line with all their texts and directions; right-click lists each of them to edit or delete. A project setting turns it off.
 - Dissolve whitebox: right-click a box with content to let its boxes take its place one level up, in their arrangement; relations follow, a line to several boxes becomes one relation per box, an unassigned one becomes an open end. Also an AI tool, dissolve.
 - Group into new box: Ctrl+click boxes to select several, then right-click > Group into new box… puts them, in their arrangement, into the whitebox of a new box; relations follow. Also an AI tool, group.

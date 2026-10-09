@@ -870,3 +870,48 @@ fn relations_between_the_same_boxes_are_drawn_as_one_line() -> TestResult {
     assert_eq!(render(&p, None).lines.len(), 2);
     Ok(())
 }
+
+#[test]
+fn frame_ends_name_the_partner_down_to_this_depth() -> TestResult {
+    // A and B inside the system S; the relation A -> B lands on a1 and on b1, b2.
+    let mut p = Project::new();
+    let s = p.add_block(None, &spec("S", BlockKind::Component))?;
+    let a = p.add_block(Some(s), &spec("A", BlockKind::Component))?;
+    let (b, rel) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Bi,
+        "calls",
+    )?;
+    let a1 = p.add_block(Some(a), &spec("a1", BlockKind::Component))?;
+    let b1 = p.add_block(Some(b), &spec("b1", BlockKind::Component))?;
+    let b2 = p.add_block(Some(b), &spec("b2", BlockKind::Component))?;
+    p.attach(rel, End::A, a, a1, Side::Right)?;
+    p.attach(rel, End::B, b, b1, Side::Left)?;
+    p.attach(rel, End::B, b, b2, Side::Left)?;
+    let partner = |p: &Project, d| -> Result<String, Box<dyn std::error::Error>> {
+        let l = render(p, Some(d));
+        Ok(l.lines
+            .iter()
+            .find_map(|g| g.frame_port.as_ref().map(|f| f.2.clone()))
+            .ok_or("no frame end")?)
+    };
+    assert_eq!(partner(&p, a)?, "B \u{203a} b1, b2");
+    assert_eq!(partner(&p, b)?, "A \u{203a} a1");
+    // Longer than the label limit: shortened, the full name in the legend.
+    p.set_label_limit(Some(8));
+    let l = render(&p, Some(a));
+    let shown = l
+        .lines
+        .iter()
+        .find_map(|g| g.frame_port.as_ref().map(|f| f.2.clone()))
+        .ok_or("no frame end")?;
+    assert_eq!(shown, "B \u{203a} [1]");
+    assert!(
+        l.legend
+            .iter()
+            .any(|e| e.key == "[1]" && e.lines.join(" ").contains("b1, b2"))
+    );
+    Ok(())
+}
