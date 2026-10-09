@@ -8,6 +8,7 @@ pub mod editor;
 pub mod export;
 pub mod geom;
 pub mod hit;
+pub mod html;
 pub mod launcher;
 pub mod layout;
 pub mod mcp;

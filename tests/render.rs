@@ -384,3 +384,14 @@ fn doc_screenshot_export() -> TestResult {
     h.run();
     save(&mut h, "export")
 }
+
+#[test]
+#[ignore = "writes target/sample.html"]
+fn sample_html() -> TestResult {
+    let (p, _) = shop()?;
+    std::fs::write(
+        "target/sample.html",
+        whiteboxed::html::html_doc(&p, "Web Shop"),
+    )?;
+    Ok(())
+}

@@ -491,6 +491,40 @@ pub fn label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
     out
 }
 
+/// Where the partner name next to each frame end is written: line index and rect.
+pub fn frame_label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
+    let area = label_area(layout);
+    let mut out = Vec::new();
+    for (li, line) in layout.lines.iter().enumerate() {
+        if line.frame_port.is_none() {
+            continue;
+        }
+        let mut shapes = Vec::new();
+        label_shapes(&mut shapes, line, area);
+        // The partner name is the first text a frame end writes.
+        if let Some(Shape::Text {
+            pos,
+            text,
+            size,
+            align,
+            ..
+        }) = shapes.first()
+        {
+            let w = text::width(text, *size);
+            let left = match align {
+                Align::Left => pos.x,
+                Align::Center => pos.x - w / 2.0,
+                Align::Right => pos.x - w,
+            };
+            out.push((
+                li,
+                Rect::from_min_size(Pos::new(left, pos.y - size * 0.7), w, size * 1.4),
+            ));
+        }
+    }
+    out
+}
+
 /// Distance between wrapped label lines.
 const LINE_HEIGHT: f32 = LABEL_SIZE + 3.0;
 

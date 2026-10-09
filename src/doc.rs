@@ -1,7 +1,7 @@
 //! arc42 text export: one AsciiDoc or Markdown file per diagram, with the image, the
 //! motivation and the tables arc42 asks for, plus an index that ties them together.
 
-use crate::model::{BlockId, DiagramId, Direction, End, Project};
+use crate::model::{BlockId, DiagramId, Direction, End, Project, RelationId};
 use crate::view::{self, ViewEnd};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,10 +198,25 @@ pub fn diagram_doc(
     image: &str,
     format: DocFormat,
 ) -> String {
+    let text = diagram_text(project, diagram);
     let mut w = Writer::new(format);
-    match diagram {
-        None => context_doc(&mut w, project, image),
-        Some(id) => whitebox_doc(&mut w, project, id, image),
+    w.heading(2, &text.title);
+    let alt = if diagram.is_none() {
+        "Context view"
+    } else {
+        text.title.as_str()
+    };
+    w.image(image, alt);
+    if !text.motivation.is_empty() {
+        if text.motivation_heading {
+            w.heading(3, "Motivation");
+        }
+        w.paragraph(&text.motivation);
+    }
+    for table in &text.tables {
+        w.heading(3, table.title);
+        let rows: Vec<Vec<String>> = table.rows.iter().map(|r| r.cells.clone()).collect();
+        w.table(table.header, &rows);
     }
     w.out
 }
@@ -213,23 +228,62 @@ fn name(project: &Project, id: BlockId) -> String {
         .map_or_else(|| "?".to_owned(), |b| b.name.clone())
 }
 
-fn responsibilities(project: &Project, diagram: DiagramId, own_only: bool) -> Vec<Vec<String>> {
-    let mut rows: Vec<(String, String)> = project
-        .blocks_in(diagram)
-        .filter(|(_, b)| !own_only || !b.kind.is_neighbour())
-        .map(|(_, b)| (b.name.clone(), b.responsibility.clone()))
-        .collect();
-    rows.sort_by_key(|(n, _)| n.to_lowercase());
-    rows.into_iter().map(|(n, r)| vec![n, r]).collect()
+/// What a table row is about, so an HTML export can link it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowKey {
+    Box(BlockId),
+    Relation(RelationId),
 }
 
-fn context_doc(w: &mut Writer, project: &Project, image: &str) {
-    w.heading(2, "Context");
-    w.image(image, "Context view");
-    if !project.motivation.trim().is_empty() {
-        w.paragraph(&project.motivation);
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    pub key: RowKey,
+    pub cells: Vec<String>,
+}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Table {
+    pub title: &'static str,
+    pub header: &'static [&'static str],
+    pub rows: Vec<Row>,
+}
+
+/// The texts of one diagram, before they become AsciiDoc, Markdown or HTML.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagramText {
+    /// "Context" or "Whitebox <name>".
+    pub title: String,
+    pub motivation: String,
+    /// Whether the motivation gets its own heading (whiteboxes) or stands as the
+    /// explanation under the image (context).
+    pub motivation_heading: bool,
+    pub tables: Vec<Table>,
+}
+
+fn responsibilities(project: &Project, diagram: DiagramId, own_only: bool) -> Vec<Row> {
+    let mut rows: Vec<(String, BlockId, String)> = project
+        .blocks_in(diagram)
+        .filter(|(_, b)| !own_only || !b.kind.is_neighbour())
+        .map(|(id, b)| (b.name.clone(), id, b.responsibility.clone()))
+        .collect();
+    rows.sort_by_key(|(n, _, _)| n.to_lowercase());
+    rows.into_iter()
+        .map(|(n, id, r)| Row {
+            key: RowKey::Box(id),
+            cells: vec![n, r],
+        })
+        .collect()
+}
+
+/// The texts of a diagram: title, motivation and the arc42 tables.
+pub fn diagram_text(project: &Project, diagram: DiagramId) -> DiagramText {
+    match diagram {
+        None => context_text(project),
+        Some(id) => whitebox_text(project, id),
+    }
+}
+
+fn context_text(project: &Project) -> DiagramText {
     let own: Vec<BlockId> = project
         .blocks_in(None)
         .filter(|(_, b)| !b.kind.is_neighbour())
@@ -289,21 +343,37 @@ fn context_doc(w: &mut Writer, project: &Project, image: &str) {
             .get(&partner)
             .map(|b| b.responsibility.clone())
             .unwrap_or_default();
-        rows.push(vec![
-            name(project, partner),
-            description,
-            input.join("; "),
-            output.join("; "),
-        ]);
+        rows.push(Row {
+            key: RowKey::Box(partner),
+            cells: vec![
+                name(project, partner),
+                description,
+                input.join("; "),
+                output.join("; "),
+            ],
+        });
     }
+    let mut tables = Vec::new();
     if !rows.is_empty() {
-        w.heading(3, "Communication partners");
-        w.table(&["Partner", "Description", "Input", "Output"], &rows);
+        tables.push(Table {
+            title: "Communication partners",
+            header: &["Partner", "Description", "Input", "Output"],
+            rows,
+        });
     }
     let blocks = responsibilities(project, None, true);
     if !blocks.is_empty() {
-        w.heading(3, "Building blocks");
-        w.table(&["Name", "Responsibility"], &blocks);
+        tables.push(Table {
+            title: "Building blocks",
+            header: &["Name", "Responsibility"],
+            rows: blocks,
+        });
+    }
+    DiagramText {
+        title: "Context".into(),
+        motivation: project.motivation.trim().to_owned(),
+        motivation_heading: false,
+        tables,
     }
 }
 
@@ -318,21 +388,7 @@ fn direction_word(toward_first: bool, toward_second: bool) -> &'static str {
     }
 }
 
-fn whitebox_doc(w: &mut Writer, project: &Project, owner: BlockId, image: &str) {
-    let title = name(project, owner);
-    w.heading(2, &format!("Whitebox {title}"));
-    w.image(image, &format!("Whitebox {title}"));
-    let motivation = project.motivation(Some(owner));
-    if !motivation.trim().is_empty() {
-        w.heading(3, "Motivation");
-        w.paragraph(motivation);
-    }
-    w.heading(3, "Contained building blocks");
-    w.table(
-        &["Name", "Responsibility"],
-        &responsibilities(project, Some(owner), false),
-    );
-
+fn whitebox_text(project: &Project, owner: BlockId) -> DiagramText {
     let view = view::diagram_view(project, Some(owner));
     let mut external = Vec::new();
     let mut internal = Vec::new();
@@ -343,6 +399,7 @@ fn whitebox_doc(w: &mut Writer, project: &Project, owner: BlockId, image: &str) 
             ViewEnd::Dangling => "not assigned".to_owned(),
             ViewEnd::Frame { partner, .. } => partner.clone(),
         };
+        let key = RowKey::Relation(line.relation);
         let frame = [End::A, End::B]
             .into_iter()
             .find(|e| matches!(line.end(*e), ViewEnd::Frame { .. }));
@@ -353,31 +410,51 @@ fn whitebox_doc(w: &mut Writer, project: &Project, owner: BlockId, image: &str) 
                     End::A => (line.direction.arrow_at_b(), line.direction.arrow_at_a()),
                     End::B => (line.direction.arrow_at_a(), line.direction.arrow_at_b()),
                 };
-                external.push(vec![
-                    end_name(line.end(frame_end)),
-                    end_name(inner),
-                    direction_word(into_inner, into_frame).to_owned(),
-                    line.text.clone(),
-                ]);
+                external.push(Row {
+                    key,
+                    cells: vec![
+                        end_name(line.end(frame_end)),
+                        end_name(inner),
+                        direction_word(into_inner, into_frame).to_owned(),
+                        line.text.clone(),
+                    ],
+                });
             }
-            None => internal.push(vec![
-                end_name(&line.a),
-                end_name(&line.b),
-                line.direction.label().to_owned(),
-                line.text.clone(),
-            ]),
+            None => internal.push(Row {
+                key,
+                cells: vec![
+                    end_name(&line.a),
+                    end_name(&line.b),
+                    line.direction.label().to_owned(),
+                    line.text.clone(),
+                ],
+            }),
         }
     }
+    let mut tables = vec![Table {
+        title: "Contained building blocks",
+        header: &["Name", "Responsibility"],
+        rows: responsibilities(project, Some(owner), false),
+    }];
     if !external.is_empty() {
-        w.heading(3, "External interfaces");
-        w.table(
-            &["Partner outside", "Handled by", "Direction", "Text"],
-            &external,
-        );
+        tables.push(Table {
+            title: "External interfaces",
+            header: &["Partner outside", "Handled by", "Direction", "Text"],
+            rows: external,
+        });
     }
     if !internal.is_empty() {
-        w.heading(3, "Internal relations");
-        w.table(&["From", "To", "Direction", "Text"], &internal);
+        tables.push(Table {
+            title: "Internal relations",
+            header: &["From", "To", "Direction", "Text"],
+            rows: internal,
+        });
+    }
+    DiagramText {
+        title: format!("Whitebox {}", name(project, owner)),
+        motivation: project.motivation(Some(owner)).trim().to_owned(),
+        motivation_heading: true,
+        tables,
     }
 }
 

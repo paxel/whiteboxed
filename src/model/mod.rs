@@ -479,6 +479,8 @@ pub struct ExportChoice {
     pub png_scale: u8,
     /// A text file per diagram (and an index when exporting all), or none.
     pub text: Option<crate::doc::DocFormat>,
+    /// One HTML file with every diagram, its texts and tables.
+    pub html: bool,
     /// The target folder: relative to the project file when it lies in the same
     /// repository, otherwise absolute. Empty until one is chosen.
     pub folder: String,
@@ -492,6 +494,7 @@ impl Default for ExportChoice {
             png: true,
             png_scale: 2,
             text: Some(crate::doc::DocFormat::AsciiDoc),
+            html: false,
             folder: String::new(),
         }
     }

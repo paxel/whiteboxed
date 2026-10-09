@@ -60,6 +60,8 @@ struct ExportDto {
     png_scale: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     text: Option<TextDto>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    html: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     folder: String,
 }
@@ -191,6 +193,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
             png: e.png,
             png_scale: e.png_scale,
             text: e.text.map(TextDto::from),
+            html: e.html,
             folder: e.folder.clone(),
         }),
         tags: project
@@ -258,6 +261,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         png: e.png,
         png_scale: e.png_scale.clamp(1, 3),
         text: e.text.map(Into::into),
+        html: e.html,
         folder: e.folder,
     });
     let mut ids = BTreeSet::new();

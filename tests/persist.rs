@@ -278,12 +278,13 @@ fn the_export_choice_is_saved_with_the_project() -> TestResult {
         png: false,
         png_scale: 3,
         text: Some(DocFormat::Markdown),
+        html: true,
         folder: "../docs/arc42".into(),
     });
     let yaml = persist::to_yaml(&p)?;
     assert!(yaml.contains("export:\n  all: false\n"), "{yaml}");
     assert!(
-        yaml.contains("  text: markdown\n  folder: ../docs/arc42\n"),
+        yaml.contains("  text: markdown\n  html: true\n  folder: ../docs/arc42\n"),
         "{yaml}"
     );
     assert_eq!(persist::from_yaml(&yaml)?.export, p.export);

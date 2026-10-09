@@ -213,6 +213,13 @@ canvas.
   (`context - Web Shop.adoc` or `.md`). With all diagrams also `index.adoc` or
   `index.md`, which puts them in order: the context first, then the whiteboxes level
   by level.
+- **HTML document**: one file named after the project (e.g. `Web Shop.html`) with
+  every diagram, its motivation and tables. It needs nothing else: no internet, no
+  other files. Click a box to open its whitebox or see its row, a line or its label to
+  see its interface, the name at a frame end to go to that partner one level up; a
+  row of an interface table points back at its line. A tree on the left and the
+  breadcrumbs lead through the levels. It follows the light or dark setting of the
+  system, the button in the top right corner switches, and it always prints light.
 - **Folder**: where the files go. A missing folder is created.
 
 The dialog remembers your choices in the project file, so the next export of a
@@ -381,7 +388,8 @@ relations:
 Project-wide settings sit at the top of the file and are only written when they
 differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
 default `round12`), `label_limit` (default 24; `never` turns shortening off) and
-`export` (the last choices of File > Export…).
+`export` (the last choices of File > Export…, including `html: true` for the HTML
+document).
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,
   `external_system`.

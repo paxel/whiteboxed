@@ -82,6 +82,14 @@ impl ExportDialog {
                     )
                     .weak(),
                 );
+                ui.checkbox(&mut c.html, "HTML document");
+                ui.label(
+                    RichText::new(
+                        "One file with every diagram, text and table, linked by clicks; \
+                         always all diagrams.",
+                    )
+                    .weak(),
+                );
                 ui.add_space(8.0);
 
                 ui.label(RichText::new("Folder").strong());
@@ -117,7 +125,7 @@ impl ExportDialog {
                     ui.label(RichText::new(error).color(Color32::from_rgb(0xc0, 0x30, 0x30)));
                 }
                 ui.add_space(10.0);
-                let something = c.svg || c.png || c.text.is_some();
+                let something = c.svg || c.png || c.text.is_some() || c.html;
                 ui.horizontal(|ui| {
                     let ready = something && self.folder.is_some();
                     if ui.add_enabled(ready, egui::Button::new("Export")).clicked() {

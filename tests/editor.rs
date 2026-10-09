@@ -500,6 +500,7 @@ fn export_writes_only_what_was_chosen() -> TestResult {
         png: true,
         png_scale: 3,
         text: Some(DocFormat::Markdown),
+        html: false,
         folder: String::new(),
     };
     assert_eq!(e.export(&choice, dir.path())?, 2);
@@ -558,5 +559,24 @@ fn the_export_folder_is_kept_relative_inside_the_repository() -> TestResult {
     assert_eq!(e.export_folder(&choice), Some(docs));
     e.undo();
     assert_eq!(e.project.export, Some(choice));
+    Ok(())
+}
+
+#[test]
+fn the_html_document_is_named_after_the_project() -> TestResult {
+    use whiteboxed::model::ExportChoice;
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    add_first(&mut e, "Web Shop")?;
+    let choice = ExportChoice {
+        svg: false,
+        png: false,
+        text: None,
+        html: true,
+        ..ExportChoice::default()
+    };
+    assert_eq!(e.export(&choice, dir.path())?, 1);
+    let page = std::fs::read_to_string(dir.path().join("Web Shop.html"))?;
+    assert!(page.starts_with("<!doctype html>"));
     Ok(())
 }

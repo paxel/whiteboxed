@@ -1015,8 +1015,9 @@ impl Editor {
     }
 
     /// Writes what `choice` asks for into `dir`: for the current diagram or every
-    /// diagram an SVG, a PNG and a text file each, and with every diagram's text an
-    /// index over them. Returns the number of files written.
+    /// diagram an SVG, a PNG and a text file each, with every diagram's text an index
+    /// over them, and one HTML file with everything (named after the project).
+    /// Returns the number of files written.
     pub fn export(&self, choice: &ExportChoice, dir: &Path) -> Result<usize, ExportError> {
         let diagrams = if choice.all {
             doc::diagrams(&self.project)
@@ -1050,12 +1051,17 @@ impl Editor {
             }
             entries.push((*diagram, name));
         }
+        let title = self
+            .project
+            .display_name()
+            .or_else(|| self.file_stem())
+            .unwrap_or_else(|| "Architecture".to_owned());
+        if choice.html {
+            let page = crate::html::html_doc(&self.project, &title);
+            write_file(&dir.join(format!("{}.html", safe_file_name(&title))), page)?;
+            files += 1;
+        }
         if let (Some(format), true) = (choice.text, choice.all) {
-            let title = self
-                .project
-                .display_name()
-                .or_else(|| self.file_stem())
-                .unwrap_or_else(|| "Architecture".to_owned());
             let index = doc::index_doc(&self.project, &title, &entries, format);
             write_file(&dir.join(format!("index.{}", format.extension())), index)?;
             files += 1;
