@@ -41,7 +41,7 @@ No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 | Who                                    | Can reach                                                        | Needs                             |
 |----------------------------------------|------------------------------------------------------------------|-----------------------------------|
 | The user                               | Everything                                                       | —                                 |
-| An AI client the user registered       | The 18 MCP tools                                                 | The token                         |
+| An AI client the user registered       | The 23 MCP tools                                                 | The token                         |
 | Another program or user on the machine | `127.0.0.1:<port>` while AI access is on                         | The token                         |
 | An AI agent in a container             | The Docker bridge, only if the user chose "Docker containers"    | The token                         |
 | Another machine on the network         | Only an address the user typed under "Other address"             | The token                         |
@@ -51,7 +51,9 @@ No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 What the token grants, checked tool by tool in `src/api.rs`: reading and changing
 the open model, rendering it to PNG, and `export_docs` into folders the user allowed
 (S1). **No tool reads files, lists directories, runs commands, opens URLs, saves or
-opens projects.**
+opens projects.** The restructuring tools added in 0.2.0 (`move_up`, `move_into`,
+`group`, `dissolve`, `split_relation`) and `batch` only change the open model, each
+as one undo step, through the same validation as the GUI.
 
 ## Findings
 
