@@ -155,6 +155,10 @@ When a box turns out to be on the wrong level, move it instead of rebuilding:
   the old whitebox and lands on that neighbour there. A line from outside that landed
   on it now goes to it directly; if it also landed on other boxes, it becomes one
   relation per box.
+- **Move into…** (right-click a box, then click a neighbour): the reverse. The box,
+  with everything inside it, goes into the neighbour's whitebox, next to the box
+  there it has the most lines with. A line to the neighbour now lands on the box
+  inside; a line that reached nothing inside becomes an open end.
 
 Each restructuring is one step for undo.
 
@@ -340,6 +344,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
 | `move_up`            | A box out of its whitebox, one level up                           |
+| `move_into`          | A box into the whitebox of a neighbour                            |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |

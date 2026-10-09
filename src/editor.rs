@@ -929,6 +929,13 @@ impl Editor {
         }
     }
 
+    /// Moves a box into the whitebox of a neighbour.
+    pub fn move_into(&mut self, block: BlockId, target: BlockId) {
+        if self.apply(|p| p.move_into(block, target)).is_some() {
+            self.selected = Some(target);
+        }
+    }
+
     /// Moves a box out of its whitebox into the diagram one level up.
     pub fn move_up(&mut self, block: BlockId) {
         if self.apply(|p| p.move_up(block)).is_some() {

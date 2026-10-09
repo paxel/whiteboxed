@@ -187,6 +187,15 @@ pub struct BoxArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+pub struct MoveIntoArgs {
+    #[serde(rename = "box")]
+    pub target: BoxRef,
+    /// The neighbour whose whitebox the box goes into.
+    pub into: BoxRef,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct BatchArgs {
     /// Calls of the editing tools, run in order. A later step can address a box an
     /// earlier step created, by its path of names.
@@ -570,6 +579,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<MoveBoxArgs>(),
         },
         ToolInfo {
+            name: "move_into",
+            description: "Move a box into the whitebox of a neighbour in the same diagram, with everything inside it. Its relations follow.",
+            schema: schema::<MoveIntoArgs>(),
+        },
+        ToolInfo {
             name: "move_up",
             description: "Move a box out of its whitebox into the diagram one level up, with everything inside it. Its relations follow: a line to a former sibling now enters the old whitebox.",
             schema: schema::<BoxArgs>(),
@@ -663,6 +677,13 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
             let a: MoveBoxArgs = args(arguments)?;
             let id = resolve(&editor.project, &a.target)?;
             editor.apply_ai(|p| p.move_block(id, Cell::new(a.col, a.row)))?;
+            done(editor, "moved", Some(id))
+        }
+        "move_into" => {
+            let a: MoveIntoArgs = args(arguments)?;
+            let id = resolve(&editor.project, &a.target)?;
+            let into = resolve(&editor.project, &a.into)?;
+            editor.apply_ai(|p| p.move_into(id, into))?;
             done(editor, "moved", Some(id))
         }
         "move_up" => {

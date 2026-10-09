@@ -39,6 +39,68 @@ impl Project {
         self.reface(up, &[id])
     }
 
+    /// Moves `id` into the whitebox of its neighbour `target`, next to the box inside
+    /// it has the most lines with (else into the next free cell).
+    pub fn move_into(&mut self, id: BlockId, target: BlockId) -> ModelResult<()> {
+        if id == target {
+            return Err(ModelError::SelfRelation);
+        }
+        let block = self.block(id)?.clone();
+        let host = self.block(target)?;
+        if host.parent != block.parent {
+            return Err(ModelError::DifferentDiagrams);
+        }
+        if !host.kind.can_drill() {
+            return Err(ModelError::NotDrillable(host.kind.label()));
+        }
+        let inside = Some(target);
+        self.check_kind(inside, block.kind)?;
+        self.check_name(inside, &block.name, Some(id))?;
+        self.check_room(inside, 1)?;
+        // Seen from the target: the side the box came from.
+        let from = host.cell.side_facing(block.cell);
+        let start = self.next_column(inside);
+        self.renest(&[id], |p| {
+            if let Some(b) = p.blocks.get_mut(&id) {
+                b.parent = inside;
+                b.cell = start;
+            }
+        })?;
+        if !block.band {
+            let cell = match self.busiest_partner(id) {
+                Some(partner) => {
+                    let near = self.block(partner)?.cell.toward(from);
+                    self.free_cell_near(inside, near, from, Some(id))
+                }
+                None => start,
+            };
+            if let Some(b) = self.blocks.get_mut(&id) {
+                b.cell = cell;
+            }
+        }
+        self.reface(inside, &[id])
+    }
+
+    /// The box of the same diagram that `id` has the most relations with.
+    fn busiest_partner(&self, id: BlockId) -> Option<BlockId> {
+        let parent = self.block(id).ok()?.parent;
+        let mut count: BTreeMap<BlockId, usize> = BTreeMap::new();
+        for r in self.relations.values().filter(|r| r.owner == parent) {
+            let (Some(a), Some(b)) = (r.a.anchors.first(), r.b.anchors.first()) else {
+                continue;
+            };
+            if a.block == id {
+                *count.entry(b.block).or_default() += 1;
+            } else if b.block == id {
+                *count.entry(a.block).or_default() += 1;
+            }
+        }
+        count
+            .into_iter()
+            .max_by_key(|(b, n)| (*n, std::cmp::Reverse(*b)))
+            .map(|(b, _)| b)
+    }
+
     /// The side most of `id`'s lines to its siblings leave it on, turned around: where
     /// the box sits from its siblings' point of view.
     fn leaving_side(&self, id: BlockId) -> Option<Side> {

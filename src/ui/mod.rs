@@ -90,6 +90,8 @@ pub struct App {
     context_cell: Option<Cell>,
     drag: Option<BlockId>,
     picking: bool,
+    /// A box waiting for the user to click the box it should move into.
+    moving_into: Option<BlockId>,
     leave: Option<Leave>,
     allow_close: bool,
     shown_title: String,
@@ -122,6 +124,7 @@ impl App {
             context_cell: None,
             drag: None,
             picking: false,
+            moving_into: None,
             leave: None,
             allow_close: false,
             shown_title: String::new(),
@@ -164,6 +167,11 @@ impl App {
 
     pub fn is_picking(&self) -> bool {
         self.picking
+    }
+
+    /// Waiting for a click on a box: to connect to, or to move into.
+    fn picks(&self) -> bool {
+        self.picking || self.moving_into.is_some()
     }
 
     /// Draws the whole window into `ui`.
@@ -258,9 +266,10 @@ impl App {
                 self.zoom_request = Some(ZoomStep::Actual);
             }
         }
-        if self.picking {
+        if self.picks() {
             if pressed(Modifiers::NONE, Key::Escape) {
                 self.picking = false;
+                self.moving_into = None;
             }
             return;
         }
@@ -469,6 +478,9 @@ impl App {
                 _ if self.picking => {
                     ui.label("Click the box to connect to. Esc cancels.");
                 }
+                _ if self.moving_into.is_some() => {
+                    ui.label("Click the box to move it into. Esc cancels.");
+                }
                 _ => {
                     ui.label(
                         RichText::new(
@@ -668,7 +680,7 @@ impl App {
             self.drag = match start.map(|p| hit_with(view, p)) {
                 // Bands stay at the bottom; they cannot be dragged.
                 Some(Hit::Block(b))
-                    if !self.picking && project.blocks.get(&b).is_some_and(|x| !x.band) =>
+                    if !self.picks() && project.blocks.get(&b).is_some_and(|x| !x.band) =>
                 {
                     Some(b)
                 }
@@ -842,7 +854,7 @@ impl App {
             return;
         };
         match hit_at(p) {
-            Hit::Side(b, _) | Hit::Block(b) if self.picking => {
+            Hit::Side(b, _) | Hit::Block(b) if self.picks() => {
                 if let Some(r) = block_rect(b) {
                     painter.rect_stroke(
                         r.expand(3.0),
@@ -853,7 +865,7 @@ impl App {
                 }
                 resp.ctx.set_cursor_icon(CursorIcon::Crosshair);
             }
-            _ if self.picking => resp.ctx.set_cursor_icon(CursorIcon::Crosshair),
+            _ if self.picks() => resp.ctx.set_cursor_icon(CursorIcon::Crosshair),
             Hit::Side(b, side) => {
                 if let Some(r) = block_rect(b) {
                     let [a, c] = canvas::side_edge(r, side);
@@ -893,6 +905,13 @@ impl App {
 
     fn click(&mut self, p: Pos2, h: Hit) {
         self.anchor = p + vec2(16.0, 16.0);
+        if let Some(moving) = self.moving_into {
+            if let Hit::Block(b) | Hit::Side(b, _) = h {
+                self.moving_into = None;
+                self.editor.move_into(moving, b);
+            }
+            return;
+        }
         if self.picking {
             if let Hit::Block(b) | Hit::Side(b, _) = h {
                 self.picking = false;
@@ -919,7 +938,7 @@ impl App {
     }
 
     fn double_click(&mut self, h: Hit) {
-        if self.picking {
+        if self.picks() {
             return;
         }
         match h {
@@ -960,6 +979,13 @@ impl App {
                     .is_some_and(|x| x.kind.can_drill());
                 if drillable && ui.button("Open whitebox").clicked() {
                     self.editor.open_diagram(Some(b));
+                }
+                if ui
+                    .button("Move into\u{2026}")
+                    .on_hover_text("Then click the box it should go into")
+                    .clicked()
+                {
+                    self.moving_into = Some(b);
                 }
                 let nested = self.editor.diagram.is_some();
                 if ui
@@ -1090,6 +1116,7 @@ impl App {
         self.view = None;
         self.drag = None;
         self.picking = false;
+        self.moving_into = None;
     }
 
     fn load(&mut self, path: &Path) {

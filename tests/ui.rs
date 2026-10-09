@@ -1136,3 +1136,38 @@ fn right_click_moves_a_box_up_a_level() -> TestResult {
     assert_eq!(h.state().editor.project.block(inner)?.parent, None);
     Ok(())
 }
+
+#[test]
+fn move_into_picks_the_target_with_a_click() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    let cache = e
+        .project
+        .add_block(None, &BlockSpec::new("Cache", BlockKind::Cache))?;
+    let mut h = harness(e);
+    h.run();
+    let center = |h: &mut Harness<'_, App>, b| -> Result<Pos2, Box<dyn std::error::Error>> {
+        let c = h
+            .state_mut()
+            .editor
+            .layout()
+            .block(b)
+            .ok_or("box")?
+            .rect
+            .center();
+        screen(h, c)
+    };
+    let at = center(&mut h, cache)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Move into\u{2026}").click();
+    h.run();
+    assert!(
+        h.query_by_label("Click the box to move it into. Esc cancels.")
+            .is_some()
+    );
+    let target = center(&mut h, shop)?;
+    press(&mut h, target, PointerButton::Primary);
+    h.run();
+    assert_eq!(h.state().editor.project.block(cache)?.parent, Some(shop));
+    Ok(())
+}

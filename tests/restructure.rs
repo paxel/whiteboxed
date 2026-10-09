@@ -151,3 +151,78 @@ fn moving_up_keeps_what_lies_inside_and_refuses_what_it_cannot() -> TestResult {
     assert_eq!(p.block(logic)?.parent, Some(business));
     Ok(())
 }
+
+#[test]
+fn moving_into_a_neighbour_is_the_reverse_of_moving_up() -> TestResult {
+    let Shop {
+        mut p,
+        business,
+        logic,
+        db,
+        sql,
+        ..
+    } = shop()?;
+    let health = p.add_block(None, &component("Health"))?;
+    p.move_up(db)?;
+    let check = p.connect_existing(
+        health,
+        Side::Right,
+        db,
+        Direction::Out,
+        "check",
+        whiteboxed::model::Placement::Keep,
+    )?;
+    p.move_into(db, business)?;
+    assert_eq!(p.block(db)?.parent, Some(business));
+    // Next to Logic, on the side it came from (below).
+    assert_eq!(p.block(db)?.cell, p.block(logic)?.cell.toward(Side::Bottom));
+    // SQL is internal to Business again.
+    assert_eq!(p.relation(sql)?.owner, Some(business));
+    assert_eq!(chain(&p, sql, End::A)?, vec![logic]);
+    assert_eq!(chain(&p, sql, End::B)?, vec![db]);
+    // Health's check now enters Business and lands on the DB.
+    assert_eq!(p.relation(check)?.owner, None);
+    assert_eq!(chain(&p, check, End::B)?, vec![business, db]);
+    assert_eq!(dangling_count(&diagram_view(&p, Some(business))), 0);
+    whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    Ok(())
+}
+
+#[test]
+fn a_line_to_the_target_that_reached_nothing_inside_becomes_a_stub() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "calls")?;
+    p.add_block(Some(b), &component("Inner"))?;
+    p.move_into(a, b)?;
+    let r = p.relation(rel)?;
+    // A sits inside B now; the line had no box to reach in B, so A keeps an open end.
+    assert!(r.b.is_open() || r.a.is_open());
+    assert_eq!(p.block(a)?.parent, Some(b));
+    whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    Ok(())
+}
+
+#[test]
+fn move_into_refuses_what_cannot_go_there() -> TestResult {
+    let Shop {
+        mut p,
+        customer,
+        business,
+        ..
+    } = shop()?;
+    let ext = p.add_block(None, &BlockSpec::new("Bank", BlockKind::ExternalSystem))?;
+    assert_eq!(
+        p.move_into(business, ext),
+        Err(ModelError::NotDrillable("external system"))
+    );
+    assert_eq!(
+        p.move_into(customer, business),
+        Err(ModelError::NeighbourBelowContext("person"))
+    );
+    assert_eq!(
+        p.move_into(business, business),
+        Err(ModelError::SelfRelation)
+    );
+    Ok(())
+}

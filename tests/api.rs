@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 19);
+    assert_eq!(tools.len(), 20);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -785,5 +785,25 @@ fn move_up_takes_a_box_out_of_its_whitebox() -> TestResult {
     assert!(
         matches!(refused, Err(ApiError::Rejected(m)) if m.contains("already in the context view"))
     );
+    Ok(())
+}
+
+#[test]
+fn move_into_puts_a_box_inside_a_neighbour() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    call(&mut e, "add_box", json!({"name": "Cache", "kind": "cache"}))?;
+    let out = call(
+        &mut e,
+        "move_into",
+        json!({"box": "Cache", "into": "Web Shop"}),
+    )?;
+    assert_eq!(out["path"], json!(["Web Shop", "Cache"]));
+    let refused = call(
+        &mut e,
+        "move_into",
+        json!({"box": "Web Shop", "into": "Customer"}),
+    );
+    assert!(matches!(refused, Err(ApiError::Rejected(_))));
     Ok(())
 }
