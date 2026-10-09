@@ -28,6 +28,8 @@ pub struct ViewLine {
     pub style: LineStyle,
     /// The relation's short label (empty: none).
     pub short: String,
+    /// Further relations drawn as this one line (see [`bundle`]).
+    pub bundle: Vec<RelationId>,
 }
 
 impl ViewLine {
@@ -71,6 +73,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 text: rel.text.clone(),
                 style: rel.style.unwrap_or(project.line_style),
                 short: rel.short.clone(),
+                bundle: Vec::new(),
             });
             continue;
         }
@@ -115,6 +118,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                     text: rel.text.clone(),
                     style: rel.style.unwrap_or(project.line_style),
                     short: rel.short.clone(),
+                    bundle: Vec::new(),
                 });
             }
         }
@@ -122,6 +126,73 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
     DiagramView {
         diagram,
         blocks,
+        lines,
+    }
+}
+
+/// Joins lines that run between the same two ends (the same boxes, or the same frame
+/// end and box) into one line: the texts are listed, the arrows show every direction
+/// that occurs, and the other relations are kept in `bundle`.
+pub fn bundle(view: &DiagramView) -> DiagramView {
+    let key = |e: &ViewEnd| match e {
+        ViewEnd::Block { block, .. } => Some(format!("b{}", block.0)),
+        ViewEnd::Frame { side, partner } => Some(format!("f{side:?}{partner}")),
+        ViewEnd::Open | ViewEnd::Dangling => None,
+    };
+    let mut lines: Vec<ViewLine> = Vec::new();
+    // Arrows at the first line's end a and end b, per merged line.
+    let mut arrows: Vec<(bool, bool)> = Vec::new();
+    for line in &view.lines {
+        let (ka, kb) = (key(&line.a), key(&line.b));
+        let found = match (&ka, &kb) {
+            (Some(ka), Some(kb)) => lines.iter().position(|l| {
+                let (la, lb) = (key(&l.a), key(&l.b));
+                (la.as_ref() == Some(ka) && lb.as_ref() == Some(kb))
+                    || (la.as_ref() == Some(kb) && lb.as_ref() == Some(ka))
+            }),
+            _ => None,
+        };
+        let (at_a, at_b) = (line.direction.arrow_at_a(), line.direction.arrow_at_b());
+        match found {
+            Some(i) => {
+                let same_way = key(&lines[i].a) == ka;
+                let (to_a, to_b) = if same_way { (at_a, at_b) } else { (at_b, at_a) };
+                arrows[i].0 |= to_a;
+                arrows[i].1 |= to_b;
+                let merged = &mut lines[i];
+                merged.bundle.push(line.relation);
+                if !line.text.trim().is_empty() {
+                    merged.text = if merged.text.trim().is_empty() {
+                        line.text.clone()
+                    } else {
+                        format!("{}, {}", merged.text, line.text)
+                    };
+                }
+                merged.short = if merged.short.is_empty() || line.short.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}, {}", merged.short, line.short)
+                };
+            }
+            None => {
+                lines.push(line.clone());
+                arrows.push((at_a, at_b));
+            }
+        }
+    }
+    for (line, (a, b)) in lines.iter_mut().zip(arrows) {
+        if !line.bundle.is_empty() {
+            line.direction = match (a, b) {
+                (true, true) => Direction::Bi,
+                (true, false) => Direction::In,
+                (false, true) => Direction::Out,
+                (false, false) => Direction::Undirected,
+            };
+        }
+    }
+    DiagramView {
+        diagram: view.diagram,
+        blocks: view.blocks.clone(),
         lines,
     }
 }

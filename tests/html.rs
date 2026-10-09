@@ -89,3 +89,25 @@ fn the_page_needs_nothing_from_outside_and_escapes_names() -> TestResult {
     assert_eq!(page.matches("<script>").count(), 1);
     Ok(())
 }
+
+#[test]
+fn a_bundled_line_points_at_every_relation_it_stands_for() -> TestResult {
+    use whiteboxed::model::Placement;
+    let mut p = Project::new();
+    let a = p.add_block(None, &BlockSpec::new("A", BlockKind::Component))?;
+    let (b, first) = p.connect_new(
+        a,
+        Side::Right,
+        &BlockSpec::new("B", BlockKind::Component),
+        Direction::Out,
+        "provide",
+    )?;
+    let second =
+        p.connect_existing(b, Side::Left, a, Direction::Out, "require", Placement::Keep)?;
+    let page = html::html_doc(&p, "AB");
+    assert!(page.contains(&format!(
+        "data-rel=\"{}\" data-also=\"{}\"",
+        first.0, second.0
+    )));
+    Ok(())
+}

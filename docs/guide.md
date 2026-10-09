@@ -87,6 +87,11 @@ A relation connects two boxes of the same diagram. It has:
   until one of its boxes moves.
 
 Two boxes can share several relations, e.g. a REST call one way and events the other.
+They are drawn as **one line** (a bundle): its label lists their texts, and its arrows
+show every direction that occurs. Right-click the line to edit or delete each of them
+by name; double-click it to choose one. Inside the whiteboxes, where they land on
+different boxes, they are separate lines again. **Bundle relations between the same
+boxes** in [Project settings](#project-settings) turns this off.
 
 ### Long texts and the legend
 
@@ -211,6 +216,7 @@ boxes. The score is a working aid; exports do not show it.
 - **Shorten texts longer than … characters**: from which length a text moves to the
   legend (see [Long texts and the legend](#long-texts-and-the-legend)). 0 numbers
   every text; unticked, texts are never shortened.
+- **Bundle relations between the same boxes**: draw them as one line (on by default).
 - **Readability**: from how many boxes, crossings and lines on one box a diagram
   counts as crowded (yellow) or hard to read (red).
 - **Use as my default for new projects** keeps the current line style for every new
@@ -446,7 +452,8 @@ Project-wide settings sit at the top of the file and are only written when they
 differ from the defaults: `name` (the project name, when you set one), `line_style` (`square`, `round6`, `round12`, `curved`;
 default `round12`), `label_limit` (default 24; `never` turns shortening off) and
 `export` (the last choices of File > Export…, including `html: true` for the HTML
-document) and `score_limits` (each measure as `[yellow from, red from]`).
+document), `score_limits` (each measure as `[yellow from, red from]`) and `bundle: false` when
+relations between the same boxes are drawn separately.
 
 - `kind`: `component`, `database`, `queue`, `cache`, `file_storage`, `ui`, `person`,
   `external_system`.

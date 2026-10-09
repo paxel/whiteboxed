@@ -1257,3 +1257,56 @@ fn right_click_dissolves_a_whitebox_after_asking() -> TestResult {
     assert_eq!(p.block(inner)?.parent, None);
     Ok(())
 }
+
+#[test]
+fn a_bundled_line_lists_its_relations() -> TestResult {
+    use whiteboxed::model::{Direction, Placement};
+    let (mut e, shop) = one_box()?;
+    let (db, _) = e.project.connect_new(
+        shop,
+        Side::Right,
+        &BlockSpec::new("DB", BlockKind::Database),
+        Direction::Out,
+        "write",
+    )?;
+    e.project.connect_existing(
+        db,
+        Side::Left,
+        shop,
+        Direction::Out,
+        "notify",
+        Placement::Keep,
+    )?;
+    let mut h = harness(e);
+    h.run();
+    let pts = h.state_mut().editor.layout().lines[0].points.clone();
+    let mid = Pos::new(
+        (pts[0].x + pts[1].x) / 2.0,
+        (pts[0].y + pts[1].y) / 2.0 + 1.0,
+    );
+    let at = screen(&h, mid)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    assert!(
+        h.query_by_label("Edit \u{201c}write\u{201d}\u{2026}")
+            .is_some()
+    );
+    h.get_by_label("Edit \u{201c}notify\u{201d}\u{2026}")
+        .click();
+    h.run();
+    assert!(matches!(
+        h.state().editor.popup,
+        Some(Popup::EditRelation { ref text, .. }) if text == "notify"
+    ));
+    // Double-click asks which one.
+    h.state_mut().editor.close_popup();
+    let rel = h.state_mut().editor.layout().lines[0].relation;
+    let bundle = h.state_mut().editor.layout().lines[0].bundle.clone();
+    h.state_mut().editor.start_edit_line(rel, &bundle);
+    h.run();
+    assert!(
+        h.query_by_label("This line stands for several relations. Edit:")
+            .is_some()
+    );
+    Ok(())
+}

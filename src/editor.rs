@@ -136,6 +136,8 @@ pub enum Popup {
         block: BlockId,
         count: usize,
     },
+    /// Choose which of several relations drawn as one line to edit.
+    ChooseRelation(Vec<RelationId>),
     /// Dissolve the whitebox of `block`; its own texts are lost.
     ConfirmDissolve {
         block: BlockId,
@@ -296,6 +298,13 @@ impl Editor {
         }
         static EMPTY: BTreeMap<DiagramId, crate::score::Score> = BTreeMap::new();
         self.score_cache.as_ref().map_or(&EMPTY, |(_, m)| m)
+    }
+
+    pub fn set_bundle(&mut self, on: bool) {
+        self.apply(|p| {
+            p.set_bundle(on);
+            Ok(())
+        });
     }
 
     pub fn set_score_limits(&mut self, limits: crate::model::ScoreLimits) {
@@ -774,6 +783,7 @@ impl Editor {
                     self.popup = None;
                 }
             }
+            Popup::ChooseRelation(_) => {}
             Popup::ConfirmDissolve { block } => {
                 let up = self.project.blocks.get(&block).map(|b| b.parent);
                 let inside = self.diagram == Some(block);
@@ -1001,6 +1011,25 @@ impl Editor {
             boxes,
             at,
         });
+    }
+
+    /// A relation's name for menus: its text, or a number when it has none.
+    pub fn relation_label(&self, rel: RelationId) -> String {
+        match self.project.relations.get(&rel) {
+            Some(r) if !r.text.trim().is_empty() => format!("\u{201c}{}\u{201d}", r.text.trim()),
+            _ => format!("relation {}", rel.0),
+        }
+    }
+
+    /// Edits a relation, or asks which one when the line stands for several.
+    pub fn start_edit_line(&mut self, rel: RelationId, bundle: &[RelationId]) {
+        if bundle.is_empty() {
+            self.start_edit_relation(rel);
+        } else {
+            let mut rels = vec![rel];
+            rels.extend_from_slice(bundle);
+            self.popup = Some(Popup::ChooseRelation(rels));
+        }
     }
 
     /// Asks before dissolving the whitebox of `block`.

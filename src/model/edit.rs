@@ -590,6 +590,11 @@ impl Project {
         Ok(())
     }
 
+    /// Sets whether relations between the same two boxes are drawn as one line.
+    pub fn set_bundle(&mut self, on: bool) {
+        self.bundle = on;
+    }
+
     /// Sets the readability limits of the project.
     pub fn set_score_limits(&mut self, limits: super::ScoreLimits) {
         self.score_limits = limits;

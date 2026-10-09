@@ -41,6 +41,7 @@ impl Settings {
         let mut style = editor.project.line_style;
         let mut limit = editor.project.label_limit;
         let mut score = editor.project.score_limits;
+        let mut bundle = editor.project.bundle;
         let mut make_default = false;
         if !self.naming {
             self.name = editor.project.name.clone();
@@ -98,6 +99,12 @@ impl Settings {
                     ui.label("characters (0: number every text)");
                     limit = shorten.then_some(n);
                 });
+                ui.add_space(6.0);
+                ui.checkbox(&mut bundle, "Bundle relations between the same boxes")
+                    .on_hover_text(
+                        "Draw them as one line with all their texts; inside the whiteboxes they \
+                         stay apart",
+                    );
                 ui.add_space(10.0);
                 ui.label(RichText::new("Readability").strong());
                 ui.label(
@@ -147,6 +154,9 @@ impl Settings {
         }
         if score != editor.project.score_limits {
             editor.set_score_limits(score);
+        }
+        if bundle != editor.project.bundle {
+            editor.set_bundle(bundle);
         }
         if make_default {
             self.prefs.line_style = editor.project.line_style;

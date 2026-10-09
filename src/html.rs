@@ -225,6 +225,19 @@ fn clickable_svg(project: &Project, l: &Layout) -> String {
             .collect::<Vec<_>>()
             .join(" ")
     };
+    // The further relations a bundled line stands for.
+    let also = |li: usize| -> String {
+        l.lines
+            .get(li)
+            .map(|g| {
+                g.bundle
+                    .iter()
+                    .map(|r| r.0.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default()
+    };
     for (li, line) in l.lines.iter().enumerate() {
         let points: Vec<String> = line
             .points
@@ -233,8 +246,9 @@ fn clickable_svg(project: &Project, l: &Layout) -> String {
             .collect();
         let _ = writeln!(
             hits,
-            "<polyline class=\"hit\" fill=\"none\" stroke=\"transparent\" stroke-width=\"12\" data-rel=\"{}\" data-ends=\"{}\" points=\"{}\"><title>{}</title></polyline>",
+            "<polyline class=\"hit\" fill=\"none\" stroke=\"transparent\" stroke-width=\"12\" data-rel=\"{}\" data-also=\"{}\" data-ends=\"{}\" points=\"{}\"><title>{}</title></polyline>",
             line.relation.0,
+            also(li),
             ends(li),
             points.join(" "),
             esc(&line.full_text)
@@ -246,8 +260,9 @@ fn clickable_svg(project: &Project, l: &Layout) -> String {
         };
         let _ = writeln!(
             hits,
-            "<rect class=\"hit\" fill=\"transparent\" data-rel=\"{}\" data-ends=\"{}\" {}><title>{}</title></rect>",
+            "<rect class=\"hit\" fill=\"transparent\" data-rel=\"{}\" data-also=\"{}\" data-ends=\"{}\" {}><title>{}</title></rect>",
             line.relation.0,
+            also(li),
             ends(li),
             rect(&r),
             esc(&line.full_text)
@@ -427,7 +442,8 @@ const SCRIPT: &str = r#"<script>
       if (d.open) { go(d.open); return; }
       if (d.box) { light(rows(sec, 'data-box', d.box)); return; }
       if (d.rel) {
-        let found = rows(sec, 'data-rel', d.rel);
+        const rels = [d.rel, ...(d.also || '').split(' ').filter(x => x)];
+        let found = rels.flatMap(r => rows(sec, 'data-rel', r));
         if (!found.length) found = (d.ends || '').split(' ').flatMap(b => b ? rows(sec, 'data-box', b) : []);
         light(found);
         sec.querySelectorAll('.hit[data-rel="' + d.rel + '"]').forEach(x => x.classList.add('hot'));

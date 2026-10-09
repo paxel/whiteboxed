@@ -305,3 +305,14 @@ fn score_limits_are_saved_only_when_changed() -> TestResult {
     assert_eq!(persist::from_yaml(&yaml)?.score_limits, p.score_limits);
     Ok(())
 }
+
+#[test]
+fn bundling_is_saved_only_when_off() -> TestResult {
+    let mut p = sample()?;
+    assert!(!persist::to_yaml(&p)?.contains("bundle"));
+    p.set_bundle(false);
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("bundle: false"), "{yaml}");
+    assert!(!persist::from_yaml(&yaml)?.bundle);
+    Ok(())
+}

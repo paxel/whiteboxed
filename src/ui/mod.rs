@@ -21,7 +21,7 @@ use crate::editor::{Editor, Popup, Target};
 use crate::geom;
 use crate::hit::{self, Hit};
 use crate::layout::Layout;
-use crate::model::{BlockId, Cell, DiagramId, PALETTE, Side};
+use crate::model::{BlockId, Cell, DiagramId, PALETTE, RelationId, Side};
 use crate::recovery;
 use crate::scene;
 use canvas::{ACCENT, View};
@@ -167,6 +167,17 @@ impl App {
 
     pub fn is_picking(&self) -> bool {
         self.picking
+    }
+
+    /// The further relations the clicked line stands for.
+    fn bundle_of(&mut self, rel: RelationId, landing: Option<BlockId>) -> Vec<RelationId> {
+        self.editor
+            .layout()
+            .lines
+            .iter()
+            .find(|l| l.relation == rel && l.landing == landing)
+            .map(|l| l.bundle.clone())
+            .unwrap_or_default()
     }
 
     /// Waiting for a click on a box: to connect to, or to move into.
@@ -988,9 +999,10 @@ impl App {
                     self.editor.start_edit_block(b);
                 }
             }
-            Hit::Line(rel, _) => {
+            Hit::Line(rel, landing) => {
                 self.focus = true;
-                self.editor.start_edit_relation(rel);
+                let bundle = self.bundle_of(rel, landing);
+                self.editor.start_edit_line(rel, &bundle);
             }
             _ => {}
         }
@@ -1058,12 +1070,32 @@ impl App {
                 }
             }
             Some(Hit::Line(rel, landing)) => {
-                if ui.button("Edit\u{2026}").clicked() {
-                    self.focus = true;
-                    self.editor.start_edit_relation(rel);
-                }
-                if ui.button("Delete").clicked() {
-                    self.editor.remove_line_at(rel, landing);
+                let bundle = self.bundle_of(rel, landing);
+                if bundle.is_empty() {
+                    if ui.button("Edit\u{2026}").clicked() {
+                        self.focus = true;
+                        self.editor.start_edit_relation(rel);
+                    }
+                    if ui.button("Delete").clicked() {
+                        self.editor.remove_line_at(rel, landing);
+                    }
+                } else {
+                    // One line for several relations: each by its name.
+                    let all: Vec<RelationId> = std::iter::once(rel).chain(bundle).collect();
+                    for r in &all {
+                        let name = self.editor.relation_label(*r);
+                        if ui.button(format!("Edit {name}\u{2026}")).clicked() {
+                            self.focus = true;
+                            self.editor.start_edit_relation(*r);
+                        }
+                    }
+                    ui.separator();
+                    for r in &all {
+                        let name = self.editor.relation_label(*r);
+                        if ui.button(format!("Delete {name}")).clicked() {
+                            self.editor.remove_line_at(*r, landing);
+                        }
+                    }
                 }
             }
             Some(Hit::OpenEnd(end)) => {
@@ -1123,6 +1155,10 @@ impl App {
             Some(Action::Keep) => self.editor.keep_in_place(),
             Some(Action::Pick) => self.picking = true,
             Some(Action::Discard) => self.editor.discard_recovery(),
+            Some(Action::Edit(rel)) => {
+                self.focus = true;
+                self.editor.start_edit_relation(rel);
+            }
             None => {}
         }
     }

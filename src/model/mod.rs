@@ -472,6 +472,8 @@ pub struct Project {
     pub export: Option<ExportChoice>,
     /// From when a diagram counts as crowded or hard to read.
     pub score_limits: ScoreLimits,
+    /// Whether relations between the same two boxes are drawn as one line.
+    pub bundle: bool,
     pub next_id: u64,
 }
 
@@ -541,6 +543,7 @@ impl Default for Project {
             label_limit: DEFAULT_LABEL_LIMIT,
             export: None,
             score_limits: ScoreLimits::default(),
+            bundle: true,
             next_id: 0,
         }
     }

@@ -14,6 +14,8 @@ pub enum Action {
     Keep,
     Pick,
     Discard,
+    /// Edit this one of the relations a line stands for.
+    Edit(crate::model::RelationId),
 }
 
 const ERROR: Color32 = Color32::from_rgb(0xc6, 0x28, 0x28);
@@ -36,6 +38,7 @@ pub fn show(
         Popup::Conflict { .. } => ("Box is in the way", "conflict"),
         Popup::ConfirmDelete { .. } => ("Delete box", "delete"),
         Popup::ConfirmDissolve { .. } => ("Dissolve whitebox", "dissolve"),
+        Popup::ChooseRelation(_) => ("Which relation?", "choose"),
         Popup::OpenEnd { .. } => ("Connect open end", "open-end"),
         Popup::Restore(_) => ("Unsaved changes found", "restore"),
     };
@@ -194,6 +197,19 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 if *count == 1 { "" } else { "es" }
             ));
             ok_cancel(ui, "Delete")
+        }
+        Popup::ChooseRelation(rels) => {
+            ui.label("This line stands for several relations. Edit:");
+            let mut action = None;
+            for rel in rels.iter() {
+                if ui.button(editor.relation_label(*rel)).clicked() {
+                    action = Some(Action::Edit(*rel));
+                }
+            }
+            if ui.button("Cancel").clicked() {
+                action = Some(Action::Cancel);
+            }
+            action
         }
         Popup::ConfirmDissolve { block } => {
             let b = editor.project.blocks.get(block);

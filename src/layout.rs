@@ -79,6 +79,8 @@ pub struct LineGeom {
     /// For a line from the frame: the box inside it lands on. A relation can land on
     /// several boxes; each landing is a line of its own from the same frame port.
     pub landing: Option<BlockId>,
+    /// Further relations drawn as this line, which then stands for all of them.
+    pub bundle: Vec<RelationId>,
 }
 
 impl LineGeom {
@@ -215,6 +217,13 @@ struct Grid {
 }
 
 pub fn layout(project: &Project, view: &DiagramView) -> Layout {
+    let bundled;
+    let view = if project.bundle {
+        bundled = crate::view::bundle(view);
+        &bundled
+    } else {
+        view
+    };
     let (first, grid) = build(project, view, &[]);
     let gaps = widened_gaps(&first, &grid);
     build(project, view, &gaps).0
@@ -1284,6 +1293,7 @@ fn build_line(
         frame_port: None,
         style: line.style,
         full_text: line.text.clone(),
+        bundle: line.bundle.clone(),
         landing: match (&line.a, &line.b) {
             (ViewEnd::Block { block, .. }, ViewEnd::Frame { .. })
             | (ViewEnd::Frame { .. }, ViewEnd::Block { block, .. }) => Some(*block),

@@ -429,7 +429,8 @@ fn facing_boxes_get_straight_lines() -> TestResult {
         Direction::Out,
         "",
     )?;
-    // And two lines between A and B: both straight, side by side.
+    // And two lines between A and B, drawn separately: both straight, side by side.
+    p.set_bundle(false);
     let ab2 = p.connect_existing(a, Side::Right, b, Direction::In, "", Placement::Move)?;
     let l = render(&p, None);
     for rel in [ab, ab2] {
@@ -840,5 +841,32 @@ fn a_line_from_the_frame_runs_straight_across_empty_cells() -> TestResult {
         .ok_or("line")?
         .points;
     assert_eq!(points.len(), 2, "{points:?}");
+    Ok(())
+}
+
+#[test]
+fn relations_between_the_same_boxes_are_drawn_as_one_line() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let (b, provide) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        "provide",
+    )?;
+    let require =
+        p.connect_existing(b, Side::Left, a, Direction::Out, "require", Placement::Keep)?;
+    let l = render(&p, None);
+    assert_eq!(l.lines.len(), 1);
+    let line = &l.lines[0];
+    assert_eq!(line.relation, provide);
+    assert_eq!(line.bundle, vec![require]);
+    assert_eq!(line.text, "provide, require");
+    // A sends one way, B the other: arrows at both ends.
+    assert!(line.arrow_start && line.arrow_end);
+    // Switched off, every relation is its own line again.
+    p.set_bundle(false);
+    assert_eq!(render(&p, None).lines.len(), 2);
     Ok(())
 }

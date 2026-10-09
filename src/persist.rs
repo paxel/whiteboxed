@@ -47,6 +47,9 @@ struct FileDto {
     /// Written only when they differ from the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     score_limits: Option<ScoreLimits>,
+    /// Written only when off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bundle: Option<bool>,
     #[serde(default)]
     tags: Vec<TagDto>,
     #[serde(default)]
@@ -192,6 +195,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
         ),
         score_limits: (project.score_limits != ScoreLimits::default())
             .then_some(project.score_limits),
+        bundle: (!project.bundle).then_some(false),
         export: project.export.as_ref().map(|e| ExportDto {
             all: e.all,
             svg: e.svg,
@@ -261,6 +265,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         Some(LimitDto::Never(_)) => None,
     };
     project.score_limits = dto.score_limits.unwrap_or_default();
+    project.bundle = dto.bundle.unwrap_or(true);
     project.export = dto.export.map(|e| ExportChoice {
         all: e.all,
         svg: e.svg,
