@@ -1,7 +1,7 @@
 //! Editor state and every user action, independent of the GUI toolkit so it can be
 //! tested directly. The egui front end only maps input to these methods.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -122,6 +122,12 @@ pub enum Popup {
         /// The boxes of this diagram the line touches, with the side it leaves them on.
         sides: Vec<(BlockId, Side)>,
     },
+    /// Group the boxes into a new box made from the form, at the cell of `at`.
+    Group {
+        form: BlockForm,
+        boxes: Vec<BlockId>,
+        at: BlockId,
+    },
     Conflict {
         pending: Pending,
         broken: Vec<RelationId>,
@@ -144,6 +150,8 @@ pub struct Editor {
     pub path: Option<PathBuf>,
     pub dirty: bool,
     pub selected: Option<BlockId>,
+    /// Further boxes picked with Ctrl+click, to group them.
+    pub also_selected: BTreeSet<BlockId>,
     pub popup: Option<Popup>,
     pub message: Option<String>,
     undo: Vec<Project>,
@@ -188,6 +196,7 @@ impl Editor {
             path: None,
             dirty: false,
             selected: None,
+            also_selected: BTreeSet::new(),
             popup: None,
             message: None,
             undo: Vec::new(),
@@ -221,6 +230,7 @@ impl Editor {
             path: None,
             dirty: false,
             selected: None,
+            also_selected: BTreeSet::new(),
             popup: None,
             message: None,
             undo: Vec::new(),
@@ -370,6 +380,7 @@ impl Editor {
         }
         self.diagram = diagram;
         self.selected = None;
+        self.also_selected.clear();
         self.popup = None;
     }
 
@@ -482,6 +493,10 @@ impl Editor {
         {
             self.selected = None;
         }
+        let diagram = self.diagram;
+        let blocks = &self.project.blocks;
+        self.also_selected
+            .retain(|b| blocks.get(b).is_some_and(|x| x.parent == diagram));
     }
 
     pub fn can_undo(&self) -> bool {
@@ -742,6 +757,13 @@ impl Editor {
                     self.popup = None;
                 }
             }
+            Popup::Group { form, boxes, at } => {
+                if let Some(id) = self.apply(|p| p.group(&boxes, at, &form.spec())) {
+                    self.selected = Some(id);
+                    self.also_selected.clear();
+                    self.popup = None;
+                }
+            }
             Popup::Conflict { pending, .. } => self.run_pending(pending, Placement::Move),
             Popup::ConfirmDelete { block, .. } => {
                 if self.apply(|p| p.delete_block(block)).is_some() {
@@ -927,6 +949,42 @@ impl Editor {
             }
             _ => self.remove_line(rel),
         }
+    }
+
+    /// Adds a box to the selection, or takes it out (Ctrl+click).
+    pub fn toggle_selected(&mut self, block: BlockId) {
+        match self.selected {
+            None => self.selected = Some(block),
+            Some(s) if s == block => {
+                self.selected = self.also_selected.pop_first();
+            }
+            Some(_) => {
+                if !self.also_selected.remove(&block) {
+                    self.also_selected.insert(block);
+                }
+            }
+        }
+    }
+
+    /// Every selected box.
+    pub fn selection(&self) -> Vec<BlockId> {
+        self.selected
+            .into_iter()
+            .chain(self.also_selected.iter().copied())
+            .collect()
+    }
+
+    /// Asks for the new box that the selection and `at` go into.
+    pub fn start_group(&mut self, at: BlockId) {
+        let mut boxes = self.selection();
+        if !boxes.contains(&at) {
+            boxes = vec![at];
+        }
+        self.popup = Some(Popup::Group {
+            form: BlockForm::default(),
+            boxes,
+            at,
+        });
     }
 
     /// Moves a box into the whitebox of a neighbour.

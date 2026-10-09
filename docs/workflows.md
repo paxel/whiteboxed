@@ -77,6 +77,7 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
   here** (it lands in that cell), or click **+ Box** in the menu bar. Tick
   **Cross-cutting band** for a concern like logging that runs across the bottom.
 - Drag a box onto another cell; it snaps. A box already there swaps places.
+- Ctrl+click boxes to select several; right-click one > **Group into new box…**.
 - Or select a box and use the arrow keys.
 - **Fit** in the lower right corner of the canvas (or **View > Fit to window**, or
   right-click empty space) shows the whole diagram again; − and + next to it zoom.

@@ -159,6 +159,11 @@ When a box turns out to be on the wrong level, move it instead of rebuilding:
   with everything inside it, goes into the neighbour's whitebox, next to the box
   there it has the most lines with. A line to the neighbour now lands on the box
   inside; a line that reached nothing inside becomes an open end.
+- **Group into new box…**: Ctrl+click boxes to select several (Ctrl+click again takes
+  one out), then right-click one of them. You name the new box; it takes the cell of
+  the box you right-clicked, and the selected boxes go into its whitebox in the same
+  arrangement. Lines between them move inside; lines to the outside now reach the new
+  box and land on the right box inside.
 
 Each restructuring is one step for undo.
 
@@ -345,6 +350,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `move_box`           | A box to another grid cell                                        |
 | `move_up`            | A box out of its whitebox, one level up                           |
 | `move_into`          | A box into the whitebox of a neighbour                            |
+| `group`              | Boxes of one diagram into the whitebox of a new box               |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |

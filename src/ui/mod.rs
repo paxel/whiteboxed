@@ -281,6 +281,7 @@ impl App {
         }
         if pressed(Modifiers::NONE, Key::Escape) {
             self.editor.selected = None;
+            self.editor.also_selected.clear();
         }
         let Some(selected) = self.editor.selected else {
             return;
@@ -739,7 +740,15 @@ impl App {
             self.editor.move_block(b, cell);
         }
         if let Some((p, h)) = clicked {
-            self.click(p, h);
+            // The release that made the click carries its own modifiers.
+            let ctrl = ui.input(|i| {
+                i.modifiers.command
+                    || i.events.iter().any(|e| {
+                        matches!(e, egui::Event::PointerButton { pressed: false, modifiers, .. }
+                            if modifiers.command)
+                    })
+            });
+            self.click(p, h, ctrl);
         }
         if let Some(h) = double {
             self.double_click(h);
@@ -829,6 +838,19 @@ impl App {
         hit_at: &impl Fn(Pos2) -> Hit,
     ) {
         let block_rect = |b: BlockId| layout.block(b).map(|g| view.rect(g.rect));
+        for r in self
+            .editor
+            .also_selected
+            .iter()
+            .filter_map(|b| block_rect(*b))
+        {
+            painter.rect_stroke(
+                r.expand(4.0),
+                4.0,
+                Stroke::new(2.0, ACCENT),
+                egui::StrokeKind::Outside,
+            );
+        }
         if let Some(r) = self.editor.selected.and_then(block_rect) {
             painter.rect_stroke(
                 r.expand(4.0),
@@ -903,8 +925,16 @@ impl App {
         }
     }
 
-    fn click(&mut self, p: Pos2, h: Hit) {
+    fn click(&mut self, p: Pos2, h: Hit, ctrl: bool) {
         self.anchor = p + vec2(16.0, 16.0);
+        if ctrl
+            && !self.picks()
+            && let Hit::Block(b) | Hit::Side(b, _) = h
+        {
+            self.editor.toggle_selected(b);
+            self.editor.close_popup();
+            return;
+        }
         if let Some(moving) = self.moving_into {
             if let Hit::Block(b) | Hit::Side(b, _) = h {
                 self.moving_into = None;
@@ -927,11 +957,13 @@ impl App {
             Hit::Side(b, side) => self.editor.start_connect(b, side),
             Hit::Block(b) => {
                 self.editor.selected = Some(b);
+                self.editor.also_selected.clear();
                 self.editor.close_popup();
             }
             Hit::OpenEnd(end) => self.editor.start_open_end(end),
             Hit::Line(..) | Hit::Empty => {
                 self.editor.selected = None;
+                self.editor.also_selected.clear();
                 self.editor.close_popup();
             }
         }
@@ -979,6 +1011,23 @@ impl App {
                     .is_some_and(|x| x.kind.can_drill());
                 if drillable && ui.button("Open whitebox").clicked() {
                     self.editor.open_diagram(Some(b));
+                }
+                let n = {
+                    let sel = self.editor.selection();
+                    if sel.contains(&b) { sel.len() } else { 1 }
+                };
+                let label = if n > 1 {
+                    format!("Group {n} boxes into new box\u{2026}")
+                } else {
+                    "Group into new box\u{2026}".to_owned()
+                };
+                if ui
+                    .button(label)
+                    .on_hover_text("Ctrl+click boxes to group several")
+                    .clicked()
+                {
+                    self.focus = true;
+                    self.editor.start_group(b);
                 }
                 if ui
                     .button("Move into\u{2026}")

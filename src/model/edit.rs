@@ -648,7 +648,7 @@ impl Project {
 
     // ----- helpers -----
 
-    fn insert_block(
+    pub(super) fn insert_block(
         &mut self,
         diagram: DiagramId,
         spec: &BlockSpec,

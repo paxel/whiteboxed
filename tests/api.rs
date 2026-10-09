@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 20);
+    assert_eq!(tools.len(), 21);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -805,5 +805,31 @@ fn move_into_puts_a_box_inside_a_neighbour() -> TestResult {
         json!({"box": "Web Shop", "into": "Customer"}),
     );
     assert!(matches!(refused, Err(ApiError::Rejected(_))));
+    Ok(())
+}
+
+#[test]
+fn group_puts_boxes_into_a_new_box() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    for name in ["Orders", "Billing"] {
+        call(
+            &mut e,
+            "add_box",
+            json!({"diagram": "Web Shop", "name": name, "kind": "component"}),
+        )?;
+    }
+    let out = call(
+        &mut e,
+        "group",
+        json!({"boxes": ["Web Shop/Orders", "Web Shop/Billing"], "name": "Backend", "kind": "component"}),
+    )?;
+    assert_eq!(out["path"], json!(["Web Shop", "Backend"]));
+    let d = call(
+        &mut e,
+        "get_diagram",
+        json!({"diagram": "Web Shop/Backend"}),
+    )?;
+    assert_eq!(d["boxes"].as_array().map(Vec::len), Some(2));
     Ok(())
 }

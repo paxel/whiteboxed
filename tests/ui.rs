@@ -1171,3 +1171,55 @@ fn move_into_picks_the_target_with_a_click() -> TestResult {
     assert_eq!(h.state().editor.project.block(cache)?.parent, Some(shop));
     Ok(())
 }
+
+#[test]
+fn ctrl_click_and_right_click_group_boxes() -> TestResult {
+    let (mut e, shop) = one_box()?;
+    let cache = e
+        .project
+        .add_block(None, &BlockSpec::new("Cache", BlockKind::Cache))?;
+    let mut h = harness(e);
+    h.run();
+    let center = |h: &mut Harness<'_, App>, b| -> Result<Pos2, Box<dyn std::error::Error>> {
+        let c = h
+            .state_mut()
+            .editor
+            .layout()
+            .block(b)
+            .ok_or("box")?
+            .rect
+            .center();
+        screen(h, c)
+    };
+    let (at_shop, at_cache) = (center(&mut h, shop)?, center(&mut h, cache)?);
+    press(&mut h, at_shop, PointerButton::Primary);
+    h.run();
+    h.event(Event::PointerMoved(at_cache));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton {
+            pos: at_cache,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::COMMAND,
+        });
+        h.step();
+    }
+    h.run();
+    assert_eq!(h.state().editor.selection(), vec![shop, cache]);
+    press(&mut h, at_shop, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Group 2 boxes into new box\u{2026}").click();
+    h.run();
+    type_and_enter(&mut h, "Backend");
+    let p = &h.state().editor.project;
+    let backend = p
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Backend")
+        .map(|(id, _)| *id)
+        .ok_or("no group box")?;
+    assert_eq!(p.block(shop)?.parent, Some(backend));
+    assert_eq!(p.block(cache)?.parent, Some(backend));
+    Ok(())
+}

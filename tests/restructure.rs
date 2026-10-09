@@ -226,3 +226,41 @@ fn move_into_refuses_what_cannot_go_there() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn grouping_puts_boxes_into_a_new_whitebox() -> TestResult {
+    let mut p = Project::new();
+    let customer = p.add_block(None, &BlockSpec::new("Customer", BlockKind::Person))?;
+    let (a, buys) = p.connect_new(
+        customer,
+        Side::Right,
+        &component("A"),
+        Direction::Out,
+        "buys",
+    )?;
+    let (b, ab) = p.connect_new(a, Side::Right, &component("B"), Direction::Out, "")?;
+    let (c, bc) = p.connect_new(b, Side::Right, &component("C"), Direction::Out, "")?;
+    let (a_cell, b_cell) = (p.block(a)?.cell, p.block(b)?.cell);
+    let core = p.group(&[a, b], a, &component("Core"))?;
+    assert_eq!(p.block(core)?.cell, a_cell);
+    assert_eq!(p.block(a)?.parent, Some(core));
+    assert_eq!((p.block(a)?.cell, p.block(b)?.cell), (a_cell, b_cell));
+    // Between the grouped boxes: inside the new whitebox.
+    assert_eq!(p.relation(ab)?.owner, Some(core));
+    // From outside: to the new box, landing on the box inside.
+    assert_eq!(chain(&p, buys, End::B)?, vec![core, a]);
+    assert_eq!(chain(&p, bc, End::A)?, vec![core, b]);
+    assert_eq!(chain(&p, bc, End::B)?, vec![c]);
+    assert_eq!(dangling_count(&diagram_view(&p, Some(core))), 0);
+    whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    // Grouping a person, or at a box outside the group, is refused.
+    assert_eq!(
+        p.group(&[customer], customer, &component("People")),
+        Err(ModelError::NeighbourBelowContext("person"))
+    );
+    assert_eq!(
+        p.group(&[c], core, &component("X")),
+        Err(ModelError::NotInGroup)
+    );
+    Ok(())
+}

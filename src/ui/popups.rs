@@ -31,6 +31,7 @@ pub fn show(
         Popup::AddBlock(..) => ("Add box", "add"),
         Popup::Connect(_) => ("Connect", "connect"),
         Popup::EditBlock(..) => ("Edit box", "edit-box"),
+        Popup::Group { .. } => ("Group into new box", "group"),
         Popup::EditRelation { .. } => ("Edit relation", "edit-rel"),
         Popup::Conflict { .. } => ("Box is in the way", "conflict"),
         Popup::ConfirmDelete { .. } => ("Delete box", "delete"),
@@ -67,6 +68,15 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             block_form(ui, editor, form, focus);
             band_row(ui, &mut form.band);
             ok_cancel(ui, "Add")
+        }
+        Popup::Group { form, boxes, .. } => {
+            let n = boxes.len();
+            ui.label(format!(
+                "The new box takes {n} box{} into its whitebox.",
+                if n == 1 { "" } else { "es" }
+            ));
+            block_form(ui, editor, form, focus);
+            ok_cancel(ui, "Group")
         }
         Popup::EditBlock(_, form) => {
             block_form(ui, editor, form, focus);

@@ -434,6 +434,8 @@ pub enum ModelError {
     BandStays,
     #[error("this box is already in the context view")]
     AtTop,
+    #[error("the box to group at must be one of the grouped boxes")]
+    NotInGroup,
 }
 
 pub type ModelResult<T> = Result<T, ModelError>;

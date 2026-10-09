@@ -580,3 +580,32 @@ fn the_html_document_is_named_after_the_project() -> TestResult {
     assert!(page.starts_with("<!doctype html>"));
     Ok(())
 }
+
+#[test]
+fn ctrl_selected_boxes_group_into_a_new_box() -> TestResult {
+    let mut e = Editor::new(None);
+    let a = add_first(&mut e, "A")?;
+    let b = connect_new(&mut e, a, Side::Right, "B", BlockKind::Component)?;
+    let c = connect_new(&mut e, b, Side::Right, "C", BlockKind::Component)?;
+    e.selected = None;
+    e.toggle_selected(a);
+    e.toggle_selected(b);
+    assert_eq!(e.selection(), vec![a, b]);
+    e.toggle_selected(b);
+    e.toggle_selected(b);
+    e.start_group(b);
+    let Some(Popup::Group { form, boxes, at }) = &mut e.popup else {
+        return Err("no group popup".into());
+    };
+    assert_eq!((boxes.clone(), *at), (vec![a, b], b));
+    form.name = "Core".into();
+    e.confirm();
+    let core = e.selected.ok_or("selection")?;
+    assert_eq!(e.project.block(core)?.name, "Core");
+    assert_eq!(e.project.block(a)?.parent, Some(core));
+    assert_eq!(e.project.block(c)?.parent, None);
+    assert!(e.also_selected.is_empty());
+    e.undo();
+    assert_eq!(e.project.block(a)?.parent, None);
+    Ok(())
+}

@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    Anchor, BlockId, Cell, DiagramId, End, Endpoint, ModelError, ModelResult, Project, Relation,
-    RelationId, Side,
+    Anchor, BlockId, BlockSpec, Cell, DiagramId, End, Endpoint, ModelError, ModelResult, Project,
+    Relation, RelationId, Side,
 };
 
 /// The deepest boxes each end of a relation reaches, with their sides, taken before
@@ -79,6 +79,45 @@ impl Project {
             }
         }
         self.reface(inside, &[id])
+    }
+
+    /// Puts `boxes` (all of one diagram) into the whitebox of a new box made from
+    /// `spec`, which takes the cell of `at`. The boxes keep their arrangement inside.
+    pub fn group(
+        &mut self,
+        boxes: &[BlockId],
+        at: BlockId,
+        spec: &BlockSpec,
+    ) -> ModelResult<BlockId> {
+        if !boxes.contains(&at) {
+            return Err(ModelError::NotInGroup);
+        }
+        let diagram = self.block(at)?.parent;
+        for b in boxes {
+            let block = self.block(*b)?;
+            if block.parent != diagram {
+                return Err(ModelError::DifferentDiagrams);
+            }
+            if block.kind.is_neighbour() {
+                return Err(ModelError::NeighbourBelowContext(block.kind.label()));
+            }
+        }
+        if spec.band {
+            return Err(ModelError::BandKind("group"));
+        }
+        if !spec.kind.can_drill() {
+            return Err(ModelError::NotDrillable(spec.kind.label()));
+        }
+        let cell = self.block(at)?.cell;
+        let group = self.insert_block(diagram, spec, cell)?;
+        self.renest(boxes, |p| {
+            for b in boxes {
+                if let Some(block) = p.blocks.get_mut(b) {
+                    block.parent = Some(group);
+                }
+            }
+        })?;
+        Ok(group)
     }
 
     /// The box of the same diagram that `id` has the most relations with.

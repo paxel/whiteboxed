@@ -187,6 +187,21 @@ pub struct BoxArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+pub struct GroupArgs {
+    /// The boxes to group, all of one diagram.
+    pub boxes: Vec<BoxRef>,
+    /// The grouped box whose cell the new box takes; default the first.
+    #[serde(default)]
+    pub at: Option<BoxRef>,
+    /// Name of the new box.
+    pub name: String,
+    pub kind: ApiKind,
+    #[serde(default)]
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct MoveIntoArgs {
     #[serde(rename = "box")]
     pub target: BoxRef,
@@ -579,6 +594,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<MoveBoxArgs>(),
         },
         ToolInfo {
+            name: "group",
+            description: "Put boxes of one diagram into the whitebox of a new box, keeping their arrangement inside. Relations follow: between the boxes they move inside, to the outside they go to the new box and land on the right box inside.",
+            schema: schema::<GroupArgs>(),
+        },
+        ToolInfo {
             name: "move_into",
             description: "Move a box into the whitebox of a neighbour in the same diagram, with everything inside it. Its relations follow.",
             schema: schema::<MoveIntoArgs>(),
@@ -678,6 +698,23 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Outp
             let id = resolve(&editor.project, &a.target)?;
             editor.apply_ai(|p| p.move_block(id, Cell::new(a.col, a.row)))?;
             done(editor, "moved", Some(id))
+        }
+        "group" => {
+            let a: GroupArgs = args(arguments)?;
+            let boxes = a
+                .boxes
+                .iter()
+                .map(|b| resolve(&editor.project, b))
+                .collect::<ApiResult<Vec<_>>>()?;
+            let at = match &a.at {
+                Some(b) => resolve(&editor.project, b)?,
+                None => *boxes
+                    .first()
+                    .ok_or_else(|| ApiError::Rejected("name at least one box".into()))?,
+            };
+            let s = spec(&a.name, a.kind, &a.tag);
+            let id = editor.apply_ai(|p| p.group(&boxes, at, &s))?;
+            done(editor, "grouped into", Some(id))
         }
         "move_into" => {
             let a: MoveIntoArgs = args(arguments)?;
