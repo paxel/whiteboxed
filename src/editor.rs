@@ -1051,14 +1051,10 @@ impl Editor {
             }
             entries.push((*diagram, name));
         }
-        let title = self
-            .project
-            .display_name()
-            .or_else(|| self.file_stem())
-            .unwrap_or_else(|| "Architecture".to_owned());
+        let title = self.doc_title();
         if choice.html {
             let page = crate::html::html_doc(&self.project, &title);
-            write_file(&dir.join(format!("{}.html", safe_file_name(&title))), page)?;
+            write_file(&dir.join(self.html_file_name()), page)?;
             files += 1;
         }
         if let (Some(format), true) = (choice.text, choice.all) {
@@ -1067,6 +1063,19 @@ impl Editor {
             files += 1;
         }
         Ok(files)
+    }
+
+    /// The title of exported documents: the project's name, else its file name.
+    fn doc_title(&self) -> String {
+        self.project
+            .display_name()
+            .or_else(|| self.file_stem())
+            .unwrap_or_else(|| "Architecture".to_owned())
+    }
+
+    /// The file the HTML document export writes, named after the project.
+    pub fn html_file_name(&self) -> String {
+        format!("{}.html", safe_file_name(&self.doc_title()))
     }
 
     /// Keeps the choices of the export dialog with the project, without an undo step.

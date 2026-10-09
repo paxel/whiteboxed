@@ -441,6 +441,9 @@ pub struct ExportArgs {
     /// Absolute path of the folder; created if missing.
     pub folder: String,
     pub format: ApiFormat,
+    /// Also one HTML document with every diagram, text and table, clickable.
+    #[serde(default)]
+    pub html: bool,
 }
 
 // ----- tool catalogue -----
@@ -565,7 +568,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "export_docs",
-            description: "Write images, one arc42 text file per diagram and an index into a folder. The user must allow the folder: the first call for a new folder asks them and fails; call again after they agreed.",
+            description: "Write images, one arc42 text file per diagram and an index into a folder; with html: true also one clickable HTML document with everything. The user must allow the folder: the first call for a new folder asks them and fails; call again after they agreed.",
             schema: schema::<ExportArgs>(),
         },
         ToolInfo {
@@ -894,18 +897,26 @@ fn export_docs(editor: &mut Editor, a: ExportArgs) -> ApiResult<Output> {
         ApiFormat::Asciidoc => DocFormat::AsciiDoc,
         ApiFormat::Markdown => DocFormat::Markdown,
     };
-    let n = editor
-        .export_all(dir, format)
+    let choice = crate::model::ExportChoice {
+        text: Some(format),
+        html: a.html,
+        ..crate::model::ExportChoice::default()
+    };
+    editor
+        .export(&choice, dir)
         .map_err(|e| ApiError::Rejected(e.to_string()))?;
+    let n = crate::doc::diagrams(&editor.project).len();
     let summary = format!("exported {n} diagrams to {}", dir.display());
     editor.last_ai = Some(AiAction {
         summary: summary.clone(),
         diagram: editor.diagram,
         block: None,
     });
-    Ok(Output::Json(
-        json!({"diagrams": n, "folder": dir.display().to_string(), "index": format!("index.{}", format.extension())}),
-    ))
+    let mut out = json!({"diagrams": n, "folder": dir.display().to_string(), "index": format!("index.{}", format.extension())});
+    if a.html {
+        out["html"] = json!(editor.html_file_name());
+    }
+    Ok(Output::Json(out))
 }
 
 fn done(editor: &mut Editor, verb: &str, id: Option<BlockId>) -> ApiResult<Output> {

@@ -306,7 +306,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `move_box`           | A box to another grid cell                                        |
 | `delete_box`         | A box; one with content only with `recursive: true`               |
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
-| `export_docs`        | Images, arc42 texts and index into a folder you allowed           |
+| `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |
 | `batch`              | Several editing calls as one undo step, all or nothing            |
 
 The problems `get_diagram` lists are lines that cross (both relations and where),

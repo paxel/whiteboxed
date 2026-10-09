@@ -261,7 +261,8 @@ open sessions, so this is not reachable without the token.
 - SVG output escapes `& < > "`; text in the canvas is drawn, never interpreted.
 - The HTML export (0.2.0) escapes every name and text (`& < > " '`) and loads
   nothing from outside: the font is embedded, the only script is its own, fixed one
-  (tests in `tests/html.rs`). The AI's `export_docs` does not write it.
+  (tests in `tests/html.rs`). The AI's `export_docs` writes it on request
+  (`html: true`), under the same per-folder approval (S1).
 - Saves and recovery writes go through a new temporary file and an atomic rename.
 - whiteboxed forbids `unsafe` code (`[lints.rust]` in `Cargo.toml`).
 

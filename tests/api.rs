@@ -386,6 +386,11 @@ fn export_asks_once_per_folder_and_stays_inside_it() -> TestResult {
     assert_eq!(out["index"], "index.adoc");
     assert!(target.join("index.adoc").exists());
     assert!(target.join("context.svg").exists());
+    assert!(out.get("html").is_none());
+    let html = json!({"folder": target.to_string_lossy(), "format": "asciidoc", "html": true});
+    let out = call(&mut e, "export_docs", html)?;
+    assert_eq!(out["html"], "Web Shop.html");
+    assert!(target.join("Web Shop.html").exists());
     // `..` never resolves out of an allowed folder.
     let escape = format!("{}/arc42/../../outside", dir.path().display());
     let refused = call(

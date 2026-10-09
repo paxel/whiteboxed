@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- HTML document export: one self-contained file with every diagram, text and table. Boxes, lines and frame ends are clickable, a tree and breadcrumbs lead through the levels, and it follows light or dark mode with a switch in the top right corner.
+- HTML document export: one self-contained file with every diagram, text and table. Boxes, lines and frame ends are clickable, a tree and breadcrumbs lead through the levels, and it follows light or dark mode with a switch in the top right corner. The AI's export_docs writes it with html: true.
 - AI access can be opened to Docker containers (listening on the Docker bridge, reachable as host.docker.internal) or to an address you type, with a warning; this computer only stays the default and the token is always needed.
 - The AI's get_diagram lists problems worth tidying: crossing lines, overlapping labels and labels that do not fit.
 - An AI batch tool: several editing calls run as one undo step, all or nothing. A failing step changes nothing and is named in the error; later steps can address boxes that earlier steps created.
