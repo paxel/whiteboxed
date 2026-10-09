@@ -82,11 +82,29 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
 - **Fit** in the lower right corner of the canvas (or **View > Fit to window**, or
   right-click empty space) shows the whole diagram again; − and + next to it zoom.
 
+## Tidy up a crowded diagram
+
+1. Watch the dot after the breadcrumb. Yellow or red means too many boxes, crossing
+   lines, or one box with too many lines; with nothing selected, the details panel
+   says which and what helps.
+2. Too many boxes: Ctrl+click the boxes that belong together, right-click one of them
+   > **Group into new box…**, and name it. They move into its whitebox; their lines
+   follow.
+3. Crossings: drag boxes so partners face each other. A box that only one other box
+   talks to can often go into that box: right-click > **Move into…**, then click it.
+4. A box on the wrong level: right-click > **Move up a level**, or right-click its
+   whitebox box > **Dissolve whitebox…** to lift everything inside.
+5. One coarse relation that is really several flows: right-click it > **Split
+   relation…** and tick which boxes talk to each other.
+6. Logging, security or monitoring that every part uses: make it a
+   **Cross-cutting band** instead of more boxes.
+
 ## Edit and delete
 
 - Right-click a box: **Edit…** (name, type, tag), **Open whitebox**, **Delete**.
 - Right-click a line: **Edit…** (direction, text, short label, line style, the side
-  at each box), **Delete**. Double-click a line to
+  at each box), **Split relation…**, **Delete**. A line that stands for several
+  relations lists each of them by name. Double-click a line to
   edit its text directly.
 - Deleting a box that has content asks first and removes everything inside it.
 - Deleting a line inside a whitebox only detaches it from the box there.

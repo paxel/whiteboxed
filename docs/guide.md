@@ -15,9 +15,11 @@ next to each diagram and exports them. For step-by-step recipes see
   relation in the next free cell. An arrow is grey when there is nothing to undo or
   redo.
 - **Breadcrumb** under the menu: where you are, e.g. `Context › Web Shop › Orders`.
-  Click any part to jump there.
+  Click any part to jump there. The dot after it is the current diagram's
+  [readability](#readability).
 - **Structure** (left): every box of the project as a tree. Click a box to show it in
-  its diagram, double-click it to open its whitebox.
+  its diagram, double-click it to open its whitebox. A dot after a diagram shows its
+  readability.
 - **Tags** (left, below the tree): every tag with its colour.
 - **Canvas** (centre): the current diagram. The buttons in its lower right corner zoom
   out (−) and in (+), show the zoom level (click it for 100 %) and fit the whole
@@ -25,8 +27,8 @@ next to each diagram and exports them. For step-by-step recipes see
   pans. A diagram is fitted when you open it; after that the view stays where you put
   it, and a new box outside it is scrolled into view.
 - **Details** (right): the **responsibility** of the selected box, or the
-  **motivation** of the current diagram when nothing is selected. See
-  [arc42 texts](#arc42-texts).
+  **motivation** of the current diagram when nothing is selected, together with its
+  readability and what helps. See [arc42 texts](#arc42-texts).
 - **Status bar** (bottom): hints, errors, and the number of interfaces in this
   whitebox that are not assigned to a box yet.
 
@@ -165,7 +167,10 @@ There is nothing to position by pixel.
 
 ## Restructure
 
-When a box turns out to be on the wrong level, move it instead of rebuilding:
+When a box turns out to be on the wrong level, move it instead of rebuilding. All of
+it is in the right-click menu of a box:
+
+![Orders and Order DB selected; the menu offers to group them, move into, move up](screenshots/restructure.png)
 
 - **Move up a level** (right-click a box inside a whitebox): the box leaves the
   whitebox, with everything inside it, and lands next to its old whitebox box on the
@@ -201,6 +206,8 @@ read). It shows as a dot next to the diagram in the structure tree and next to t
 breadcrumb; hovering it names the causes. With nothing selected, the details panel
 lists each cause with what helps.
 
+![A whitebox with 10 boxes is red; the details panel suggests grouping](screenshots/readability.png)
+
 | Measure                  | Yellow from | Red from | What usually helps                                   |
 |--------------------------|-------------|----------|------------------------------------------------------|
 | Boxes in the diagram     | 8           | 10       | Group boxes, move details into a whitebox, bands     |
@@ -218,7 +225,7 @@ boxes. The score is a working aid; exports do not show it.
 
 **File > Project settings…** holds what applies to the whole project:
 
-![Project settings: line style and when texts get shortened](screenshots/project-settings.png)
+![Project settings: name, line style, shortening, bundling and readability limits](screenshots/project-settings.png)
 
 - **Project name**: shown in the window title, offered as the file name on the first
   save and used as the title of the exported documentation. Until you type one, the
@@ -404,6 +411,7 @@ without case. The context view is the default diagram.
 | F2                    | Edit the selected box                  |
 | Delete                | Delete the selected box                |
 | Arrow keys            | Move the selected box one cell         |
+| Ctrl+click            | Select several boxes                   |
 | Ctrl+Z                | Undo                                   |
 | Ctrl+Shift+Z / Ctrl+Y | Redo                                   |
 | Ctrl+S                | Save                                   |

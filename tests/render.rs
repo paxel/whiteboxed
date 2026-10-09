@@ -427,3 +427,56 @@ fn doc_screenshot_split() -> TestResult {
     h.run();
     save(&mut h, "split")
 }
+
+fn right_click(h: &mut Harness<'_, App>, pos: Pos2) {
+    h.event(Event::PointerMoved(pos));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.step();
+    }
+    h.run();
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_readability() -> TestResult {
+    let (mut p, shop) = shop()?;
+    for name in ["Search", "Reviews", "Recommendations", "Wishlist"] {
+        p.add_block(Some(shop), &BlockSpec::new(name, BlockKind::Component))?;
+    }
+    let mut e = editor_with(p);
+    e.open_diagram(Some(shop));
+    let mut h = harness(e);
+    h.run();
+    save(&mut h, "readability")
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_restructure_menu() -> TestResult {
+    let (p, shop) = shop()?;
+    let id = |name: &str| {
+        p.blocks
+            .iter()
+            .find(|(_, b)| b.name == name)
+            .map(|(id, _)| *id)
+            .ok_or(format!("no {name}"))
+    };
+    let (orders, db) = (id("Orders")?, id("Order DB")?);
+    let mut e = editor_with(p.clone());
+    e.open_diagram(Some(shop));
+    e.selected = Some(orders);
+    e.also_selected.insert(db);
+    let mut h = harness(e);
+    h.run();
+    let r = h.state_mut().editor.layout().block(db).ok_or("db")?.rect;
+    let at = screen(&h, r.center())?;
+    right_click(&mut h, at);
+    save(&mut h, "restructure")
+}

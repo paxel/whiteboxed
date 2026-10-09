@@ -23,7 +23,13 @@ levels cannot drift apart.
   through its frame and are marked until a box inside takes them. Stubs bubble up to
   the context view.
 - **Architecture box types.** Component, database, queue/topic, cache, file storage,
-  UI, person, external system.
+  UI, person, external system, and cross-cutting bands for concerns like logging.
+- **Readable diagrams.** Lines run straight where boxes face each other, avoid
+  crossings and jump where they must; a traffic light per diagram says when it gets
+  crowded and what helps.
+- **Restructure without redrawing.** Group boxes into a new box, dissolve a whitebox,
+  move a box up or into a neighbour, split a coarse relation into precise ones; the
+  relations follow on every level.
 - **Tags** colour boxes project-wide.
 - **Git-friendly files.** One YAML file per project with the model and grid cells, no
   pixel coordinates. Unsaved work is recovered after a crash.
@@ -34,7 +40,7 @@ levels cannot drift apart.
   off by default and needs a token.
 - **Export** every diagram as SVG and PNG, together with arc42 text files
   (AsciiDoc or Markdown) holding the partner, building-block and interface tables,
-  and an index that ties them together.
+  and an index that ties them together, or as one clickable HTML document.
 
 ![The whitebox of the web shop, with two interfaces not assigned yet](docs/screenshots/whitebox.png)
 
@@ -42,8 +48,8 @@ levels cannot drift apart.
 
 - [Workflows](docs/workflows.md): step-by-step recipes, from the first box to the
   exported arc42 images.
-- [Guide](docs/guide.md): levels, box types, relations, layout rules, AI access, keys
-  and the file format.
+- [Guide](docs/guide.md): levels, box types, relations, layout rules, restructuring,
+  readability, AI access, keys and the file format.
 - [Security audit](docs/security-audit.md): what an AI client with access can and
   cannot do, findings, dependency checks and how CI enforces them.
 
