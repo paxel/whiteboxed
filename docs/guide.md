@@ -420,6 +420,14 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 - A shape's text can span several lines: in its dialog, Enter starts a new line and
   Ctrl+Enter confirms. The same text may appear more than once.
 - Every shape can get its own **colour** from the palette in its dialog.
+- **Groups** mark zones, lanes or networks: Ctrl+click shapes, then right-click one >
+  **Frame as group…** and name it. The frame is a rectangle of cells around them, and
+  every shape inside the rectangle belongs to the group, also one moved in later.
+  Groups may lie inside other groups, but not partly over them. Right-click a group's
+  name > **Widen to the selection** grows it around further Ctrl+clicked shapes. A
+  line can end at a group's frame ("Internet → DMZ"); lines cross frames freely.
+
+![A network doodle: a cloud account with a nested DMZ, dashed and dotted lines](screenshots/doodle-network.png)
 - Lines connect two shapes; there are no open ends (stubs). In a line's **Edit…**
   dialog, **Pattern** makes it solid, dashed or dotted, for example for asynchronous
   or optional flows. Lines with different patterns between the same shapes are not

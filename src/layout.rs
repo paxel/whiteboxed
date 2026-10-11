@@ -12,6 +12,10 @@ use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
 pub const GAP: f32 = 110.0;
 pub const PORT_SPACING: f32 = 40.0;
+/// How far a group's frame lies outside its cells, and how much further for every
+/// group inside it.
+const GROUP_INSET: f32 = 22.0;
+const GROUP_STEP: f32 = 24.0;
 /// Height of a cross-cutting band, and the space between two of them.
 pub const BAND_H: f32 = 56.0;
 const BAND_GAP: f32 = 12.0;
@@ -189,6 +193,16 @@ fn cross_points(h: &[Pos], v: &[Pos]) -> Vec<Pos> {
 /// Where a relation wants its port on a side, and the line ends that share it.
 type PortSlot = (f32, RelationId, Vec<(usize, End)>);
 
+/// Where a box was put: its rect, and the grid columns and rows it covers.
+type Placed = (Rect, (usize, usize), (usize, usize));
+
+/// A group on the page: its id, its box and its rectangle of cells.
+type GroupRef<'a> = (
+    BlockId,
+    &'a crate::model::Block,
+    (crate::model::Cell, crate::model::Cell),
+);
+
 /// A port on a side: sort key, relation, line index and which end.
 type PortRef = (i64, RelationId, usize, End);
 
@@ -326,11 +340,63 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             .max((count(o, Side::Right) + 1.0) * PORT_SPACING);
         sizes.insert(*id, (b.cell, w, h));
     }
-    let grid = grid(&sizes, vgaps);
+    // A group's corners are columns and rows of the grid, even with no shape there.
+    let mut groups: Vec<GroupRef> = view
+        .blocks
+        .iter()
+        .filter_map(|id| {
+            let b = project.blocks.get(id)?;
+            Some((*id, b, b.group_cells()?))
+        })
+        .collect();
+    // Outer groups first, so the inner ones are drawn on top of them.
+    groups.sort_by_key(|(_, _, (near, far))| {
+        std::cmp::Reverse((far.col - near.col + 1) * (far.row - near.row + 1))
+    });
+    let mut grid_cells = sizes.clone();
+    for (k, (_, _, (near, far))) in groups.iter().enumerate() {
+        for (j, corner) in [near, far].into_iter().enumerate() {
+            let phantom = BlockId(u64::MAX - (2 * k + j) as u64);
+            grid_cells.insert(phantom, (*corner, 0.0, 0.0));
+        }
+    }
+    let grid = grid(&grid_cells, vgaps);
 
-    // Box rects.
+    // Box rects, with the columns and rows each covers.
     let mut blocks = Vec::new();
-    let mut rects = BTreeMap::new();
+    let mut rects: BTreeMap<BlockId, Placed> = BTreeMap::new();
+    // Group frames first, so they lie behind the shapes. A frame sits in the gaps
+    // around its cells, further out the more groups it holds.
+    for (id, b, (near, far)) in &groups {
+        let (c0, c1) = (grid.cols[&near.col], grid.cols[&far.col]);
+        let (r0, r1) = (grid.rows[&near.row], grid.rows[&far.row]);
+        let holds = groups
+            .iter()
+            .filter(|(o, _, cells)| {
+                o != id
+                    && crate::model::inside_cells(cells.0, (*near, *far))
+                    && crate::model::inside_cells(cells.1, (*near, *far))
+            })
+            .count() as f32;
+        let inset = (GROUP_INSET + holds * GROUP_STEP).min(GAP / 2.0 - 6.0);
+        let rect = Rect {
+            min: Pos::new(grid.col_x[c0] - inset, grid.row_y[r0] - inset),
+            max: Pos::new(
+                grid.col_x[c1] + grid.col_w[c1] + inset,
+                grid.row_y[r1] + grid.row_h[r1] + inset,
+            ),
+        };
+        rects.insert(*id, (rect, (c0, c1), (r0, r1)));
+        blocks.push(BlockGeom {
+            id: *id,
+            rect,
+            name: b.name.clone(),
+            kind: b.kind,
+            fill: b.color.unwrap_or(DEFAULT_FILL),
+            has_content: false,
+            band: false,
+        });
+    }
     for id in &view.blocks {
         let (Some(b), Some((cell, w, h))) = (project.blocks.get(id), sizes.get(id)) else {
             continue;
@@ -341,7 +407,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             grid.row_y[ri] + grid.row_h[ri] / 2.0,
         );
         let rect = Rect::from_center(center, *w, *h);
-        rects.insert(*id, (rect, ci, ri));
+        rects.insert(*id, (rect, (ci, ci), (ri, ri)));
         let fill = b.color.unwrap_or_else(|| {
             b.tag
                 .and_then(|t| project.tags.get(&t))
@@ -523,14 +589,14 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     for ((owner, side), list) in &ports {
         let (rect, chan) = match owner {
             Owner::Block(id) => {
-                let Some((rect, ci, ri)) = rects.get(id) else {
+                let Some((rect, (c0, c1), (r0, r1))) = rects.get(id) else {
                     continue;
                 };
                 let chan = match side {
-                    Side::Right => Chan::V(ci + 1),
-                    Side::Left => Chan::V(*ci),
-                    Side::Top => Chan::H(*ri),
-                    Side::Bottom => Chan::H(ri + 1),
+                    Side::Right => Chan::V(c1 + 1),
+                    Side::Left => Chan::V(*c0),
+                    Side::Top => Chan::H(*r0),
+                    Side::Bottom => Chan::H(r1 + 1),
                 };
                 (*rect, chan)
             }
@@ -579,7 +645,12 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         Some((Owner::Frame, _)) => side.opposite(),
         _ => side,
     };
-    let boxes: Vec<Rect> = blocks.iter().map(|b| b.rect).collect();
+    // Lines cross group frames freely.
+    let boxes: Vec<Rect> = blocks
+        .iter()
+        .filter(|b| b.kind != BlockKind::Group)
+        .map(|b| b.rect)
+        .collect();
     for _ in 0..2 {
         for li in 0..view.lines.len() {
             let Some((a, b)) = both(li) else { continue };

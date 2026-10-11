@@ -119,6 +119,10 @@ pub fn scene(layout: &Layout) -> Scene {
         }
     }
     for block in &layout.blocks {
+        if block.kind == BlockKind::Group {
+            group_shapes(&mut shapes, block);
+            continue;
+        }
         block_shapes(&mut shapes, block.kind, block.rect, block.fill);
         let c = block.rect.center();
         if layout.captions {
@@ -275,6 +279,8 @@ fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
             fill,
             stroke: None,
         }),
+        // A group's frame is drawn on its own, behind the shapes.
+        BlockKind::Group => {}
         BlockKind::Component | BlockKind::Page => shapes.push(Shape::Rect {
             rect: r,
             radius: 4.0,
@@ -398,6 +404,45 @@ fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
             stroke: Some(Stroke::dashed(1.5, INK)),
         }),
     }
+}
+
+/// A group: a rounded frame (tinted when it has a colour) and its name at the top
+/// left, inside the frame.
+fn group_shapes(shapes: &mut Vec<Shape>, block: &crate::layout::BlockGeom) {
+    let tinted = block.fill != crate::layout::DEFAULT_FILL;
+    shapes.push(Shape::Rect {
+        rect: block.rect,
+        radius: 10.0,
+        fill: tinted.then_some(block.fill),
+        stroke: Some(Stroke::solid(1.2, FRAME)),
+    });
+    let r = group_label_rect(block);
+    // The name sits on the frame's top edge, which it interrupts.
+    shapes.push(Shape::Rect {
+        rect: r.expand(2.0),
+        radius: 3.0,
+        fill: Some(if tinted { block.fill } else { PAPER }),
+        stroke: None,
+    });
+    shapes.push(Shape::Text {
+        pos: Pos::new(r.min.x, r.center().y),
+        text: block.name.lines().next().unwrap_or_default().to_owned(),
+        size: LABEL_SIZE,
+        color: MUTED,
+        align: Align::Left,
+    });
+}
+
+/// Where a group's name is written: the place to click to select the group.
+pub fn group_label_rect(block: &crate::layout::BlockGeom) -> Rect {
+    let name = block.name.lines().next().unwrap_or_default();
+    let w = text::width(name, LABEL_SIZE).max(20.0);
+    let h = LABEL_SIZE + 6.0;
+    Rect::from_min_size(
+        Pos::new(block.rect.min.x + 12.0, block.rect.min.y - h / 2.0),
+        w,
+        h,
+    )
 }
 
 /// The outline of a cloud: an ellipse with bumps.

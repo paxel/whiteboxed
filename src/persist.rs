@@ -124,6 +124,9 @@ struct BlockDto {
     /// A doodle shape's own colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color: Option<Rgb>,
+    /// A group's far corner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    span: Option<Cell>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     responsibility: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -240,9 +243,10 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 kind: b.kind,
                 parent: b.parent,
                 tag: b.tag,
-                cell: (!b.gridless()).then_some(b.cell),
+                cell: (!(b.band || b.kind == BlockKind::Page)).then_some(b.cell),
                 band: b.band,
                 color: b.color,
+                span: b.span,
                 responsibility: b.responsibility.clone(),
                 motivation: b.motivation.clone(),
             })
@@ -333,6 +337,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 cell,
                 band: b.band,
                 color: b.color,
+                span: b.span,
                 responsibility: b.responsibility,
                 motivation: b.motivation,
             },
@@ -428,6 +433,9 @@ fn check(project: &Project) -> Result<(), PersistError> {
     }
     if project.is_doodle() && project.pages().is_empty() {
         return invalid("a doodle without pages".into());
+    }
+    if !project.groups_valid() {
+        return invalid("a group's rectangle is broken or partly overlaps another".into());
     }
     let mut per_owner: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
     for r in project.relations.values() {

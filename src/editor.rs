@@ -161,6 +161,11 @@ pub enum Popup {
     },
     /// Split a relation into one per pair of boxes.
     Split(SplitForm),
+    /// Frame doodle shapes as a new group.
+    Frame {
+        form: BlockForm,
+        shapes: Vec<BlockId>,
+    },
     /// Choose which of several relations drawn as one line to edit.
     ChooseRelation(Vec<RelationId>),
     /// Dissolve the whitebox of `block`; its own texts are lost.
@@ -863,6 +868,13 @@ impl Editor {
                 }
             }
             Popup::ChooseRelation(_) => {}
+            Popup::Frame { form, shapes } => {
+                if let Some(id) = self.apply(|p| p.add_group(&shapes, &form.name, form.color)) {
+                    self.selected = Some(id);
+                    self.also_selected.clear();
+                    self.popup = None;
+                }
+            }
             Popup::Split(form) => {
                 let n = form.cols.len();
                 let parts: Vec<crate::model::SplitPart> = form
@@ -1097,6 +1109,34 @@ impl Editor {
             .into_iter()
             .chain(self.also_selected.iter().copied())
             .collect()
+    }
+
+    /// Asks for the name of a group around the selection (or `at` alone).
+    pub fn start_frame(&mut self, at: BlockId) {
+        let mut shapes = self.selection();
+        if !shapes.contains(&at) {
+            shapes = vec![at];
+        }
+        self.popup = Some(Popup::Frame {
+            form: BlockForm {
+                kind: BlockKind::Group,
+                ..BlockForm::default()
+            },
+            shapes,
+        });
+    }
+
+    /// Widens `group` to take in the other selected shapes.
+    pub fn widen_group(&mut self, group: BlockId) {
+        let shapes: Vec<BlockId> = self
+            .selection()
+            .into_iter()
+            .filter(|s| *s != group)
+            .collect();
+        if self.apply(|p| p.widen_group(group, &shapes)).is_some() {
+            self.selected = Some(group);
+            self.also_selected.clear();
+        }
     }
 
     /// Asks for the new box that the selection and `at` go into.

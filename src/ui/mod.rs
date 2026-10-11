@@ -170,6 +170,47 @@ impl App {
         self.picking
     }
 
+    /// Right-click on a doodle shape or group: frame the selection as a group, or
+    /// widen the group to it.
+    fn doodle_menu(&mut self, ui: &mut Ui, b: BlockId) {
+        let is_group = self
+            .editor
+            .project
+            .blocks
+            .get(&b)
+            .is_some_and(|x| x.kind == crate::model::BlockKind::Group);
+        let selection = self.editor.selection();
+        if is_group {
+            let others = selection.iter().filter(|s| **s != b).count();
+            if ui
+                .add_enabled(others > 0, Button::new("Widen to the selection"))
+                .on_hover_text("Ctrl+click shapes first; the frame grows around them")
+                .clicked()
+            {
+                self.editor.widen_group(b);
+            }
+        } else {
+            let n = if selection.contains(&b) {
+                selection.len()
+            } else {
+                1
+            };
+            let label = if n > 1 {
+                format!("Frame {n} shapes as group\u{2026}")
+            } else {
+                "Frame as group\u{2026}".to_owned()
+            };
+            if ui
+                .button(label)
+                .on_hover_text("Ctrl+click shapes to frame several")
+                .clicked()
+            {
+                self.focus = true;
+                self.editor.start_frame(b);
+            }
+        }
+    }
+
     /// The further relations the clicked line stands for.
     fn bundle_of(&mut self, rel: RelationId, landing: Option<BlockId>) -> Vec<RelationId> {
         self.editor
@@ -780,7 +821,7 @@ impl App {
             self.drag = match start.map(|p| hit_with(view, p)) {
                 // Bands stay at the bottom; they cannot be dragged.
                 Some(Hit::Block(b))
-                    if !self.picks() && project.blocks.get(&b).is_some_and(|x| !x.band) =>
+                    if !self.picks() && project.blocks.get(&b).is_some_and(|x| !x.gridless()) =>
                 {
                     Some(b)
                 }
@@ -1002,7 +1043,11 @@ impl App {
                 }
                 resp.ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
-            Hit::Block(b) if layout.block(b).is_some_and(|g| !g.band) => {
+            Hit::Block(b)
+                if layout
+                    .block(b)
+                    .is_some_and(|g| !g.band && g.kind != crate::model::BlockKind::Group) =>
+            {
                 resp.ctx.set_cursor_icon(CursorIcon::Grab);
             }
             Hit::Block(_) => {}
@@ -1102,6 +1147,9 @@ impl App {
                 if ui.button("Edit\u{2026}").clicked() {
                     self.focus = true;
                     self.editor.start_edit_block(b);
+                }
+                if self.editor.project.is_doodle() {
+                    self.doodle_menu(ui, b);
                 }
                 // Whiteboxes and moving between levels exist in arc42 projects only.
                 if !self.editor.project.is_doodle() {

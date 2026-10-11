@@ -40,6 +40,7 @@ pub fn show(
         Popup::ConfirmDissolve { .. } => ("Dissolve whitebox", "dissolve"),
         Popup::ChooseRelation(_) => ("Which relation?", "choose"),
         Popup::Split(_) => ("Split relation", "split"),
+        Popup::Frame { .. } => ("Frame as group", "frame"),
         Popup::OpenEnd { .. } => ("Connect open end", "open-end"),
         Popup::Restore(_) => ("Unsaved changes found", "restore"),
     };
@@ -75,7 +76,9 @@ pub fn show(
 /// Whether the popup edits the text of a shape (not a page).
 fn shape_text(popup: &Popup) -> bool {
     match popup {
-        Popup::AddBlock(form, _) | Popup::EditBlock(_, form) => form.kind != BlockKind::Page,
+        Popup::AddBlock(form, _) | Popup::EditBlock(_, form) => {
+            !matches!(form.kind, BlockKind::Page | BlockKind::Group)
+        }
         Popup::Connect(form) => form.mode == ConnectMode::New,
         _ => false,
     }
@@ -233,6 +236,15 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 if *count == 1 { "" } else { "es" }
             ));
             ok_cancel(ui, "Delete")
+        }
+        Popup::Frame { form, shapes } => {
+            let n = shapes.len();
+            ui.label(format!(
+                "A frame around {n} shape{} and everything between them.",
+                if n == 1 { "" } else { "s" }
+            ));
+            doodle_form(ui, editor, form, focus);
+            ok_cancel(ui, "Frame")
         }
         Popup::Split(form) => {
             ui.label("Tick who talks to whom. Every ticked pair becomes its own relation.");
@@ -428,21 +440,29 @@ fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bo
 
 /// A doodle shape: text over several lines, a shape, and a colour.
 fn doodle_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bool) {
-    ui.label("Text");
-    let text = ui.add(
-        egui::TextEdit::multiline(&mut form.name)
-            .desired_rows(3)
-            .desired_width(260.0),
-    );
+    let group = form.kind == BlockKind::Group;
+    ui.label(if group { "Name" } else { "Text" });
+    let field = if group {
+        egui::TextEdit::singleline(&mut form.name)
+    } else {
+        egui::TextEdit::multiline(&mut form.name).desired_rows(3)
+    };
+    let text = ui.add(field.desired_width(260.0));
     if std::mem::take(focus) {
         text.request_focus();
     }
-    ui.label(
-        RichText::new("Enter starts a new line; Ctrl+Enter confirms.")
-            .weak()
-            .small(),
-    );
+    if !group {
+        ui.label(
+            RichText::new("Enter starts a new line; Ctrl+Enter confirms.")
+                .weak()
+                .small(),
+        );
+    }
+    // A group has a name and a colour, no shape.
     ui.horizontal(|ui| {
+        if group {
+            return;
+        }
         ui.label("Shape");
         egui::ComboBox::from_id_salt("shape-kind")
             .selected_text(form.kind.doodle_label())

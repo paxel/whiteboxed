@@ -43,6 +43,13 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
             _ => return Hit::OpenEnd(OpenEnd::Stub(line.relation)),
         }
     }
+    // A group's name first: it may lie next to a shape's border.
+    for b in &layout.blocks {
+        if b.kind == crate::model::BlockKind::Group && crate::scene::group_label_rect(b).contains(p)
+        {
+            return Hit::Block(b.id);
+        }
+    }
     for b in layout.blocks.iter().rev() {
         let r = b.rect;
         if !r.expand(border).contains(p) {
@@ -50,6 +57,12 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
         }
         // Bands have no lines, so no border to start one from.
         if b.band {
+            return Hit::Block(b.id);
+        }
+        // A group frame: its label selects it, its border connects; the inside
+        // belongs to the shapes in it and to empty space.
+        let group = b.kind == crate::model::BlockKind::Group;
+        if group && crate::scene::group_label_rect(b).contains(p) {
             return Hit::Block(b.id);
         }
         let distances = [
@@ -65,6 +78,9 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
             });
         if d <= border {
             return Hit::Side(b.id, side);
+        }
+        if group {
+            continue;
         }
         return Hit::Block(b.id);
     }

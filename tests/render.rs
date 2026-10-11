@@ -577,6 +577,18 @@ fn doodle() -> Result<Editor, Box<dyn std::error::Error>> {
         "logs",
     )?;
     p.set_relation_pattern(logs, whiteboxed::model::LinePattern::Dashed)?;
+    let store = *p
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Log store")
+        .ok_or("log store")?
+        .0;
+    p.add_group(&[lb], "DMZ", None)?;
+    p.add_group(
+        &[lb, app, store],
+        "Cloud account",
+        Some(Rgb(0xe8, 0xf1, 0xfb)),
+    )?;
     let mut e = editor_with(p);
     e.open_diagram(Some(page));
     Ok(e)
@@ -591,14 +603,12 @@ fn doc_screenshot_doodle() -> TestResult {
 }
 
 #[test]
-#[ignore = "writes target/doodle-network.png (needs wgpu)"]
-fn doodle_network_page() -> TestResult {
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_doodle_network() -> TestResult {
     let mut e = doodle()?;
     let net = e.project.pages()[1];
     e.open_diagram(Some(net));
     let mut h = harness(e);
     h.run();
-    let img = h.render()?;
-    img.save("target/doodle-network.png")?;
-    Ok(())
+    save(&mut h, "doodle-network")
 }

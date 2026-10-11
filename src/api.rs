@@ -1276,6 +1276,7 @@ fn kind_name(k: BlockKind) -> &'static str {
         BlockKind::Document => "document",
         BlockKind::Cloud => "cloud",
         BlockKind::Note => "note",
+        BlockKind::Group => "group",
     }
 }
 

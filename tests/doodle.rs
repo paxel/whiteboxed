@@ -1,4 +1,5 @@
 use whiteboxed::editor::{Editor, Popup};
+use whiteboxed::geom::Pos;
 use whiteboxed::layout;
 use whiteboxed::model::{BlockKind, BlockSpec, Direction, ModelError, Project, ProjectKind, Side};
 use whiteboxed::persist;
@@ -265,5 +266,112 @@ fn lines_with_different_patterns_are_not_bundled() -> TestResult {
             .len(),
         2
     );
+    Ok(())
+}
+
+/// A page with shapes in a 3x2 grid: a b c / d e f.
+fn grid_page() -> Result<
+    (
+        Project,
+        whiteboxed::model::BlockId,
+        Vec<whiteboxed::model::BlockId>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    use whiteboxed::model::Cell;
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    let mut ids = Vec::new();
+    for (i, name) in ["a", "b", "c", "d", "e", "f"].iter().enumerate() {
+        let id = p.add_block(Some(page), &shape(name))?;
+        p.move_block(id, Cell::new(i as i32 % 3, i as i32 / 3))?;
+        ids.push(id);
+    }
+    Ok((p, page, ids))
+}
+
+#[test]
+fn a_group_frames_a_rectangle_and_owns_what_lies_inside() -> TestResult {
+    use whiteboxed::model::Cell;
+    let (mut p, page, ids) = grid_page()?;
+    // Framing a and e takes in b and d too: they lie in the rectangle.
+    let g = p.add_group(&[ids[0], ids[4]], "DMZ", None)?;
+    let mut members = p.members(g);
+    members.sort();
+    assert_eq!(members, vec![ids[0], ids[1], ids[3], ids[4]]);
+    assert_eq!(p.groups_on(page), vec![g]);
+    // Nested inside is fine, partly over it is not.
+    let inner = p.add_group(&[ids[0]], "Web", None)?;
+    assert_eq!(p.members(inner), vec![ids[0]]);
+    assert_eq!(
+        p.add_group(&[ids[1], ids[2]], "Over", None),
+        Err(ModelError::GroupsOverlap)
+    );
+    // Widening takes in the third column; the inner group stays inside.
+    p.widen_group(g, &[ids[5]])?;
+    assert_eq!(p.block(g)?.span, Some(Cell::new(2, 1)));
+    // A shape that moves out of the rectangle leaves the group.
+    p.move_block(ids[0], Cell::new(4, 0))?;
+    assert!(!p.members(g).contains(&ids[0]));
+    let back = persist::from_yaml(&persist::to_yaml(&p)?)?;
+    assert_eq!(back.block(g)?.span, Some(Cell::new(2, 1)));
+    Ok(())
+}
+
+#[test]
+fn a_group_is_a_line_end_but_not_to_its_own_shapes() -> TestResult {
+    use whiteboxed::model::{Cell, Placement};
+    let (mut p, page, ids) = grid_page()?;
+    let g = p.add_group(&[ids[0], ids[1]], "Zone", None)?;
+    let net = p.add_block(Some(page), &BlockSpec::new("Internet", BlockKind::Cloud))?;
+    p.move_block(net, Cell::new(0, 3))?;
+    let rel = p.connect_existing(net, Side::Top, g, Direction::Out, "", Placement::Keep)?;
+    assert_eq!(
+        p.connect_existing(ids[0], Side::Top, g, Direction::Out, "", Placement::Keep),
+        Err(ModelError::GroupMember)
+    );
+    let l = layout::layout(&p, &diagram_view(&p, Some(page)));
+    let frame = l.block(g).ok_or("group")?.rect;
+    for id in &ids[0..2] {
+        let r = l.block(*id).ok_or("shape")?.rect;
+        assert!(frame.holds(&r), "{r:?} not in {frame:?}");
+    }
+    let line = l.lines.iter().find(|x| x.relation == rel).ok_or("line")?;
+    let end = line.points[line.points.len() - 1];
+    assert!(
+        (end.y - frame.max.y).abs() < 0.5,
+        "the line ends on the frame: {end:?}"
+    );
+    // Inside the frame, a click on empty space is no click on the group.
+    let empty = Pos::new(frame.center().x, frame.max.y - 6.0 - 10.0);
+    assert_ne!(
+        whiteboxed::hit::hit(&p, &l, empty, 1.0),
+        whiteboxed::hit::Hit::Block(g)
+    );
+    let label = whiteboxed::scene::group_label_rect(l.block(g).ok_or("group")?).center();
+    assert_eq!(
+        whiteboxed::hit::hit(&p, &l, label, 1.0),
+        whiteboxed::hit::Hit::Block(g)
+    );
+    Ok(())
+}
+
+#[test]
+fn overlapping_groups_in_a_file_are_refused() -> TestResult {
+    let (mut p, _, ids) = grid_page()?;
+    p.add_group(&[ids[0], ids[1]], "One", None)?;
+    p.add_group(&[ids[3], ids[4]], "Two", None)?;
+    // Stretch the second group over half of the first, behind the model's back.
+    let two = *p
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Two")
+        .ok_or("two")?
+        .0;
+    if let Some(b) = p.blocks.get_mut(&two) {
+        b.cell = whiteboxed::model::Cell::new(1, 0);
+        b.span = Some(whiteboxed::model::Cell::new(2, 1));
+    }
+    assert!(persist::from_yaml(&persist::to_yaml(&p)?).is_err());
     Ok(())
 }

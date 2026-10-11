@@ -1402,3 +1402,45 @@ fn a_doodle_shape_takes_several_lines_and_a_shape() -> TestResult {
     assert_eq!(shape.name, "Check token\nvalid?");
     Ok(())
 }
+
+#[test]
+fn ctrl_selected_shapes_are_framed_as_a_group() -> TestResult {
+    let mut e = Editor::new_doodle(None);
+    let page = e.diagram.ok_or("page")?;
+    let a = e
+        .project
+        .add_block(Some(page), &BlockSpec::new("A", BlockKind::Component))?;
+    let b = e
+        .project
+        .add_block(Some(page), &BlockSpec::new("B", BlockKind::Component))?;
+    e.selected = Some(a);
+    e.also_selected.insert(b);
+    let mut h = harness(e);
+    h.run();
+    let c = h
+        .state_mut()
+        .editor
+        .layout()
+        .block(b)
+        .ok_or("b")?
+        .rect
+        .center();
+    let at = screen(&h, c)?;
+    press(&mut h, at, PointerButton::Secondary);
+    h.run();
+    h.get_by_label("Frame 2 shapes as group\u{2026}").click();
+    h.run();
+    type_and_enter(&mut h, "Backend");
+    let p = &h.state().editor.project;
+    let group = p
+        .blocks
+        .iter()
+        .find(|(_, x)| x.kind == BlockKind::Group)
+        .map(|(id, _)| *id)
+        .ok_or("no group")?;
+    assert_eq!(p.block(group)?.name, "Backend");
+    let mut members = p.members(group);
+    members.sort();
+    assert_eq!(members, vec![a, b]);
+    Ok(())
+}

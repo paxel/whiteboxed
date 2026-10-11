@@ -7,6 +7,8 @@
 //! every further anchor is a block inside the whitebox of the previous one. An empty
 //! chain is an open end (a stub).
 
+mod doodle;
+pub use doodle::inside as inside_cells;
 mod edit;
 mod restructure;
 
@@ -58,6 +60,8 @@ pub enum BlockKind {
     Cloud,
     /// Text without a border.
     Note,
+    /// A labelled frame around a rectangle of cells on a doodle page.
+    Group,
 }
 
 impl BlockKind {
@@ -89,6 +93,7 @@ impl BlockKind {
             BlockKind::Document => "document",
             BlockKind::Cloud => "cloud",
             BlockKind::Note => "note",
+            BlockKind::Group => "group",
         }
     }
 
@@ -124,6 +129,7 @@ impl BlockKind {
                 | BlockKind::Document
                 | BlockKind::Cloud
                 | BlockKind::Note
+                | BlockKind::Group
         )
     }
 
@@ -325,6 +331,9 @@ pub struct Block {
     pub band: bool,
     /// A doodle shape's own colour; `None`: the tag's or the default.
     pub color: Option<Rgb>,
+    /// A group's far corner; `cell` is the near one. Every shape in the rectangle
+    /// belongs to the group.
+    pub span: Option<Cell>,
     /// What this building block is responsible for (arc42 blackbox description).
     pub responsibility: String,
     /// Why the whitebox of this block is decomposed the way it is.
@@ -529,6 +538,12 @@ pub enum ModelError {
     NoOpenEnds,
     #[error("{0} shapes exist only in doodles")]
     DoodleOnly(&'static str),
+    #[error("a group can lie inside another one, but not partly over it")]
+    GroupsOverlap,
+    #[error("a group needs at least one shape")]
+    EmptyGroup,
+    #[error("a group and a shape inside it cannot be connected")]
+    GroupMember,
     #[error("pages only exist in doodles, as the top level")]
     PageOutOfPlace,
     #[error("a relation with an open end cannot be split")]
@@ -663,9 +678,15 @@ impl Default for Project {
 }
 
 impl Block {
-    /// Whether the box takes no grid cell: a band, or a doodle page.
+    /// Whether the box takes no grid cell of its own: a band, a doodle page, or a
+    /// group (which spans cells).
     pub fn gridless(&self) -> bool {
-        self.band || self.kind == BlockKind::Page
+        self.band || matches!(self.kind, BlockKind::Page | BlockKind::Group)
+    }
+
+    /// A group's rectangle of cells: near and far corner.
+    pub fn group_cells(&self) -> Option<(Cell, Cell)> {
+        (self.kind == BlockKind::Group).then(|| (self.cell, self.span.unwrap_or(self.cell)))
     }
 }
 

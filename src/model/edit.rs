@@ -723,6 +723,7 @@ impl Project {
                 cell: if spec.band { Cell::new(0, 0) } else { cell },
                 band: spec.band,
                 color: spec.color,
+                span: None,
                 responsibility: String::new(),
                 motivation: String::new(),
             },
@@ -827,6 +828,7 @@ impl Project {
         }
         self.check_lines(from)?;
         self.check_lines(target)?;
+        self.check_group_pair(from, target)?;
         let diagram = self.block(from)?.parent;
         if self.block(target)?.parent != diagram {
             return Err(ModelError::DifferentDiagrams);
