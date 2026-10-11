@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Doodle shapes: box, rounded box, circle, diamond, cylinder, document, cloud, person and note, each with its own colour; lines reach the outline of round and pointed shapes.
 - Doodle lines can be solid, dashed or dotted.
 - Doodle groups: labelled frames around a rectangle of cells, nestable, with their own colour; a line can end at a group.
+- Doodle export: SVG and PNG per page, and the HTML document with all pages as tabs.
 
 ---
 

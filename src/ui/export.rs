@@ -42,7 +42,12 @@ impl ExportDialog {
             .breadcrumb()
             .last()
             .map_or_else(|| "Context".to_owned(), |(_, name)| name.clone());
-        let count = doc::diagrams(&editor.project).len();
+        let doodle = editor.project.is_doodle();
+        let count = if doodle {
+            editor.project.pages().len()
+        } else {
+            doc::diagrams(&editor.project).len()
+        };
         let c = &mut self.choice;
         egui::Window::new("Export")
             .open(&mut open)
@@ -53,8 +58,13 @@ impl ExportDialog {
             .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
                 ui.label(RichText::new("What").strong());
-                ui.radio_value(&mut c.all, false, format!("This diagram ({current})"));
-                ui.radio_value(&mut c.all, true, format!("All diagrams ({count})"));
+                let (one, all) = if doodle {
+                    ("This page", "All pages")
+                } else {
+                    ("This diagram", "All diagrams")
+                };
+                ui.radio_value(&mut c.all, false, format!("{one} ({current})"));
+                ui.radio_value(&mut c.all, true, format!("{all} ({count})"));
                 ui.add_space(8.0);
 
                 ui.label(RichText::new("Pictures").strong());
@@ -69,24 +79,31 @@ impl ExportDialog {
                 });
                 ui.add_space(8.0);
 
-                ui.label(RichText::new("Text").strong());
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut c.text, None, "none");
-                    ui.radio_value(&mut c.text, Some(DocFormat::AsciiDoc), "AsciiDoc");
-                    ui.radio_value(&mut c.text, Some(DocFormat::Markdown), "Markdown");
-                });
-                ui.label(
-                    RichText::new(
-                        "One file per diagram with the arc42 tables; with all diagrams also \
-                         an index.",
-                    )
-                    .weak(),
-                );
+                // A doodle has no arc42 texts.
+                if !doodle {
+                    ui.label(RichText::new("Text").strong());
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut c.text, None, "none");
+                        ui.radio_value(&mut c.text, Some(DocFormat::AsciiDoc), "AsciiDoc");
+                        ui.radio_value(&mut c.text, Some(DocFormat::Markdown), "Markdown");
+                    });
+                    ui.label(
+                        RichText::new(
+                            "One file per diagram with the arc42 tables; with all diagrams also \
+                             an index.",
+                        )
+                        .weak(),
+                    );
+                }
                 ui.checkbox(&mut c.html, "HTML document");
                 ui.label(
                     RichText::new(
-                        "One file with every diagram, text and table, linked by clicks; \
-                         always all diagrams.",
+                        if doodle {
+                            "One file with every page as a tab; always all pages."
+                        } else {
+                            "One file with every diagram, text and table, linked by clicks; \
+                             always all diagrams."
+                        },
                     )
                     .weak(),
                 );
@@ -125,7 +142,7 @@ impl ExportDialog {
                     ui.label(RichText::new(error).color(Color32::from_rgb(0xc0, 0x30, 0x30)));
                 }
                 ui.add_space(10.0);
-                let something = c.svg || c.png || c.text.is_some() || c.html;
+                let something = c.svg || c.png || (c.text.is_some() && !doodle) || c.html;
                 ui.horizontal(|ui| {
                     let ready = something && self.folder.is_some();
                     if ui.add_enabled(ready, egui::Button::new("Export")).clicked() {

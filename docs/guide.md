@@ -435,6 +435,10 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 - Placing, connecting by clicking a border, routing, line styles, undo and saving work
   as in a project.
 
+**File > Export…** writes the current page or all pages as SVG and PNG (named after the
+pages), and the **HTML document**: one file with every page as a tab. A doodle has no
+arc42 texts to export.
+
 A doodle is saved like a project, as YAML with `kind: doodle` at the top; **File >
 Open** opens both.
 

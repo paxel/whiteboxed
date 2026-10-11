@@ -1345,10 +1345,17 @@ impl Editor {
     /// over them, and one HTML file with everything (named after the project).
     /// Returns the number of files written.
     pub fn export(&self, choice: &ExportChoice, dir: &Path) -> Result<usize, ExportError> {
-        let diagrams = if choice.all {
-            doc::diagrams(&self.project)
-        } else {
-            vec![self.diagram]
+        let doodle = self.project.is_doodle();
+        let diagrams = match (choice.all, doodle) {
+            (true, true) => self.project.pages().into_iter().map(Some).collect(),
+            (true, false) => doc::diagrams(&self.project),
+            (false, _) => vec![self.diagram],
+        };
+        // A doodle has no arc42 texts.
+        let text = if doodle { None } else { choice.text };
+        let choice = &ExportChoice {
+            text,
+            ..choice.clone()
         };
         let mut files = 0;
         let mut entries = Vec::new();
@@ -1393,10 +1400,15 @@ impl Editor {
 
     /// The title of exported documents: the project's name, else its file name.
     fn doc_title(&self) -> String {
+        let fallback = if self.project.is_doodle() {
+            "Doodle"
+        } else {
+            "Architecture"
+        };
         self.project
             .display_name()
             .or_else(|| self.file_stem())
-            .unwrap_or_else(|| "Architecture".to_owned())
+            .unwrap_or_else(|| fallback.to_owned())
     }
 
     /// The file the HTML document export writes, named after the project.
@@ -1444,6 +1456,12 @@ impl Editor {
 
     /// File name for a diagram: its breadcrumb, e.g. `context - Shop - Orders`.
     pub fn file_name_for(&self, diagram: DiagramId) -> String {
+        // A doodle page is named after itself.
+        if self.project.is_doodle()
+            && let Some(page) = diagram.and_then(|d| self.project.blocks.get(&d))
+        {
+            return safe_file_name(&page.name);
+        }
         let mut parts = vec!["context".to_owned()];
         for id in self.project.path(diagram) {
             if let Some(b) = self.project.blocks.get(&id) {

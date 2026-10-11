@@ -375,3 +375,37 @@ fn overlapping_groups_in_a_file_are_refused() -> TestResult {
     assert!(persist::from_yaml(&persist::to_yaml(&p)?).is_err());
     Ok(())
 }
+
+#[test]
+fn a_doodle_exports_its_pages_and_one_html_with_tabs() -> TestResult {
+    use whiteboxed::doc::DocFormat;
+    use whiteboxed::model::ExportChoice;
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new_doodle(None);
+    let first = e.diagram.ok_or("page")?;
+    e.project.add_block(Some(first), &shape("A"))?;
+    let second = e.project.add_page("Network")?;
+    e.project.add_block(Some(second), &shape("B"))?;
+    let choice = ExportChoice {
+        all: true,
+        svg: true,
+        png: false,
+        png_scale: 2,
+        text: Some(DocFormat::Markdown),
+        html: true,
+        folder: String::new(),
+    };
+    e.export(&choice, dir.path())?;
+    let mut names: Vec<String> = std::fs::read_dir(dir.path())?
+        .filter_map(|f| f.ok())
+        .map(|f| f.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    // Pages by name, no text files, the HTML named after the doodle.
+    assert_eq!(names, vec!["Doodle.html", "Network.svg", "Page 1.svg"]);
+    let page = std::fs::read_to_string(dir.path().join("Doodle.html"))?;
+    assert!(page.contains(&format!("href=\"#page-{}\"", first.0)));
+    assert!(page.contains(&format!("id=\"page-{}\"", second.0)));
+    assert!(!page.contains("<table"));
+    Ok(())
+}

@@ -15,17 +15,12 @@ use crate::{export, scene};
 
 /// The whole document. `title` names the system.
 pub fn html_doc(project: &Project, title: &str) -> String {
+    if project.is_doodle() {
+        return doodle_doc(project, title);
+    }
     let diagrams = doc::diagrams(project);
     let mut out = String::new();
-    out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
-    out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
-    let _ = writeln!(out, "<title>{}</title>", esc(title));
-    let font = base64::engine::general_purpose::STANDARD.encode(epaint_default_fonts::UBUNTU_LIGHT);
-    let _ = writeln!(
-        out,
-        "<style>@font-face {{ font-family: \"Ubuntu\"; font-weight: 300; src: url(data:font/ttf;base64,{font}) format(\"truetype\"); }}</style>"
-    );
-    out.push_str(STYLE);
+    head(&mut out, title);
     out.push_str("</head>\n<body>\n");
     out.push_str("<div class=\"tools\"><button id=\"theme\" type=\"button\">Dark</button></div>\n");
     out.push_str("<div class=\"page\">\n<nav class=\"rail\" aria-label=\"Diagrams\">\n");
@@ -45,6 +40,98 @@ pub fn html_doc(project: &Project, title: &str) -> String {
     out.push_str("</body>\n</html>\n");
     out
 }
+
+/// The start of the document: title, embedded font, styles.
+fn head(out: &mut String, title: &str) {
+    out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+    out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    let _ = writeln!(out, "<title>{}</title>", esc(title));
+    let font = base64::engine::general_purpose::STANDARD.encode(epaint_default_fonts::UBUNTU_LIGHT);
+    let _ = writeln!(
+        out,
+        "<style>@font-face {{ font-family: \"Ubuntu\"; font-weight: 300; src: url(data:font/ttf;base64,{font}) format(\"truetype\"); }}</style>"
+    );
+    out.push_str(STYLE);
+}
+
+/// A doodle: its pages as tabs, each a picture; printing shows them all.
+fn doodle_doc(project: &Project, title: &str) -> String {
+    let mut out = String::new();
+    head(&mut out, title);
+    out.push_str(DOODLE_STYLE);
+    out.push_str("</head>\n<body>\n");
+    out.push_str("<div class=\"tools\"><button id=\"theme\" type=\"button\">Dark</button></div>\n");
+    let _ = writeln!(out, "<header class=\"doodle\"><h1>{}</h1>", esc(title));
+    out.push_str("<nav class=\"tabs\" aria-label=\"Pages\">");
+    let pages = project.pages();
+    for page in &pages {
+        let _ = write!(
+            out,
+            "<a href=\"#page-{}\">{}</a>",
+            page.0,
+            esc(&name(project, *page))
+        );
+    }
+    out.push_str("</nav></header>\n<main class=\"pages\">\n");
+    for page in &pages {
+        let l = layout::layout(project, &view::diagram_view(project, Some(*page)));
+        let svg = export::to_svg(&scene::scene(&l));
+        let _ = writeln!(
+            out,
+            "<section class=\"page\" id=\"page-{}\"><h2>{}</h2><figure class=\"paper\"><div class=\"svgwrap\">{svg}</div></figure></section>",
+            page.0,
+            esc(&name(project, *page))
+        );
+    }
+    out.push_str("</main>\n");
+    out.push_str(DOODLE_SCRIPT);
+    out.push_str("</body>\n</html>\n");
+    out
+}
+
+const DOODLE_STYLE: &str = r#"<style>
+header.doodle { padding: 20px 40px 0; }
+header.doodle h1 { margin: 0 0 12px; font-size: 1.4rem; font-weight: 600; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--rule); }
+.tabs a { padding: 6px 14px; border-radius: 6px 6px 0 0; color: var(--fg); }
+.tabs a.here { background: var(--accent); color: var(--surface); }
+main.pages { padding: 24px 40px 80px; display: block; }
+section.page { display: none; }
+section.page.here { display: grid; gap: 12px; }
+section.page h2 { font-size: 1.2rem; }
+@media print {
+  .tabs { display: none; }
+  section.page { display: grid !important; break-before: page; }
+}
+@media (max-width: 760px) { header.doodle, main.pages { padding-left: 16px; padding-right: 16px; } }
+</style>
+"#;
+
+const DOODLE_SCRIPT: &str = r#"<script>
+(() => {
+  const root = document.documentElement;
+  const btn = document.getElementById('theme');
+  const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const label = () => { btn.textContent = dark() ? 'Light' : 'Dark'; };
+  btn.addEventListener('click', () => { root.dataset.theme = dark() ? 'light' : 'dark'; label(); });
+  label();
+  const pages = [...document.querySelectorAll('section.page')];
+  const tabs = [...document.querySelectorAll('.tabs a')];
+  const show = id => {
+    const page = pages.find(p => p.id === id) || pages[0];
+    pages.forEach(p => p.classList.toggle('here', p === page));
+    tabs.forEach(t => t.classList.toggle('here', t.getAttribute('href') === '#' + page.id));
+  };
+  tabs.forEach(t => t.addEventListener('click', e => {
+    e.preventDefault();
+    const id = t.getAttribute('href').slice(1);
+    history.replaceState(null, '', '#' + id);
+    show(id);
+  }));
+  show(location.hash.slice(1));
+})();
+</script>
+"#;
 
 /// The id of a diagram's section.
 pub fn section_id(diagram: DiagramId) -> String {
