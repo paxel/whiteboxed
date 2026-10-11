@@ -393,6 +393,23 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |
 | `batch`              | Several editing calls as one undo step, all or nothing            |
 
+With a **doodle** open, the AI works with the `doodle_` tools instead, and the tools
+above refuse (and the other way round). Doodle tools address pages, shapes, groups
+and lines by id, since texts may repeat:
+
+| Tool                  | Does                                                    |
+|-----------------------|---------------------------------------------------------|
+| `doodle_get`          | Every page with its shapes, groups and lines            |
+| `doodle_render`       | One page as PNG                                         |
+| `doodle_add_page`     | A new page; `doodle_rename_page`, `doodle_delete_page`  |
+| `doodle_add_shape`    | A shape with text, shape type, colour and cell          |
+| `doodle_edit_shape`   | Text, shape type or colour of a shape or group          |
+| `doodle_move_shape`   | A shape to another cell                                 |
+| `doodle_delete_shape` | A shape or group                                        |
+| `doodle_add_line`     | A line between two shapes or groups, with a pattern     |
+| `doodle_edit_line`    | Text, direction or pattern; `doodle_delete_line`        |
+| `doodle_group`        | A group framed around shapes; `doodle_widen_group`      |
+
 The problems `get_diagram` lists are lines that cross (both relations and where),
 labels on top of each other, and labels that do not fit inside the frame or the
 picture. The AI can then tidy the diagram with `move_box`.

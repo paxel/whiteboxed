@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 37);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -896,5 +896,66 @@ fn split_relation_makes_precise_relations() -> TestResult {
         .filter_map(|r| r["text"].as_str())
         .collect();
     assert_eq!(texts, vec!["pages", "pay"]);
+    Ok(())
+}
+
+#[test]
+fn the_ai_draws_a_doodle_by_id() -> TestResult {
+    let mut e = Editor::new(None);
+    // Not a doodle: the doodle tools refuse, and the other way round.
+    assert!(
+        matches!(call(&mut e, "doodle_get", json!({})), Err(ApiError::Rejected(m)) if m.contains("no doodle is open"))
+    );
+    let mut e = Editor::new_doodle(None);
+    assert!(
+        matches!(call(&mut e, "get_model", json!({})), Err(ApiError::Rejected(m)) if m.contains("doodle_ tools"))
+    );
+    let got = call(&mut e, "doodle_get", json!({}))?;
+    let page = got["pages"][0]["id"].as_u64().ok_or("page")?;
+    let start = call(
+        &mut e,
+        "doodle_add_shape",
+        json!({"page": page, "text": "Start", "shape": "circle"}),
+    )?;
+    let check = call(
+        &mut e,
+        "doodle_add_shape",
+        json!({"page": page, "text": "Token\nvalid?", "shape": "diamond", "color": "#ffe699"}),
+    )?;
+    assert_eq!(check["shape"], "diamond");
+    assert_eq!(check["color"], "#ffe699");
+    let (s, c) = (id(&start)?, id(&check)?);
+    let line = call(
+        &mut e,
+        "doodle_add_line",
+        json!({"from": s, "to": c, "text": "login", "pattern": "dashed"}),
+    )?;
+    assert_eq!(line["pattern"], "dashed");
+    let group = call(
+        &mut e,
+        "doodle_group",
+        json!({"shapes": [s, c], "name": "Auth"}),
+    )?;
+    assert_eq!(group["members"].as_array().map(Vec::len), Some(2));
+    let net = call(&mut e, "doodle_add_page", json!({"name": "Network"}))?;
+    assert_eq!(net["name"], "Network");
+    let Output::Png(png) = api::call(&mut e, "doodle_render", json!({"page": page}))? else {
+        return Err("expected a png".into());
+    };
+    assert_eq!(&png[1..4], b"PNG");
+    let got = call(&mut e, "doodle_get", json!({}))?;
+    assert_eq!(got["pages"].as_array().map(Vec::len), Some(2));
+    assert_eq!(got["pages"][0]["lines"][0]["text"], "login");
+    // Several steps as one.
+    call(
+        &mut e,
+        "batch",
+        json!({"steps": [
+            {"tool": "doodle_edit_line", "args": {"line": line["id"], "pattern": "dotted"}},
+            {"tool": "doodle_edit_shape", "args": {"shape": c, "color": ""}}
+        ]}),
+    )?;
+    let got = call(&mut e, "doodle_get", json!({}))?;
+    assert_eq!(got["pages"][0]["lines"][0]["pattern"], "dotted");
     Ok(())
 }

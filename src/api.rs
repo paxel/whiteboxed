@@ -20,6 +20,8 @@ use crate::model::{
 use crate::scene;
 use crate::view::{self, ViewEnd};
 
+mod doodle;
+
 /// Longest side of a rendered diagram, in pixels.
 pub const RENDER_LIMIT: f32 = 1500.0;
 
@@ -540,9 +542,19 @@ asked to allow that folder, so tell them and call it again after they agreed. \
 Boxes are addressed by id or by their path of names from the context view. The side you \
 connect on decides where the partner sits; layout is automatic, and moving a box turns \
 its lines to the sides facing their partners. Every call is one undo step for the user; \
-batch runs several calls as one step, all or nothing. Saving the project is up to the user.";
+batch runs several calls as one step, all or nothing. Saving the project is up to the user. \
+When the user has a doodle open (a free sketch of a data flow, a network or some logic, \
+on pages), only the doodle_ tools work: start with doodle_get, address everything by \
+id, use diamonds for decisions, circles for start and end, groups for zones, and \
+dashed or dotted lines for asynchronous or optional flows.";
 
 pub fn tools() -> Vec<ToolInfo> {
+    let mut all = arc42_tools();
+    all.extend(doodle::tools());
+    all
+}
+
+fn arc42_tools() -> Vec<ToolInfo> {
     vec![
         ToolInfo {
             name: "get_model",
@@ -675,6 +687,15 @@ fn args<T: for<'de> Deserialize<'de>>(value: Value) -> ApiResult<T> {
 
 /// Runs one tool against the editor.
 pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
+    if let Some(result) = doodle::call(editor, tool, arguments.clone()) {
+        return result;
+    }
+    // The arc42 tools do not fit a doodle's pages and shapes.
+    if editor.project.is_doodle() && tool != "batch" {
+        return rejected(
+            "a doodle is open: use the doodle_ tools (doodle_get lists what is there)",
+        );
+    }
     match tool {
         "get_model" => {
             let _: NoArgs = args(arguments)?;
@@ -1091,12 +1112,12 @@ fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
     if a.steps.len() > MAX_BATCH {
         return rejected(format!("a batch can hold at most {MAX_BATCH} steps"));
     }
-    if let Some((i, s)) = a
-        .steps
-        .iter()
-        .enumerate()
-        .find(|(_, s)| matches!(s.tool.as_str(), "batch" | "export_docs" | "render_diagram"))
-    {
+    if let Some((i, s)) = a.steps.iter().enumerate().find(|(_, s)| {
+        matches!(
+            s.tool.as_str(),
+            "batch" | "export_docs" | "render_diagram" | "doodle_render"
+        )
+    }) {
         return rejected(format!("step {} ({}) cannot run in a batch", i + 1, s.tool));
     }
     let mark = editor.batch_start();

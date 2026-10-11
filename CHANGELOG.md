@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Doodle lines can be solid, dashed or dotted.
 - Doodle groups: labelled frames around a rectangle of cells, nestable, with their own colour; a line can end at a group.
 - Doodle export: SVG and PNG per page, and the HTML document with all pages as tabs.
+- AI tools for doodles (doodle_get, doodle_add_shape, doodle_add_line, doodle_group …), addressed by id; with a doodle open, the arc42 tools refuse.
 
 ---
 
