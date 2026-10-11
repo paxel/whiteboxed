@@ -401,6 +401,25 @@ Boxes are addressed by id or by their path of names from the context view, as a 
 (`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare
 without case. The context view is the default diagram.
 
+## Doodles
+
+Not every box-and-line picture is an architecture. **File > New doodle** starts a free
+sketch for a data flow, a network or a bit of logic, without the arc42 rules:
+
+- A doodle has **pages**, shown as tabs under the menu. **+ Page** adds one; double-click
+  a tab (or right-click it) to rename it; right-click > **Delete page** removes it (the
+  last page stays).
+- No levels and no whiteboxes: shapes do not open, there is no breadcrumb, structure
+  tree, details panel or readability score.
+- A shape's text can span several lines, and the same text may appear more than once.
+  Every shape type can go on any page, persons too.
+- Lines connect two shapes; there are no open ends (stubs).
+- Placing, connecting by clicking a border, routing, line styles, undo and saving work
+  as in a project.
+
+A doodle is saved like a project, as YAML with `kind: doodle` at the top; **File >
+Open** opens both.
+
 ## Keys
 
 | Key                   | Does                                   |

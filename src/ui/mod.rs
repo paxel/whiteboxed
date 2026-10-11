@@ -73,6 +73,7 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
 enum Leave {
     Quit,
     New,
+    NewDoodle,
     Open(PathBuf),
 }
 
@@ -207,18 +208,24 @@ impl App {
         }
 
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
-        egui::Panel::top("breadcrumb").show(ui, |ui| self.breadcrumb(ui));
-        egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
-        egui::Panel::left("structure")
-            .resizable(true)
-            .default_size(230.0)
-            .show(ui, |ui| self.sidebar(ui));
-        egui::Panel::right("details")
-            .resizable(true)
-            .default_size(260.0)
-            .show(ui, |ui| {
-                details::show(ui, &mut self.editor, &mut self.draft)
-            });
+        if self.editor.project.is_doodle() {
+            // A doodle: pages as tabs, no levels, no arc42 texts.
+            egui::Panel::top("pages").show(ui, |ui| self.page_tabs(ui));
+            egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
+        } else {
+            egui::Panel::top("breadcrumb").show(ui, |ui| self.breadcrumb(ui));
+            egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
+            egui::Panel::left("structure")
+                .resizable(true)
+                .default_size(230.0)
+                .show(ui, |ui| self.sidebar(ui));
+            egui::Panel::right("details")
+                .resizable(true)
+                .default_size(260.0)
+                .show(ui, |ui| {
+                    details::show(ui, &mut self.editor, &mut self.draft)
+                });
+        }
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
         self.ai.dialog(&ctx, &mut self.editor);
@@ -305,7 +312,12 @@ impl App {
             self.editor.start_edit_block(selected);
         }
         if pressed(Modifiers::NONE, Key::Enter) {
-            self.editor.open_diagram(Some(selected));
+            if self.editor.project.is_doodle() {
+                self.focus = true;
+                self.editor.start_edit_block(selected);
+            } else {
+                self.editor.open_diagram(Some(selected));
+            }
         }
         for (key, side) in [
             (Key::ArrowUp, Side::Top),
@@ -326,6 +338,13 @@ impl App {
             ui.menu_button("File", |ui| {
                 if ui.button("New").clicked() {
                     self.new_project();
+                }
+                if ui
+                    .button("New doodle")
+                    .on_hover_text("A free sketch on pages, without the arc42 rules")
+                    .clicked()
+                {
+                    self.new_doodle();
                 }
                 if ui.button("Open\u{2026}").clicked() {
                     self.open();
@@ -387,7 +406,10 @@ impl App {
                     self.zoom_request = Some(ZoomStep::Actual);
                 }
                 if ui
-                    .add_enabled(self.editor.diagram.is_some(), Button::new("Up one level"))
+                    .add_enabled(
+                        self.editor.diagram.is_some() && !self.editor.project.is_doodle(),
+                        Button::new("Up one level"),
+                    )
                     .clicked()
                 {
                     self.editor.go_up();
@@ -444,6 +466,63 @@ impl App {
         self.editor.redo();
     }
 
+    /// The pages of a doodle as tabs: click to show, double-click to rename,
+    /// right-click to rename or delete, + to add one.
+    fn page_tabs(&mut self, ui: &mut Ui) {
+        let pages: Vec<(BlockId, String)> = self
+            .editor
+            .project
+            .pages()
+            .into_iter()
+            .filter_map(|p| {
+                let name = self.editor.project.blocks.get(&p)?.name.clone();
+                Some((p, name))
+            })
+            .collect();
+        let mut show = None;
+        let mut rename = None;
+        let mut delete = None;
+        let mut add = false;
+        ui.horizontal(|ui| {
+            for (page, name) in &pages {
+                let tab = ui.selectable_label(self.editor.diagram == Some(*page), name);
+                if tab.double_clicked() {
+                    rename = Some(*page);
+                } else if tab.clicked() {
+                    show = Some(*page);
+                }
+                tab.context_menu(|ui| {
+                    if ui.button("Rename\u{2026}").clicked() {
+                        rename = Some(*page);
+                    }
+                    if ui
+                        .add_enabled(pages.len() > 1, Button::new("Delete page"))
+                        .clicked()
+                    {
+                        delete = Some(*page);
+                    }
+                });
+            }
+            if ui.button("+ Page").on_hover_text("Add a page").clicked() {
+                add = true;
+            }
+        });
+        if let Some(page) = show {
+            self.editor.open_diagram(Some(page));
+        }
+        if let Some(page) = rename {
+            self.focus = true;
+            self.anchor = ui.ctx().pointer_latest_pos().unwrap_or(self.anchor);
+            self.editor.start_edit_block(page);
+        }
+        if let Some(page) = delete {
+            self.editor.request_delete(page);
+        }
+        if add {
+            self.editor.add_page();
+        }
+    }
+
     fn breadcrumb(&mut self, ui: &mut Ui) {
         let crumbs = self.editor.breadcrumb();
         let last = crumbs.len() - 1;
@@ -496,7 +575,11 @@ impl App {
                 _ => {
                     ui.label(
                         RichText::new(
-                            "Click a box border to add a relation \u{b7} double-click a box to open it \u{b7} right-click for more",
+                            if self.editor.project.is_doodle() {
+                                "Click a shape border to draw a line \u{b7} double-click to edit \u{b7} right-click for more"
+                            } else {
+                                "Click a box border to add a relation \u{b7} double-click a box to open it \u{b7} right-click for more"
+                            },
                         )
                         .weak(),
                     );
@@ -992,7 +1075,7 @@ impl App {
                     .blocks
                     .get(&b)
                     .is_some_and(|x| x.kind.can_drill());
-                if drillable {
+                if drillable && !self.editor.project.is_doodle() {
                     self.editor.open_diagram(Some(b));
                 } else {
                     self.focus = true;
@@ -1015,55 +1098,58 @@ impl App {
                     self.focus = true;
                     self.editor.start_edit_block(b);
                 }
-                let drillable = self
-                    .editor
-                    .project
-                    .blocks
-                    .get(&b)
-                    .is_some_and(|x| x.kind.can_drill());
-                if drillable && ui.button("Open whitebox").clicked() {
-                    self.editor.open_diagram(Some(b));
-                }
-                let n = {
-                    let sel = self.editor.selection();
-                    if sel.contains(&b) { sel.len() } else { 1 }
-                };
-                let label = if n > 1 {
-                    format!("Group {n} boxes into new box\u{2026}")
-                } else {
-                    "Group into new box\u{2026}".to_owned()
-                };
-                if ui
-                    .button(label)
-                    .on_hover_text("Ctrl+click boxes to group several")
-                    .clicked()
-                {
-                    self.focus = true;
-                    self.editor.start_group(b);
-                }
-                if ui
-                    .button("Move into\u{2026}")
-                    .on_hover_text("Then click the box it should go into")
-                    .clicked()
-                {
-                    self.moving_into = Some(b);
-                }
-                if self.editor.project.has_content(b)
-                    && ui
-                        .button("Dissolve whitebox\u{2026}")
-                        .on_hover_text("Its boxes take its place in this diagram")
+                // Whiteboxes and moving between levels exist in arc42 projects only.
+                if !self.editor.project.is_doodle() {
+                    let drillable = self
+                        .editor
+                        .project
+                        .blocks
+                        .get(&b)
+                        .is_some_and(|x| x.kind.can_drill());
+                    if drillable && ui.button("Open whitebox").clicked() {
+                        self.editor.open_diagram(Some(b));
+                    }
+                    let n = {
+                        let sel = self.editor.selection();
+                        if sel.contains(&b) { sel.len() } else { 1 }
+                    };
+                    let label = if n > 1 {
+                        format!("Group {n} boxes into new box\u{2026}")
+                    } else {
+                        "Group into new box\u{2026}".to_owned()
+                    };
+                    if ui
+                        .button(label)
+                        .on_hover_text("Ctrl+click boxes to group several")
                         .clicked()
-                {
-                    self.focus = true;
-                    self.editor.start_dissolve(b);
-                }
-                let nested = self.editor.diagram.is_some();
-                if ui
-                    .add_enabled(nested, Button::new("Move up a level"))
-                    .on_hover_text("Out of this whitebox, into the diagram one level up")
-                    .clicked()
-                {
-                    self.editor.move_up(b);
+                    {
+                        self.focus = true;
+                        self.editor.start_group(b);
+                    }
+                    if ui
+                        .button("Move into\u{2026}")
+                        .on_hover_text("Then click the box it should go into")
+                        .clicked()
+                    {
+                        self.moving_into = Some(b);
+                    }
+                    if self.editor.project.has_content(b)
+                        && ui
+                            .button("Dissolve whitebox\u{2026}")
+                            .on_hover_text("Its boxes take its place in this diagram")
+                            .clicked()
+                    {
+                        self.focus = true;
+                        self.editor.start_dissolve(b);
+                    }
+                    let nested = self.editor.diagram.is_some();
+                    if ui
+                        .add_enabled(nested, Button::new("Move up a level"))
+                        .on_hover_text("Out of this whitebox, into the diagram one level up")
+                        .clicked()
+                    {
+                        self.editor.move_up(b);
+                    }
                 }
                 if ui.button("Delete").clicked() {
                     self.editor.request_delete(b);
@@ -1076,7 +1162,9 @@ impl App {
                         self.focus = true;
                         self.editor.start_edit_relation(rel);
                     }
-                    if ui.button("Split relation\u{2026}").clicked() {
+                    if !self.editor.project.is_doodle()
+                        && ui.button("Split relation\u{2026}").clicked()
+                    {
                         self.focus = true;
                         self.editor.start_split(rel);
                     }
@@ -1127,7 +1215,10 @@ impl App {
                 if ui.button("Fit to window").clicked() {
                     self.view = None;
                 }
-                if self.editor.diagram.is_some() && ui.button("Up one level").clicked() {
+                if self.editor.diagram.is_some()
+                    && !self.editor.project.is_doodle()
+                    && ui.button("Up one level").clicked()
+                {
                     self.editor.go_up();
                 }
             }
@@ -1181,7 +1272,7 @@ impl App {
         };
         let occasion = match leave {
             Leave::Quit => leave::Occasion::Quit,
-            Leave::New => leave::Occasion::New,
+            Leave::New | Leave::NewDoodle => leave::Occasion::New,
             Leave::Open(_) => leave::Occasion::Open,
         };
         match leave::show(ctx, &self.editor.display_name(), occasion) {
@@ -1208,6 +1299,7 @@ impl App {
                 ctx.send_viewport_cmd(ViewportCommand::Close);
             }
             Leave::New => self.reset(Editor::new(self.recovery_dir.clone())),
+            Leave::NewDoodle => self.reset(Editor::new_doodle(self.recovery_dir.clone())),
             Leave::Open(path) => self.load(&path),
         }
     }
@@ -1239,6 +1331,14 @@ impl App {
             self.leave = Some(Leave::New);
         } else {
             self.reset(Editor::new(self.recovery_dir.clone()));
+        }
+    }
+
+    fn new_doodle(&mut self) {
+        if self.editor.dirty {
+            self.leave = Some(Leave::NewDoodle);
+        } else {
+            self.reset(Editor::new_doodle(self.recovery_dir.clone()));
         }
     }
 

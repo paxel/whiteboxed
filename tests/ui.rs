@@ -1351,3 +1351,25 @@ fn right_click_splits_a_relation() -> TestResult {
     assert!(p.relations.values().all(|r| r.b.anchors[0].block == db));
     Ok(())
 }
+
+#[test]
+fn a_new_doodle_shows_page_tabs_instead_of_the_arc42_panels() -> TestResult {
+    let mut h = harness(Editor::new(None));
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("New doodle").click();
+    h.run();
+    assert!(h.state().editor.project.is_doodle());
+    assert!(h.query_by_label("Page 1").is_some());
+    assert!(h.query_by_label("Structure").is_none());
+    assert!(h.query_by_label("Details").is_none());
+    h.get_by_label("+ Page").click();
+    h.run();
+    assert_eq!(h.state().editor.project.pages().len(), 2);
+    h.get_by_label("Page 1").click();
+    h.run();
+    let first = h.state().editor.project.pages()[0];
+    assert_eq!(h.state().editor.diagram, Some(first));
+    Ok(())
+}

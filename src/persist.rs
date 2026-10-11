@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
-    ExportChoice, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project, Relation,
-    RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
+    ExportChoice, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project,
+    ProjectKind, Relation, RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -29,6 +29,9 @@ pub enum PersistError {
 #[derive(Serialize, Deserialize)]
 struct FileDto {
     format: u32,
+    /// `doodle` for a doodle; left out for an arc42 project.
+    #[serde(default, skip_serializing_if = "is_arc42")]
+    kind: ProjectKind,
     /// The project's name, when set by the user.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     name: String,
@@ -181,9 +184,14 @@ fn endpoint(anchors: Vec<AnchorDto>) -> Endpoint {
     }
 }
 
+fn is_arc42(kind: &ProjectKind) -> bool {
+    *kind == ProjectKind::Arc42
+}
+
 pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
     let dto = FileDto {
         format: FORMAT,
+        kind: project.kind,
         name: project.name.clone(),
         motivation: project.motivation.clone(),
         line_style: (project.line_style != LineStyle::default()).then_some(project.line_style),
@@ -223,7 +231,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 kind: b.kind,
                 parent: b.parent,
                 tag: b.tag,
-                cell: (!b.band).then_some(b.cell),
+                cell: (!b.gridless()).then_some(b.cell),
                 band: b.band,
                 responsibility: b.responsibility.clone(),
                 motivation: b.motivation.clone(),
@@ -256,6 +264,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
         )));
     }
     let mut project = Project::new();
+    project.kind = dto.kind;
     project.name = dto.name.trim().to_owned();
     project.motivation = dto.motivation;
     project.line_style = dto.line_style.unwrap_or_default();
@@ -295,7 +304,8 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     }
     for b in dto.blocks {
         fresh(b.id.0)?;
-        let cell = match (b.cell, b.band) {
+        let gridless = b.band || b.kind == BlockKind::Page;
+        let cell = match (b.cell, gridless) {
             (Some(cell), false) => cell,
             (_, true) => Cell::new(0, 0),
             (None, false) => {
@@ -369,7 +379,7 @@ fn check(project: &Project) -> Result<(), PersistError> {
         }
     }
     let mut cells = BTreeMap::new();
-    for (id, b) in project.blocks.iter().filter(|(_, b)| !b.band) {
+    for (id, b) in project.blocks.iter().filter(|(_, b)| !b.gridless()) {
         if let Some(other) = cells.insert((b.parent, b.cell), *id) {
             return invalid(format!("boxes {} and {} share a cell", other.0, id.0));
         }
@@ -387,6 +397,21 @@ fn check(project: &Project) -> Result<(), PersistError> {
         if touched {
             return invalid(format!("band {} has lines", id.0));
         }
+    }
+    // Pages: only in doodles, only at the top, and a doodle has at least one.
+    for (id, b) in &project.blocks {
+        let page = b.kind == BlockKind::Page;
+        let fits = if project.is_doodle() {
+            page == b.parent.is_none()
+        } else {
+            !page
+        };
+        if !fits {
+            return invalid(format!("box {} is a page out of place", id.0));
+        }
+    }
+    if project.is_doodle() && project.pages().is_empty() {
+        return invalid("a doodle without pages".into());
     }
     let mut per_owner: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
     for r in project.relations.values() {

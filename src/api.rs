@@ -1267,6 +1267,7 @@ fn kind_name(k: BlockKind) -> &'static str {
         BlockKind::Ui => "ui",
         BlockKind::Person => "person",
         BlockKind::ExternalSystem => "external_system",
+        BlockKind::Page => "page",
     }
 }
 

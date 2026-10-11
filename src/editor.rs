@@ -245,8 +245,17 @@ impl Editor {
         let mut editor = Editor::new_without_recovery(recovery_dir);
         editor.project = project;
         editor.path = Some(path.to_path_buf());
+        editor.fix_view();
         editor.offer_recovery();
         Ok(editor)
+    }
+
+    /// A new doodle with one empty page, shown.
+    pub fn new_doodle(recovery_dir: Option<PathBuf>) -> Self {
+        let mut editor = Editor::new_without_recovery(recovery_dir);
+        editor.project = Project::new_doodle();
+        editor.fix_view();
+        editor
     }
 
     fn new_without_recovery(recovery_dir: Option<PathBuf>) -> Self {
@@ -303,6 +312,11 @@ impl Editor {
 
     /// The readability score of every diagram (and of the open one, even if empty).
     pub fn scores(&mut self) -> &BTreeMap<DiagramId, crate::score::Score> {
+        static NONE: BTreeMap<DiagramId, crate::score::Score> = BTreeMap::new();
+        // Doodles are sketches: no readability judgement.
+        if self.project.is_doodle() {
+            return &NONE;
+        }
         let fresh = matches!(&self.score_cache, Some((p, map)) if *p == self.project
             && map.contains_key(&self.diagram));
         if !fresh {
@@ -401,6 +415,10 @@ impl Editor {
     // ----- navigation -----
 
     pub fn open_diagram(&mut self, diagram: DiagramId) {
+        // A doodle shows pages only.
+        if self.project.is_doodle() && !diagram.is_some_and(|d| self.project.pages().contains(&d)) {
+            return;
+        }
         if let Some(id) = diagram {
             match self.project.blocks.get(&id) {
                 Some(b) if b.kind.can_drill() => {}
@@ -418,6 +436,9 @@ impl Editor {
     }
 
     pub fn go_up(&mut self) {
+        if self.project.is_doodle() {
+            return;
+        }
         if let Some(id) = self.diagram {
             let parent = self.project.blocks.get(&id).and_then(|b| b.parent);
             self.open_diagram(parent);
@@ -519,6 +540,13 @@ impl Editor {
                 break;
             }
             self.diagram = None;
+        }
+        // A doodle always shows one of its pages.
+        if self.project.is_doodle() {
+            let pages = self.project.pages();
+            if !self.diagram.is_some_and(|d| pages.contains(&d)) {
+                self.diagram = pages.first().copied();
+            }
         }
         if self
             .selected
@@ -646,10 +674,32 @@ impl Editor {
 
     /// Kinds offered in the current diagram: neighbours only in the context view.
     pub fn kinds(&self) -> Vec<BlockKind> {
+        if self.project.is_doodle() {
+            return BlockKind::ALL.to_vec();
+        }
         BlockKind::ALL
             .into_iter()
             .filter(|k| self.diagram.is_none() || !k.is_neighbour())
             .collect()
+    }
+
+    /// Adds a page to the doodle and shows it.
+    pub fn add_page(&mut self) {
+        let n = self.project.pages().len() + 1;
+        let name = (n..)
+            .map(|i| format!("Page {i}"))
+            .find(|name| {
+                !self
+                    .project
+                    .pages()
+                    .iter()
+                    .any(|p| self.project.blocks.get(p).is_some_and(|b| &b.name == name))
+            })
+            .unwrap_or_default();
+        if let Some(page) = self.apply(|p| p.add_page(&name)) {
+            self.diagram = Some(page);
+            self.selected = None;
+        }
     }
 
     /// Tag names that start with what was typed so far.

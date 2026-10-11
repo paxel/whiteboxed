@@ -107,6 +107,8 @@ pub struct Layout {
     pub legend: Vec<LegendEntry>,
     /// Where the legend is drawn (below the diagram), if there is one.
     pub legend_at: Option<Pos>,
+    /// Whether boxes show their type («component») under the name.
+    pub captions: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -289,7 +291,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
     // Box sizes.
     let mut sizes = BTreeMap::new();
     for id in &view.blocks {
-        let Some(b) = project.blocks.get(id).filter(|b| !b.band) else {
+        let Some(b) = project.blocks.get(id).filter(|b| !b.gridless()) else {
             continue;
         };
         let o = Owner::Block(*id);
@@ -379,7 +381,11 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         y - BAND_GAP + GAP
     };
     let bounds = Rect::from_min_size(Pos::new(0.0, 0.0), width, height);
-    let frame = view.diagram.map(|_| bounds);
+    // A doodle page is no whitebox: no frame around it.
+    let frame = view
+        .diagram
+        .filter(|_| !project.is_doodle())
+        .map(|_| bounds);
 
     // Port positions: (line index, end) -> (point, channel entry). A port sits where
     // its partner is, so facing boxes get straight lines; ports on one side then keep
@@ -704,8 +710,10 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         frame,
         title: view
             .diagram
+            .filter(|_| !project.is_doodle())
             .and_then(|d| project.blocks.get(&d))
             .map(|b| b.name.clone()),
+        captions: !project.is_doodle(),
         bounds,
         cells,
         legend,

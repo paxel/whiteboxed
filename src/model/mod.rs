@@ -44,6 +44,9 @@ pub enum BlockKind {
     Ui,
     Person,
     ExternalSystem,
+    /// A page of a doodle: a top-level box that is never drawn; its whitebox is the
+    /// page.
+    Page,
 }
 
 impl BlockKind {
@@ -68,6 +71,7 @@ impl BlockKind {
             BlockKind::Ui => "UI",
             BlockKind::Person => "person",
             BlockKind::ExternalSystem => "external system",
+            BlockKind::Page => "page",
         }
     }
 
@@ -258,6 +262,7 @@ pub struct Tag {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
+    /// In a doodle, any text, over several lines.
     pub name: String,
     pub kind: BlockKind,
     pub tag: Option<TagId>,
@@ -437,6 +442,12 @@ pub enum ModelError {
     AtTop,
     #[error("the box to group at must be one of the grouped boxes")]
     NotInGroup,
+    #[error("a doodle keeps at least one page")]
+    LastPage,
+    #[error("lines in a doodle connect two shapes; there are no open ends")]
+    NoOpenEnds,
+    #[error("pages only exist in doodles, as the top level")]
+    PageOutOfPlace,
     #[error("a relation with an open end cannot be split")]
     SplitOpen,
     #[error("say at least one pair of boxes to split into")]
@@ -464,6 +475,8 @@ pub struct Project {
     pub blocks: BTreeMap<BlockId, Block>,
     pub relations: BTreeMap<RelationId, Relation>,
     pub tags: BTreeMap<TagId, Tag>,
+    /// An arc42 model or a doodle.
+    pub kind: ProjectKind,
     /// The project's name as set by the user; empty: see [`Project::display_name`].
     pub name: String,
     /// The explanation of the context view.
@@ -480,6 +493,17 @@ pub struct Project {
     /// Whether relations between the same two boxes are drawn as one line.
     pub bundle: bool,
     pub next_id: u64,
+}
+
+/// What a project file holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectKind {
+    /// An arc42 building-block view: levels, whiteboxes, arc42 texts.
+    #[default]
+    Arc42,
+    /// A free sketch on named pages, without the arc42 rules.
+    Doodle,
 }
 
 /// Readability limits per diagram, each as (yellow from, red from).
@@ -542,6 +566,7 @@ impl Default for Project {
             blocks: BTreeMap::new(),
             relations: BTreeMap::new(),
             tags: BTreeMap::new(),
+            kind: ProjectKind::Arc42,
             name: String::new(),
             motivation: String::new(),
             line_style: LineStyle::default(),
@@ -554,9 +579,38 @@ impl Default for Project {
     }
 }
 
+impl Block {
+    /// Whether the box takes no grid cell: a band, or a doodle page.
+    pub fn gridless(&self) -> bool {
+        self.band || self.kind == BlockKind::Page
+    }
+}
+
 impl Project {
     pub fn new() -> Self {
         Project::default()
+    }
+
+    /// A new doodle with one empty page.
+    pub fn new_doodle() -> Self {
+        let mut p = Project {
+            kind: ProjectKind::Doodle,
+            ..Project::default()
+        };
+        let _ = p.add_page("Page 1");
+        p
+    }
+
+    pub fn is_doodle(&self) -> bool {
+        self.kind == ProjectKind::Doodle
+    }
+
+    /// The pages of a doodle, in the order they were made.
+    pub fn pages(&self) -> Vec<BlockId> {
+        self.blocks_in(None)
+            .filter(|(_, b)| b.kind == BlockKind::Page)
+            .map(|(id, _)| id)
+            .collect()
     }
 
     /// The project's name: the one set by the user, or else [`Project::auto_name`].
@@ -571,6 +625,9 @@ impl Project {
     /// The name of the system: the first box of the context view that is neither a
     /// person nor an external system. It follows that box's renames.
     pub fn auto_name(&self) -> Option<String> {
+        if self.is_doodle() {
+            return None;
+        }
         self.blocks_in(None)
             .find(|(_, b)| b.kind.can_drill() && !b.band)
             .map(|(_, b)| b.name.clone())

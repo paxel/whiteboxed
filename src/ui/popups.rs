@@ -71,7 +71,9 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
     match popup {
         Popup::AddBlock(form, _) => {
             block_form(ui, editor, form, focus);
-            band_row(ui, &mut form.band);
+            if !editor.project.is_doodle() {
+                band_row(ui, &mut form.band);
+            }
             ok_cancel(ui, "Add")
         }
         Popup::Group { form, boxes, .. } => {
@@ -85,16 +87,26 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
         }
         Popup::EditBlock(_, form) => {
             block_form(ui, editor, form, focus);
-            band_row(ui, &mut form.band);
+            if !editor.project.is_doodle() {
+                band_row(ui, &mut form.band);
+            }
             ok_cancel(ui, "Save")
         }
         Popup::Connect(form) => {
             ui.horizontal(|ui| {
-                for (mode, label) in [
-                    (ConnectMode::New, "New box"),
-                    (ConnectMode::Existing, "Existing"),
-                    (ConnectMode::Stub, "Stub"),
-                ] {
+                let modes: &[(ConnectMode, &str)] = if editor.project.is_doodle() {
+                    &[
+                        (ConnectMode::New, "New shape"),
+                        (ConnectMode::Existing, "Existing"),
+                    ]
+                } else {
+                    &[
+                        (ConnectMode::New, "New box"),
+                        (ConnectMode::Existing, "Existing"),
+                        (ConnectMode::Stub, "Stub"),
+                    ]
+                };
+                for &(mode, label) in modes {
                     if ui.selectable_value(&mut form.mode, mode, label).clicked() {
                         *focus = true;
                     }
@@ -329,6 +341,17 @@ fn band_row(ui: &mut Ui, band: &mut bool) {
 }
 
 fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bool) {
+    // A doodle page has only a name.
+    if form.kind == BlockKind::Page {
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            let name = ui.text_edit_singleline(&mut form.name);
+            if std::mem::take(focus) {
+                name.request_focus();
+            }
+        });
+        return;
+    }
     egui::Grid::new("block-form").num_columns(2).show(ui, |ui| {
         ui.label("Name");
         let name = ui.text_edit_singleline(&mut form.name);

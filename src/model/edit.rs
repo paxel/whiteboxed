@@ -50,6 +50,18 @@ pub enum Placement {
 impl Project {
     // ----- boxes -----
 
+    /// Adds a page to a doodle; it comes after the others.
+    pub fn add_page(&mut self, name: &str) -> ModelResult<BlockId> {
+        if !self.is_doodle() {
+            return Err(ModelError::PageOutOfPlace);
+        }
+        self.insert_block(
+            None,
+            &BlockSpec::new(name, BlockKind::Page),
+            Cell::new(0, 0),
+        )
+    }
+
     /// Adds a box without a relation (the "+ add box" of an empty diagram).
     pub fn add_block(&mut self, diagram: DiagramId, spec: &BlockSpec) -> ModelResult<BlockId> {
         let cell = self.next_column(diagram);
@@ -60,7 +72,7 @@ impl Project {
     pub(super) fn next_column(&self, diagram: DiagramId) -> Cell {
         match self
             .blocks_in(diagram)
-            .filter(|(_, b)| !b.band)
+            .filter(|(_, b)| !b.gridless())
             .map(|(_, b)| b.cell.col)
             .max()
         {
@@ -134,13 +146,13 @@ impl Project {
             return Err(ModelError::OutsideGrid);
         }
         let block = self.block(id)?;
-        if block.band {
+        if block.gridless() {
             return Err(ModelError::BandStays);
         }
         let (parent, old) = (block.parent, block.cell);
         let occupant = self
             .blocks_in(parent)
-            .find(|(other, b)| *other != id && !b.band && b.cell == cell)
+            .find(|(other, b)| *other != id && !b.gridless() && b.cell == cell)
             .map(|(other, _)| other);
         if let Some(other) = occupant
             && let Some(b) = self.blocks.get_mut(&other)
@@ -188,7 +200,9 @@ impl Project {
     /// Deletes a box, everything inside it and every relation of it. Relations that
     /// only pass through it from a parent level are detached instead.
     pub fn delete_block(&mut self, id: BlockId) -> ModelResult<()> {
-        self.block(id)?;
+        if self.block(id)?.kind == BlockKind::Page && self.pages().len() <= 1 {
+            return Err(ModelError::LastPage);
+        }
         let gone = self.subtree(id);
         self.relations.retain(|_, rel| {
             if rel.owner.is_some_and(|o| gone.contains(&o)) {
@@ -342,6 +356,9 @@ impl Project {
         text: &str,
     ) -> ModelResult<RelationId> {
         let parent = self.block(from)?.parent;
+        if self.is_doodle() {
+            return Err(ModelError::NoOpenEnds);
+        }
         self.check_lines(from)?;
         let text = check_text(text)?;
         self.check_relation_room(None)?;
@@ -734,6 +751,10 @@ impl Project {
         if name.is_empty() {
             return Err(ModelError::EmptyName);
         }
+        // Doodle shapes: any text over several lines, the same text may repeat.
+        if self.is_doodle() && diagram.is_some() {
+            return check_shape_text(name);
+        }
         check_name_text(name)?;
         let lower = name.to_lowercase();
         let taken = self
@@ -746,6 +767,22 @@ impl Project {
     }
 
     pub(super) fn check_kind(&self, diagram: DiagramId, kind: BlockKind) -> ModelResult<()> {
+        // A doodle has pages at the top and shapes on them, of any kind.
+        let page = kind == BlockKind::Page;
+        if self.is_doodle() {
+            // Shapes lie on a page, never inside another shape.
+            let on_page = match diagram {
+                None => false,
+                Some(d) => self.block(d)?.kind == BlockKind::Page,
+            };
+            if page == on_page || (!page && diagram.is_none()) {
+                return Err(ModelError::PageOutOfPlace);
+            }
+            return Ok(());
+        }
+        if page {
+            return Err(ModelError::PageOutOfPlace);
+        }
         if kind.is_neighbour() && diagram.is_some() {
             return Err(ModelError::NeighbourBelowContext(kind.label()));
         }
@@ -775,7 +812,7 @@ impl Project {
 
     pub(super) fn occupied(&self, diagram: DiagramId, cell: Cell, except: Option<BlockId>) -> bool {
         self.blocks_in(diagram)
-            .any(|(id, b)| Some(id) != except && !b.band && b.cell == cell)
+            .any(|(id, b)| Some(id) != except && !b.gridless() && b.cell == cell)
     }
 
     /// The first free cell at `target`, else the nearest free cell of a block that
@@ -922,6 +959,21 @@ fn check_name_text(name: &str) -> ModelResult<()> {
     }
     Ok(())
 }
+
+/// The text of a doodle shape: several lines, no other control characters.
+fn check_shape_text(text: &str) -> ModelResult<String> {
+    let text = text.trim().replace("\r\n", "\n");
+    if text.chars().any(|c| c.is_control() && c != '\n') {
+        return Err(ModelError::ControlCharacter);
+    }
+    if text.chars().count() > MAX_SHAPE_TEXT {
+        return Err(ModelError::NameTooLong);
+    }
+    Ok(text)
+}
+
+/// The longest text a doodle shape holds.
+pub const MAX_SHAPE_TEXT: usize = 4 * MAX_NAME;
 
 /// A free text: line breaks and tabs allowed, other control characters not.
 pub(super) fn check_text(text: &str) -> ModelResult<String> {

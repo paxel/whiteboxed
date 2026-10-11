@@ -119,13 +119,15 @@ pub fn scene(layout: &Layout) -> Scene {
             color: INK,
             align: Align::Center,
         });
-        shapes.push(Shape::Text {
-            pos: Pos::new(c.x, c.y + 12.0),
-            text: kind_caption(block.kind),
-            size: KIND_SIZE,
-            color: MUTED,
-            align: Align::Center,
-        });
+        if layout.captions {
+            shapes.push(Shape::Text {
+                pos: Pos::new(c.x, c.y + 12.0),
+                text: kind_caption(block.kind),
+                size: KIND_SIZE,
+                color: MUTED,
+                align: Align::Center,
+            });
+        }
         if block.has_content {
             // A small "has a whitebox" mark in the corner.
             let r = block.rect;
@@ -188,7 +190,7 @@ fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
     let fill = Some(fill);
     let stroke = Some(OUTLINE);
     match kind {
-        BlockKind::Component => shapes.push(Shape::Rect {
+        BlockKind::Component | BlockKind::Page => shapes.push(Shape::Rect {
             rect: r,
             radius: 4.0,
             fill,

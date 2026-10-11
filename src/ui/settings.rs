@@ -105,35 +105,37 @@ impl Settings {
                         "Draw them as one line with all their texts; inside the whiteboxes they \
                          stay apart",
                     );
-                ui.add_space(10.0);
-                ui.label(RichText::new("Readability").strong());
-                ui.label(
-                    RichText::new(
-                        "From when a diagram counts as crowded (yellow) or hard to read (red).",
-                    )
-                    .weak(),
-                );
-                egui::Grid::new("score-limits")
-                    .num_columns(3)
-                    .show(ui, |ui| {
-                        for (label, pair) in [
-                            ("Boxes", &mut score.boxes),
-                            ("Crossings", &mut score.crossings),
-                            ("Lines on one box", &mut score.lines),
-                        ] {
-                            ui.label(label);
-                            ui.horizontal(|ui| {
-                                ui.label("yellow from");
-                                ui.add(egui::DragValue::new(&mut pair.0).range(1..=99));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("red from");
-                                ui.add(egui::DragValue::new(&mut pair.1).range(1..=100));
-                            });
-                            pair.1 = pair.1.max(pair.0 + 1);
-                            ui.end_row();
-                        }
-                    });
+                if !editor.project.is_doodle() {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new("Readability").strong());
+                    ui.label(
+                        RichText::new(
+                            "From when a diagram counts as crowded (yellow) or hard to read (red).",
+                        )
+                        .weak(),
+                    );
+                    egui::Grid::new("score-limits")
+                        .num_columns(3)
+                        .show(ui, |ui| {
+                            for (label, pair) in [
+                                ("Boxes", &mut score.boxes),
+                                ("Crossings", &mut score.crossings),
+                                ("Lines on one box", &mut score.lines),
+                            ] {
+                                ui.label(label);
+                                ui.horizontal(|ui| {
+                                    ui.label("yellow from");
+                                    ui.add(egui::DragValue::new(&mut pair.0).range(1..=99));
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("red from");
+                                    ui.add(egui::DragValue::new(&mut pair.1).range(1..=100));
+                                });
+                                pair.1 = pair.1.max(pair.0 + 1);
+                                ui.end_row();
+                            }
+                        });
+                }
                 ui.add_space(10.0);
                 if ui.button("Use as my default for new projects").clicked() {
                     make_default = true;
