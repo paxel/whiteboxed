@@ -81,6 +81,7 @@ pub struct LineGeom {
     pub landing: Option<BlockId>,
     /// Further relations drawn as this line, which then stands for all of them.
     pub bundle: Vec<RelationId>,
+    pub pattern: crate::model::LinePattern,
 }
 
 impl LineGeom {
@@ -1402,6 +1403,7 @@ fn build_line(
         style: line.style,
         full_text: line.text.clone(),
         bundle: line.bundle.clone(),
+        pattern: line.pattern,
         landing: match (&line.a, &line.b) {
             (ViewEnd::Block { block, .. }, ViewEnd::Frame { .. })
             | (ViewEnd::Frame { .. }, ViewEnd::Block { block, .. }) => Some(*block),

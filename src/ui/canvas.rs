@@ -44,8 +44,8 @@ fn stroke(s: Stroke, zoom: f32) -> EStroke {
     EStroke::new(s.width * zoom.max(0.5), color(s.color))
 }
 
-fn dashed(painter: &Painter, points: &[Pos2], s: EStroke, zoom: f32) {
-    painter.extend(egui::Shape::dashed_line(points, s, 6.0 * zoom, 4.0 * zoom));
+fn dashed(painter: &Painter, points: &[Pos2], s: EStroke, (dash, gap): (f32, f32), zoom: f32) {
+    painter.extend(egui::Shape::dashed_line(points, s, dash * zoom, gap * zoom));
 }
 
 pub fn paint(painter: &Painter, view: View, scene: &Scene) {
@@ -64,7 +64,7 @@ pub fn paint(painter: &Painter, view: View, scene: &Scene) {
                     painter.rect_filled(r, radius, color(*f));
                 }
                 if let Some(st) = st {
-                    if st.dashed {
+                    if let Some(dash) = st.dash {
                         let pts = [
                             r.left_top(),
                             r.right_top(),
@@ -72,7 +72,7 @@ pub fn paint(painter: &Painter, view: View, scene: &Scene) {
                             r.left_bottom(),
                             r.left_top(),
                         ];
-                        dashed(painter, &pts, stroke(*st, z), z);
+                        dashed(painter, &pts, stroke(*st, z), dash, z);
                     } else {
                         painter.rect_stroke(r, radius, stroke(*st, z), StrokeKind::Middle);
                     }
@@ -92,8 +92,8 @@ pub fn paint(painter: &Painter, view: View, scene: &Scene) {
             }
             Shape::Polyline { points, stroke: st } => {
                 let pts: Vec<Pos2> = points.iter().map(|p| view.screen(*p)).collect();
-                if st.dashed {
-                    dashed(painter, &pts, stroke(*st, z), z);
+                if let Some(dash) = st.dash {
+                    dashed(painter, &pts, stroke(*st, z), dash, z);
                 } else {
                     painter.line(pts, stroke(*st, z));
                 }

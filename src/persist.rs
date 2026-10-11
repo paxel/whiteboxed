@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
-    ExportChoice, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM, Project,
-    ProjectKind, Relation, RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
+    ExportChoice, LinePattern, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM,
+    Project, ProjectKind, Relation, RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -150,6 +150,12 @@ struct RelationDto {
     style: Option<LineStyle>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     short: String,
+    #[serde(default, skip_serializing_if = "is_solid")]
+    pattern: LinePattern,
+}
+
+fn is_solid(p: &LinePattern) -> bool {
+    *p == LinePattern::Solid
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -253,6 +259,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 text: r.text.clone(),
                 style: r.style,
                 short: r.short.clone(),
+                pattern: r.pattern,
             })
             .collect(),
     };
@@ -343,6 +350,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 text: r.text,
                 style: r.style,
                 short: r.short,
+                pattern: r.pattern,
             },
         );
     }

@@ -141,6 +141,7 @@ pub enum Popup {
         /// `None` follows the project's line style.
         style: Option<LineStyle>,
         short: String,
+        pattern: crate::model::LinePattern,
         /// The boxes of this diagram the line touches, with the side it leaves them on.
         sides: Vec<(BlockId, Side)>,
     },
@@ -664,6 +665,7 @@ impl Editor {
                 text: r.text.clone(),
                 style: r.style,
                 short: r.short.clone(),
+                pattern: r.pattern,
                 sides,
             });
         }
@@ -829,12 +831,14 @@ impl Editor {
                 text,
                 style,
                 short,
+                pattern,
                 sides,
             } => {
                 if self
                     .apply(|p| {
                         p.edit_relation(rel, direction, &text)?;
                         p.set_relation_short(rel, &short)?;
+                        p.set_relation_pattern(rel, pattern)?;
                         for (block, side) in &sides {
                             p.set_side_at(rel, *block, *side)?;
                         }

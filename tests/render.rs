@@ -560,14 +560,23 @@ fn doodle() -> Result<Editor, Box<dyn std::error::Error>> {
         Direction::Out,
         "",
     )?;
-    p.connect_existing(
+    let health = p.connect_existing(
         app,
-        Side::Right,
+        Side::Left,
         lb,
         Direction::Out,
         "health",
         Placement::Keep,
     )?;
+    p.set_relation_pattern(health, whiteboxed::model::LinePattern::Dotted)?;
+    let (_, logs) = p.connect_new(
+        app,
+        Side::Bottom,
+        &shape("Log store", BlockKind::Database),
+        Direction::Out,
+        "logs",
+    )?;
+    p.set_relation_pattern(logs, whiteboxed::model::LinePattern::Dashed)?;
     let mut e = editor_with(p);
     e.open_diagram(Some(page));
     Ok(e)
@@ -579,4 +588,17 @@ fn doc_screenshot_doodle() -> TestResult {
     let mut h = harness(doodle()?);
     h.run();
     save(&mut h, "doodle")
+}
+
+#[test]
+#[ignore = "writes target/doodle-network.png (needs wgpu)"]
+fn doodle_network_page() -> TestResult {
+    let mut e = doodle()?;
+    let net = e.project.pages()[1];
+    e.open_diagram(Some(net));
+    let mut h = harness(e);
+    h.run();
+    let img = h.render()?;
+    img.save("target/doodle-network.png")?;
+    Ok(())
 }

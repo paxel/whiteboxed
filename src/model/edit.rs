@@ -283,6 +283,7 @@ impl Project {
             text,
             style: None,
             short: String::new(),
+            pattern: Default::default(),
         });
         Ok((new, rel))
     }
@@ -347,6 +348,7 @@ impl Project {
             text,
             style: None,
             short: String::new(),
+            pattern: Default::default(),
         }))
     }
 
@@ -380,6 +382,7 @@ impl Project {
             text,
             style: None,
             short: String::new(),
+            pattern: Default::default(),
         }))
     }
 
@@ -585,6 +588,19 @@ impl Project {
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?;
         relation.style = style;
+        Ok(())
+    }
+
+    /// Sets how a relation's line is drawn along its length.
+    pub fn set_relation_pattern(
+        &mut self,
+        rel: RelationId,
+        pattern: super::LinePattern,
+    ) -> ModelResult<()> {
+        self.relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?
+            .pattern = pattern;
         Ok(())
     }
 

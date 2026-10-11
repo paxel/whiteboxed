@@ -672,3 +672,28 @@ fn the_split_dialog_turns_ticked_pairs_into_relations() -> TestResult {
     assert_eq!(e.project.relations.len(), 1);
     Ok(())
 }
+
+#[test]
+fn the_relation_dialog_sets_the_pattern_in_a_doodle() -> TestResult {
+    use whiteboxed::model::LinePattern;
+    let mut e = Editor::new_doodle(None);
+    let page = e.diagram.ok_or("page")?;
+    let a = e.project.add_block(
+        Some(page),
+        &whiteboxed::model::BlockSpec::new("A", BlockKind::Component),
+    )?;
+    let (_, rel) = e.project.connect_new(
+        a,
+        Side::Right,
+        &whiteboxed::model::BlockSpec::new("B", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    e.start_edit_relation(rel);
+    if let Some(Popup::EditRelation { pattern, .. }) = &mut e.popup {
+        *pattern = LinePattern::Dashed;
+    }
+    e.confirm();
+    assert_eq!(e.project.relation(rel)?.pattern, LinePattern::Dashed);
+    Ok(())
+}

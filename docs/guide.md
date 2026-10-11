@@ -420,7 +420,10 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 - A shape's text can span several lines: in its dialog, Enter starts a new line and
   Ctrl+Enter confirms. The same text may appear more than once.
 - Every shape can get its own **colour** from the palette in its dialog.
-- Lines connect two shapes; there are no open ends (stubs).
+- Lines connect two shapes; there are no open ends (stubs). In a line's **Edit…**
+  dialog, **Pattern** makes it solid, dashed or dotted, for example for asynchronous
+  or optional flows. Lines with different patterns between the same shapes are not
+  bundled.
 - Placing, connecting by clicking a border, routing, line styles, undo and saving work
   as in a project.
 

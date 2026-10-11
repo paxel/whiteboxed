@@ -53,8 +53,8 @@ fn paint(fill: Option<Rgb>, stroke: Option<Stroke>) -> String {
             r#" stroke="{}" stroke-width="{}" stroke-linejoin="round""#,
             st.color, st.width
         );
-        if st.dashed {
-            s.push_str(r#" stroke-dasharray="6 4""#);
+        if let Some((dash, gap)) = st.dash {
+            let _ = write!(s, r#" stroke-dasharray="{dash} {gap}""#);
         }
     }
     s

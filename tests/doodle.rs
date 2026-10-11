@@ -221,3 +221,49 @@ fn an_off_centre_line_reaches_into_a_round_shape() -> TestResult {
     assert!(starts.iter().any(|x| *x < c.max.x - 2.0), "{starts:?}");
     Ok(())
 }
+
+#[test]
+fn lines_can_be_dashed_or_dotted() -> TestResult {
+    use whiteboxed::model::LinePattern;
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    let a = p.add_block(Some(page), &shape("A"))?;
+    let (_, r) = p.connect_new(a, Side::Right, &shape("B"), Direction::Out, "async")?;
+    p.set_relation_pattern(r, LinePattern::Dotted)?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("pattern: dotted"), "{yaml}");
+    assert_eq!(
+        persist::from_yaml(&yaml)?.relation(r)?.pattern,
+        LinePattern::Dotted
+    );
+    let l = layout::layout(&p, &diagram_view(&p, Some(page)));
+    let svg = whiteboxed::export::to_svg(&whiteboxed::scene::scene(&l));
+    assert!(svg.contains(r#"stroke-dasharray="1.5 3.5""#));
+    p.set_relation_pattern(r, LinePattern::Solid)?;
+    assert!(!persist::to_yaml(&p)?.contains("pattern:"));
+    Ok(())
+}
+
+#[test]
+fn lines_with_different_patterns_are_not_bundled() -> TestResult {
+    use whiteboxed::model::{LinePattern, Placement};
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    let a = p.add_block(Some(page), &shape("A"))?;
+    let (b, _) = p.connect_new(a, Side::Right, &shape("B"), Direction::Out, "calls")?;
+    let health = p.connect_existing(b, Side::Left, a, Direction::Out, "health", Placement::Keep)?;
+    assert_eq!(
+        layout::layout(&p, &diagram_view(&p, Some(page)))
+            .lines
+            .len(),
+        1
+    );
+    p.set_relation_pattern(health, LinePattern::Dotted)?;
+    assert_eq!(
+        layout::layout(&p, &diagram_view(&p, Some(page)))
+            .lines
+            .len(),
+        2
+    );
+    Ok(())
+}

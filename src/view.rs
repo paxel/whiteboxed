@@ -30,6 +30,7 @@ pub struct ViewLine {
     pub short: String,
     /// Further relations drawn as this one line (see [`bundle`]).
     pub bundle: Vec<RelationId>,
+    pub pattern: crate::model::LinePattern,
 }
 
 impl ViewLine {
@@ -74,6 +75,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 style: rel.style.unwrap_or(project.line_style),
                 short: rel.short.clone(),
                 bundle: Vec::new(),
+                pattern: rel.pattern,
             });
             continue;
         }
@@ -114,6 +116,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                     style: rel.style.unwrap_or(project.line_style),
                     short: rel.short.clone(),
                     bundle: Vec::new(),
+                    pattern: rel.pattern,
                 });
             }
         }
@@ -140,10 +143,12 @@ pub fn bundle(view: &DiagramView) -> DiagramView {
     for line in &view.lines {
         let (ka, kb) = (key(&line.a), key(&line.b));
         let found = match (&ka, &kb) {
+            // Lines drawn differently (dashed, dotted) stay apart.
             (Some(ka), Some(kb)) => lines.iter().position(|l| {
                 let (la, lb) = (key(&l.a), key(&l.b));
-                (la.as_ref() == Some(ka) && lb.as_ref() == Some(kb))
-                    || (la.as_ref() == Some(kb) && lb.as_ref() == Some(ka))
+                l.pattern == line.pattern
+                    && ((la.as_ref() == Some(ka) && lb.as_ref() == Some(kb))
+                        || (la.as_ref() == Some(kb) && lb.as_ref() == Some(ka)))
             }),
             _ => None,
         };

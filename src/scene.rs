@@ -20,7 +20,8 @@ pub const PAPER: Rgb = Rgb(0xff, 0xff, 0xff);
 pub struct Stroke {
     pub width: f32,
     pub color: Rgb,
-    pub dashed: bool,
+    /// Dash and gap length, or `None` for a solid line.
+    pub dash: Option<(f32, f32)>,
 }
 
 impl Stroke {
@@ -28,7 +29,7 @@ impl Stroke {
         Stroke {
             width,
             color,
-            dashed: false,
+            dash: None,
         }
     }
 
@@ -36,7 +37,15 @@ impl Stroke {
         Stroke {
             width,
             color,
-            dashed: true,
+            dash: Some((6.0, 4.0)),
+        }
+    }
+
+    pub const fn dotted(width: f32, color: Rgb) -> Self {
+        Stroke {
+            width,
+            color,
+            dash: Some((1.5, 3.5)),
         }
     }
 }
@@ -418,9 +427,14 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
 
 fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos]) {
     let stroke = Stroke::solid(1.5, LINE);
+    let along = match line.pattern {
+        crate::model::LinePattern::Solid => stroke,
+        crate::model::LinePattern::Dashed => Stroke::dashed(1.5, LINE),
+        crate::model::LinePattern::Dotted => Stroke::dotted(1.8, LINE),
+    };
     shapes.push(Shape::Polyline {
         points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
-        stroke,
+        stroke: along,
     });
     let n = line.points.len();
     // A dangling end shows a warning marker instead of an arrowhead.

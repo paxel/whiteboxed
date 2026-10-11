@@ -162,6 +162,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             text,
             style,
             short,
+            pattern,
             sides,
             ..
         } => {
@@ -169,6 +170,14 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             text_row(ui, text, std::mem::take(focus));
             short_row(ui, short);
             style_row(ui, style, editor.project.line_style);
+            if editor.project.is_doodle() {
+                ui.horizontal(|ui| {
+                    ui.label("Pattern");
+                    for p in crate::model::LinePattern::ALL {
+                        ui.selectable_value(pattern, p, p.label());
+                    }
+                });
+            }
             for (block, side) in sides.iter_mut() {
                 let name = editor
                     .project

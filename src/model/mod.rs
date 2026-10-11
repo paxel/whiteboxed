@@ -393,6 +393,33 @@ pub struct Relation {
     pub style: Option<LineStyle>,
     /// What the diagram shows instead of a long text; empty uses the text.
     pub short: String,
+    /// Solid, dashed or dotted.
+    pub pattern: LinePattern,
+}
+
+/// How a line is drawn along its length.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LinePattern {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+impl LinePattern {
+    pub const ALL: [LinePattern; 3] =
+        [LinePattern::Solid, LinePattern::Dashed, LinePattern::Dotted];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LinePattern::Solid => "solid",
+            LinePattern::Dashed => "dashed",
+            LinePattern::Dotted => "dotted",
+        }
+    }
 }
 
 /// How the bends of relation lines are drawn.
