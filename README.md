@@ -27,6 +27,9 @@ levels cannot drift apart.
 - **Readable diagrams.** Lines run straight where boxes face each other, avoid
   crossings and jump where they must; a traffic light per diagram says when it gets
   crowded and what helps.
+- **Doodles.** File > New doodle sketches a data flow, a network or some logic on pages:
+  whiteboard shapes, multi-line texts, colours, nested groups, dashed and dotted lines,
+  same automatic layout, no arc42 rules.
 - **Restructure without redrawing.** Group boxes into a new box, dissolve a whitebox,
   move a box up or into a neighbour, split a coarse relation into precise ones; the
   relations follow on every level.

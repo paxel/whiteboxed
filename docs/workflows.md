@@ -145,6 +145,18 @@ Use a stub when you know a box talks to *something* outside, but not to what yet
    `include::context.adoc[]` and in section 5 `include::context - Web Shop.adoc[]`.
 5. Export again after changes; the names stay the same.
 
+## Sketch a flow or a network (doodle)
+
+1. **File > New doodle**. A page called `Page 1` opens; double-click its tab to rename
+   it, **+ Page** adds more.
+2. **+ Shape**, type the text (Enter for a new line), pick a shape (diamond for a
+   decision, circle for start and end, cloud for a network) and a colour; **Ctrl+Enter**.
+3. Click a shape's border to draw a line to a new or an existing shape. Edit the line
+   to make it dashed or dotted.
+4. Ctrl+click shapes that belong together, right-click one > **Frame as group…** for a
+   zone or a lane.
+5. **File > Export…** writes the pages as images or as one HTML file with tabs.
+
 ## Let an AI document a repository
 
 You need Claude Code (or another MCP client) and the repository it should read.

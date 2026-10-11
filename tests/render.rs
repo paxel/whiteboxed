@@ -612,3 +612,14 @@ fn doc_screenshot_doodle_network() -> TestResult {
     h.run();
     save(&mut h, "doodle-network")
 }
+
+#[test]
+#[ignore = "writes target/doodle.html"]
+fn sample_doodle_html() -> TestResult {
+    let e = doodle()?;
+    std::fs::write(
+        "target/doodle.html",
+        whiteboxed::html::html_doc(&e.project, "Login and network"),
+    )?;
+    Ok(())
+}
