@@ -810,6 +810,7 @@ fn spec(name: &str, kind: ApiKind, tag: &Option<String>) -> BlockSpec {
         kind: kind.into(),
         tag: tag.clone(),
         band: false,
+        color: None,
     }
 }
 
@@ -959,6 +960,7 @@ fn edit_box(editor: &mut Editor, a: EditBoxArgs) -> ApiResult<Output> {
         kind: a.kind.map_or(b.kind, BlockKind::from),
         tag: a.tag.or(current_tag),
         band: a.band.unwrap_or(b.band),
+        color: b.color,
     };
     editor.apply_ai(|p| p.edit_block(id, &s))?;
     done(editor, "edited", Some(id))
@@ -1268,6 +1270,12 @@ fn kind_name(k: BlockKind) -> &'static str {
         BlockKind::Person => "person",
         BlockKind::ExternalSystem => "external_system",
         BlockKind::Page => "page",
+        BlockKind::Rounded => "rounded",
+        BlockKind::Circle => "circle",
+        BlockKind::Diamond => "diamond",
+        BlockKind::Document => "document",
+        BlockKind::Cloud => "cloud",
+        BlockKind::Note => "note",
     }
 }
 

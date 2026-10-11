@@ -406,13 +406,20 @@ without case. The context view is the default diagram.
 Not every box-and-line picture is an architecture. **File > New doodle** starts a free
 sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 
+![A login flow doodle with a decision, a database, a document and a sticky note](screenshots/doodle.png)
+
 - A doodle has **pages**, shown as tabs under the menu. **+ Page** adds one; double-click
   a tab (or right-click it) to rename it; right-click > **Delete page** removes it (the
   last page stays).
 - No levels and no whiteboxes: shapes do not open, there is no breadcrumb, structure
   tree, details panel or readability score.
-- A shape's text can span several lines, and the same text may appear more than once.
-  Every shape type can go on any page, persons too.
+- **Shapes**: box, rounded box (a step), circle (start, end), diamond (a decision),
+  cylinder (data), document, cloud (a network, the internet), person, and note (text
+  without a border; with a colour it becomes a sticky note). Lines reach the outline
+  of round and pointed shapes.
+- A shape's text can span several lines: in its dialog, Enter starts a new line and
+  Ctrl+Enter confirms. The same text may appear more than once.
+- Every shape can get its own **colour** from the palette in its dialog.
 - Lines connect two shapes; there are no open ends (stubs).
 - Placing, connecting by clicking a border, routing, line styles, undo and saving work
   as in a project.

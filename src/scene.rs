@@ -112,13 +112,28 @@ pub fn scene(layout: &Layout) -> Scene {
     for block in &layout.blocks {
         block_shapes(&mut shapes, block.kind, block.rect, block.fill);
         let c = block.rect.center();
-        shapes.push(Shape::Text {
-            pos: Pos::new(c.x, c.y - 7.0),
-            text: block.name.clone(),
-            size: NAME_SIZE,
-            color: INK,
-            align: Align::Center,
-        });
+        if layout.captions {
+            shapes.push(Shape::Text {
+                pos: Pos::new(c.x, c.y - 7.0),
+                text: block.name.clone(),
+                size: NAME_SIZE,
+                color: INK,
+                align: Align::Center,
+            });
+        } else {
+            // Doodle shapes: every line of the text, centred.
+            let lines: Vec<&str> = block.name.lines().collect();
+            let n = lines.len() as f32;
+            for (k, line) in lines.into_iter().enumerate() {
+                shapes.push(Shape::Text {
+                    pos: Pos::new(c.x, c.y + (k as f32 - (n - 1.0) / 2.0) * NAME_LINE),
+                    text: line.to_owned(),
+                    size: NAME_SIZE,
+                    color: INK,
+                    align: Align::Center,
+                });
+            }
+        }
         if layout.captions {
             shapes.push(Shape::Text {
                 pos: Pos::new(c.x, c.y + 12.0),
@@ -190,6 +205,67 @@ fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
     let fill = Some(fill);
     let stroke = Some(OUTLINE);
     match kind {
+        BlockKind::Rounded => shapes.push(Shape::Rect {
+            rect: r,
+            radius: (r.height() / 2.0).min(18.0),
+            fill,
+            stroke,
+        }),
+        BlockKind::Circle | BlockKind::Cloud => {
+            let c = r.center();
+            let (rx, ry) = (r.width() / 2.0, r.height() / 2.0);
+            let points = if kind == BlockKind::Circle {
+                arc(c, rx, ry, 0.0, 360.0)
+            } else {
+                cloud(c, rx, ry)
+            };
+            shapes.push(Shape::Polygon {
+                points,
+                fill,
+                stroke,
+            });
+        }
+        BlockKind::Diamond => {
+            let c = r.center();
+            shapes.push(Shape::Polygon {
+                points: vec![
+                    Pos::new(c.x, r.min.y),
+                    Pos::new(r.max.x, c.y),
+                    Pos::new(c.x, r.max.y),
+                    Pos::new(r.min.x, c.y),
+                ],
+                fill,
+                stroke,
+            });
+        }
+        BlockKind::Document => {
+            // A sheet whose lower edge waves.
+            let wave = 8.0;
+            let mut points = vec![
+                Pos::new(r.min.x, r.min.y),
+                Pos::new(r.max.x, r.min.y),
+                Pos::new(r.max.x, r.max.y - wave),
+            ];
+            let steps = 24;
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let x = r.max.x - t * r.width();
+                let y = r.max.y - wave + wave * (t * std::f32::consts::TAU).sin();
+                points.push(Pos::new(x, y));
+            }
+            shapes.push(Shape::Polygon {
+                points,
+                fill,
+                stroke,
+            });
+        }
+        // No border: a sticky note in its colour (white on the white page by default).
+        BlockKind::Note => shapes.push(Shape::Rect {
+            rect: r,
+            radius: 2.0,
+            fill,
+            stroke: None,
+        }),
         BlockKind::Component | BlockKind::Page => shapes.push(Shape::Rect {
             rect: r,
             radius: 4.0,
@@ -313,6 +389,19 @@ fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {
             stroke: Some(Stroke::dashed(1.5, INK)),
         }),
     }
+}
+
+/// The outline of a cloud: an ellipse with bumps.
+fn cloud(c: Pos, rx: f32, ry: f32) -> Vec<Pos> {
+    let steps = 96;
+    (0..=steps)
+        .map(|i| {
+            let t = i as f32 / steps as f32 * std::f32::consts::TAU;
+            // Bumps outward, but the whole cloud stays inside its box.
+            let bump = (1.0 + 0.09 * (t * 7.0).sin().abs()) / 1.09;
+            Pos::new(c.x + rx * bump * t.cos(), c.y + ry * bump * t.sin())
+        })
+        .collect()
 }
 
 /// Points on an ellipse from `from` to `to` degrees (0 = right, 90 = down).
@@ -526,6 +615,9 @@ pub fn frame_label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
     }
     out
 }
+
+/// Distance between the lines of a doodle shape's text.
+pub const NAME_LINE: f32 = 19.0;
 
 /// Distance between wrapped label lines.
 const LINE_HEIGHT: f32 = LABEL_SIZE + 3.0;

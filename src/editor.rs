@@ -27,6 +27,8 @@ pub struct BlockForm {
     pub tag: String,
     /// A cross-cutting band instead of a grid box.
     pub band: bool,
+    /// A doodle shape's own colour.
+    pub color: Option<Rgb>,
 }
 
 impl Default for BlockForm {
@@ -36,6 +38,7 @@ impl Default for BlockForm {
             kind: BlockKind::Component,
             tag: String::new(),
             band: false,
+            color: None,
         }
     }
 }
@@ -47,6 +50,7 @@ impl BlockForm {
             kind: self.kind,
             tag: Some(self.tag.clone()),
             band: self.band,
+            color: self.color,
         }
     }
 }
@@ -634,6 +638,7 @@ impl Editor {
                     kind: b.kind,
                     tag,
                     band: b.band,
+                    color: b.color,
                 },
             ));
         }
@@ -675,7 +680,7 @@ impl Editor {
     /// Kinds offered in the current diagram: neighbours only in the context view.
     pub fn kinds(&self) -> Vec<BlockKind> {
         if self.project.is_doodle() {
-            return BlockKind::ALL.to_vec();
+            return BlockKind::DOODLE.to_vec();
         }
         BlockKind::ALL
             .into_iter()

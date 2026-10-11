@@ -58,12 +58,26 @@ pub fn show(
                 ui.label(RichText::new(message).color(ERROR));
             }
         });
-    let keys = ctx.input(|i| (i.key_pressed(Key::Enter), i.key_pressed(Key::Escape)));
+    // A doodle shape's text takes Enter for a new line; Ctrl+Enter confirms there.
+    let lines = editor.project.is_doodle() && shape_text(popup);
+    let keys = ctx.input(|i| {
+        let enter = i.key_pressed(Key::Enter) && (!lines || i.modifiers.command);
+        (enter, i.key_pressed(Key::Escape))
+    });
     match keys {
         _ if action.is_some() => action,
         (true, _) => Some(Action::Confirm),
         (_, true) => Some(Action::Cancel),
         _ => None,
+    }
+}
+
+/// Whether the popup edits the text of a shape (not a page).
+fn shape_text(popup: &Popup) -> bool {
+    match popup {
+        Popup::AddBlock(form, _) | Popup::EditBlock(_, form) => form.kind != BlockKind::Page,
+        Popup::Connect(form) => form.mode == ConnectMode::New,
+        _ => false,
     }
 }
 
@@ -352,6 +366,10 @@ fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bo
         });
         return;
     }
+    if editor.project.is_doodle() {
+        doodle_form(ui, editor, form, focus);
+        return;
+    }
     egui::Grid::new("block-form").num_columns(2).show(ui, |ui| {
         ui.label("Name");
         let name = ui.text_edit_singleline(&mut form.name);
@@ -397,6 +415,50 @@ fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bo
     if !editor.kinds().contains(&BlockKind::Person) && form.kind.is_neighbour() {
         form.kind = BlockKind::Component;
     }
+}
+
+/// A doodle shape: text over several lines, a shape, and a colour.
+fn doodle_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bool) {
+    ui.label("Text");
+    let text = ui.add(
+        egui::TextEdit::multiline(&mut form.name)
+            .desired_rows(3)
+            .desired_width(260.0),
+    );
+    if std::mem::take(focus) {
+        text.request_focus();
+    }
+    ui.label(
+        RichText::new("Enter starts a new line; Ctrl+Enter confirms.")
+            .weak()
+            .small(),
+    );
+    ui.horizontal(|ui| {
+        ui.label("Shape");
+        egui::ComboBox::from_id_salt("shape-kind")
+            .selected_text(form.kind.doodle_label())
+            .show_ui(ui, |ui| {
+                for kind in editor.kinds() {
+                    ui.selectable_value(&mut form.kind, kind, kind.doodle_label());
+                }
+            });
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Colour");
+        let none = egui::Button::new("none").selected(form.color.is_none());
+        if ui.add(none).clicked() {
+            form.color = None;
+        }
+        for c in crate::model::PALETTE {
+            let mut swatch = egui::Button::new("    ").fill(super::canvas::color(c));
+            if form.color == Some(c) {
+                swatch = swatch.stroke(egui::Stroke::new(2.0, Color32::BLACK));
+            }
+            if ui.add(swatch).clicked() {
+                form.color = Some(c);
+            }
+        }
+    });
 }
 
 /// A filter field and a list of targets. Returns whether "pick in diagram" was hit.

@@ -121,6 +121,9 @@ struct BlockDto {
     cell: Option<Cell>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     band: bool,
+    /// A doodle shape's own colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    color: Option<Rgb>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     responsibility: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -233,6 +236,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 tag: b.tag,
                 cell: (!b.gridless()).then_some(b.cell),
                 band: b.band,
+                color: b.color,
                 responsibility: b.responsibility.clone(),
                 motivation: b.motivation.clone(),
             })
@@ -321,6 +325,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 parent: b.parent,
                 cell,
                 band: b.band,
+                color: b.color,
                 responsibility: b.responsibility,
                 motivation: b.motivation,
             },
@@ -408,6 +413,9 @@ fn check(project: &Project) -> Result<(), PersistError> {
         };
         if !fits {
             return invalid(format!("box {} is a page out of place", id.0));
+        }
+        if !project.is_doodle() && b.kind.doodle_only() {
+            return invalid(format!("box {} is a doodle shape", id.0));
         }
     }
     if project.is_doodle() && project.pages().is_empty() {

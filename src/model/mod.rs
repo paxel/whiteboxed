@@ -47,6 +47,17 @@ pub enum BlockKind {
     /// A page of a doodle: a top-level box that is never drawn; its whitebox is the
     /// page.
     Page,
+    /// Doodle shapes: a process step.
+    Rounded,
+    /// Start or end.
+    Circle,
+    /// A decision.
+    Diamond,
+    Document,
+    /// A network, the internet.
+    Cloud,
+    /// Text without a border.
+    Note,
 }
 
 impl BlockKind {
@@ -72,7 +83,48 @@ impl BlockKind {
             BlockKind::Person => "person",
             BlockKind::ExternalSystem => "external system",
             BlockKind::Page => "page",
+            BlockKind::Rounded => "rounded box",
+            BlockKind::Circle => "circle",
+            BlockKind::Diamond => "diamond",
+            BlockKind::Document => "document",
+            BlockKind::Cloud => "cloud",
+            BlockKind::Note => "note",
         }
+    }
+
+    /// The shapes of a doodle, in the order the dialogs offer them.
+    pub const DOODLE: [BlockKind; 9] = [
+        BlockKind::Component,
+        BlockKind::Rounded,
+        BlockKind::Circle,
+        BlockKind::Diamond,
+        BlockKind::Database,
+        BlockKind::Document,
+        BlockKind::Cloud,
+        BlockKind::Person,
+        BlockKind::Note,
+    ];
+
+    /// The name of a kind as a doodle shape.
+    pub fn doodle_label(self) -> &'static str {
+        match self {
+            BlockKind::Component => "box",
+            BlockKind::Database => "cylinder",
+            other => other.label(),
+        }
+    }
+
+    /// Shapes that exist only in doodles.
+    pub fn doodle_only(self) -> bool {
+        matches!(
+            self,
+            BlockKind::Rounded
+                | BlockKind::Circle
+                | BlockKind::Diamond
+                | BlockKind::Document
+                | BlockKind::Cloud
+                | BlockKind::Note
+        )
     }
 
     /// Neighbours live in the context view only and never open into a whitebox.
@@ -271,6 +323,8 @@ pub struct Block {
     pub cell: Cell,
     /// A cross-cutting band across the bottom of the diagram, without lines.
     pub band: bool,
+    /// A doodle shape's own colour; `None`: the tag's or the default.
+    pub color: Option<Rgb>,
     /// What this building block is responsible for (arc42 blackbox description).
     pub responsibility: String,
     /// Why the whitebox of this block is decomposed the way it is.
@@ -446,6 +500,8 @@ pub enum ModelError {
     LastPage,
     #[error("lines in a doodle connect two shapes; there are no open ends")]
     NoOpenEnds,
+    #[error("{0} shapes exist only in doodles")]
+    DoodleOnly(&'static str),
     #[error("pages only exist in doodles, as the top level")]
     PageOutOfPlace,
     #[error("a relation with an open end cannot be split")]

@@ -439,8 +439,13 @@ impl App {
                 self.redo();
             }
             ui.add_space(12.0);
+            let label = if self.editor.project.is_doodle() {
+                "+ Shape"
+            } else {
+                "+ Box"
+            };
             let add = ui
-                .button("+ Box")
+                .button(label)
                 .on_hover_text("Add a box to this diagram, in the next free cell");
             if add.clicked() {
                 self.anchor = add.rect.left_bottom() + vec2(0.0, 8.0);

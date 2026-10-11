@@ -1373,3 +1373,32 @@ fn a_new_doodle_shows_page_tabs_instead_of_the_arc42_panels() -> TestResult {
     assert_eq!(h.state().editor.diagram, Some(first));
     Ok(())
 }
+
+#[test]
+fn a_doodle_shape_takes_several_lines_and_a_shape() -> TestResult {
+    let mut h = harness(Editor::new_doodle(None));
+    h.run();
+    h.get_by_label("+ Shape").click();
+    h.run();
+    h.event(Event::Text("Check token".into()));
+    h.key_press(Key::Enter);
+    h.run();
+    assert!(h.state().editor.popup.is_some(), "Enter adds a line");
+    h.event(Event::Text("valid?".into()));
+    h.run();
+    h.get_by_role(egui::accesskit::Role::ComboBox).click();
+    h.run();
+    h.get_by_label("diamond").click();
+    h.run();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+    h.run();
+    assert!(h.state().editor.popup.is_none(), "Ctrl+Enter confirms");
+    let p = &h.state().editor.project;
+    let shape = p
+        .blocks
+        .values()
+        .find(|b| b.kind == BlockKind::Diamond)
+        .ok_or("no diamond")?;
+    assert_eq!(shape.name, "Check token\nvalid?");
+    Ok(())
+}

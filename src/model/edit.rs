@@ -15,6 +15,8 @@ pub struct BlockSpec {
     pub tag: Option<String>,
     /// A cross-cutting band across the bottom of the diagram instead of a grid box.
     pub band: bool,
+    /// A doodle shape's own colour.
+    pub color: Option<Rgb>,
 }
 
 impl BlockSpec {
@@ -24,6 +26,7 @@ impl BlockSpec {
             kind,
             tag: None,
             band: false,
+            color: None,
         }
     }
 
@@ -132,6 +135,7 @@ impl Project {
         block.kind = spec.kind;
         block.tag = tag;
         block.band = spec.band;
+        block.color = spec.color;
         if let Some(cell) = cell {
             block.cell = cell;
         }
@@ -702,6 +706,7 @@ impl Project {
                 parent: diagram,
                 cell: if spec.band { Cell::new(0, 0) } else { cell },
                 band: spec.band,
+                color: spec.color,
                 responsibility: String::new(),
                 motivation: String::new(),
             },
@@ -782,6 +787,9 @@ impl Project {
         }
         if page {
             return Err(ModelError::PageOutOfPlace);
+        }
+        if kind.doodle_only() {
+            return Err(ModelError::DoodleOnly(kind.label()));
         }
         if kind.is_neighbour() && diagram.is_some() {
             return Err(ModelError::NeighbourBelowContext(kind.label()));

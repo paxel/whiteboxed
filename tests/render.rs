@@ -480,3 +480,103 @@ fn doc_screenshot_restructure_menu() -> TestResult {
     right_click(&mut h, at);
     save(&mut h, "restructure")
 }
+
+/// A login flow on one page and a network sketch on another.
+fn doodle() -> Result<Editor, Box<dyn std::error::Error>> {
+    use whiteboxed::model::{Cell, Placement, Rgb};
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    p.edit_block(page, &BlockSpec::new("Login flow", BlockKind::Page))?;
+    let shape = |text: &str, kind| BlockSpec::new(text, kind);
+    let user = p.add_block(Some(page), &shape("User", BlockKind::Person))?;
+    let (start, _) = p.connect_new(
+        user,
+        Side::Right,
+        &shape("Start", BlockKind::Circle),
+        Direction::Out,
+        "opens",
+    )?;
+    let (form, _) = p.connect_new(
+        start,
+        Side::Right,
+        &shape("Enter name\nand password", BlockKind::Rounded),
+        Direction::Out,
+        "",
+    )?;
+    let check = BlockSpec {
+        color: Some(Rgb(0xff, 0xe6, 0x99)),
+        ..shape("Password\nvalid?", BlockKind::Diamond)
+    };
+    let (valid, _) = p.connect_new(form, Side::Right, &check, Direction::Out, "submit")?;
+    let (session, _) = p.connect_new(
+        valid,
+        Side::Right,
+        &shape("Create session", BlockKind::Rounded),
+        Direction::Out,
+        "yes",
+    )?;
+    let (_, _) = p.connect_new(
+        valid,
+        Side::Bottom,
+        &shape("Show error", BlockKind::Rounded),
+        Direction::Out,
+        "no",
+    )?;
+    p.connect_new(
+        session,
+        Side::Bottom,
+        &shape("Sessions", BlockKind::Database),
+        Direction::Out,
+        "store",
+    )?;
+    p.connect_new(
+        session,
+        Side::Right,
+        &shape("Welcome\npage", BlockKind::Document),
+        Direction::Out,
+        "",
+    )?;
+    let note = p.add_block(
+        Some(page),
+        &BlockSpec {
+            color: Some(Rgb(0xff, 0xf4, 0xb8)),
+            ..shape("After 5 failures:\nlock for 10 minutes", BlockKind::Note)
+        },
+    )?;
+    p.move_block(note, Cell::new(1, 2))?;
+    let net = p.add_page("Network")?;
+    let internet = p.add_block(Some(net), &shape("Internet", BlockKind::Cloud))?;
+    let (lb, _) = p.connect_new(
+        internet,
+        Side::Right,
+        &shape("Load\nbalancer", BlockKind::Component),
+        Direction::Out,
+        "HTTPS",
+    )?;
+    let (app, _) = p.connect_new(
+        lb,
+        Side::Right,
+        &shape("App", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    p.connect_existing(
+        app,
+        Side::Right,
+        lb,
+        Direction::Out,
+        "health",
+        Placement::Keep,
+    )?;
+    let mut e = editor_with(p);
+    e.open_diagram(Some(page));
+    Ok(e)
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_doodle() -> TestResult {
+    let mut h = harness(doodle()?);
+    h.run();
+    save(&mut h, "doodle")
+}

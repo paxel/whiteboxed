@@ -295,14 +295,32 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             continue;
         };
         let o = Owner::Block(*id);
-        let text_w = text::width(&b.name, NAME_SIZE)
-            .max(text::width(&kind_caption(b.kind), KIND_SIZE))
-            + 2.0 * PAD;
+        // The text: the name and its type caption, or a doodle shape's lines.
+        let (text_w, text_h) = if project.is_doodle() {
+            let w = b
+                .name
+                .lines()
+                .map(|l| text::width(l, NAME_SIZE))
+                .fold(0.0, f32::max);
+            let n = b.name.lines().count().max(1) as f32;
+            (w, n * crate::scene::NAME_LINE)
+        } else {
+            let w =
+                text::width(&b.name, NAME_SIZE).max(text::width(&kind_caption(b.kind), KIND_SIZE));
+            (w, 0.0)
+        };
+        // Round and pointed shapes need room around the text.
+        let (fw, fh) = match b.kind {
+            BlockKind::Diamond => (1.9, 2.0),
+            BlockKind::Circle | BlockKind::Cloud => (1.45, 1.6),
+            _ => (1.0, 1.0),
+        };
         let w = MIN_W
-            .max(text_w)
+            .max((text_w + 2.0 * PAD) * fw)
             .max((count(o, Side::Top) + 1.0) * PORT_SPACING)
             .max((count(o, Side::Bottom) + 1.0) * PORT_SPACING);
         let h = MIN_H
+            .max((text_h + 2.0 * PAD) * fh)
             .max((count(o, Side::Left) + 1.0) * PORT_SPACING)
             .max((count(o, Side::Right) + 1.0) * PORT_SPACING);
         sizes.insert(*id, (b.cell, w, h));
@@ -323,15 +341,16 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         );
         let rect = Rect::from_center(center, *w, *h);
         rects.insert(*id, (rect, ci, ri));
-        let fill = b
-            .tag
-            .and_then(|t| project.tags.get(&t))
-            .map(|t| t.color)
-            .unwrap_or(if b.kind.is_neighbour() {
-                NEIGHBOUR_FILL
-            } else {
-                DEFAULT_FILL
-            });
+        let fill = b.color.unwrap_or_else(|| {
+            b.tag
+                .and_then(|t| project.tags.get(&t))
+                .map(|t| t.color)
+                .unwrap_or(if b.kind.is_neighbour() && !project.is_doodle() {
+                    NEIGHBOUR_FILL
+                } else {
+                    DEFAULT_FILL
+                })
+        });
         blocks.push(BlockGeom {
             id: *id,
             rect,
@@ -601,7 +620,25 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         let geom = match (pa, pb) {
             (Some(a), Some(b)) => {
                 let chans = routes.get(&li).cloned().unwrap_or_default();
-                let points = route_points(&grid, &offsets, li, a.0, b.0, &chans);
+                let mut points = route_points(&grid, &offsets, li, a.0, b.0, &chans);
+                // Round and pointed shapes: the line reaches their outline.
+                let outline = |end: &ViewEnd, port: (Pos, Side, Chan)| match end {
+                    ViewEnd::Block { block, .. } => {
+                        let kind = project.blocks.get(block).map(|b| b.kind);
+                        let rect = rects.get(block).map(|r| r.0);
+                        match (kind, rect) {
+                            (Some(k), Some(r)) => on_outline(k, r, port.1, port.0),
+                            _ => port.0,
+                        }
+                    }
+                    _ => port.0,
+                };
+                if let Some(first) = points.first_mut() {
+                    *first = outline(&line.a, a);
+                }
+                if let Some(last) = points.last_mut() {
+                    *last = outline(&line.b, b);
+                }
                 build_line(line, LineKind::Routed, points, None, None)
             }
             (Some(a), None) | (None, Some(a)) => {
@@ -810,6 +847,31 @@ pub fn wrap(text: &str, width: f32, size: f32) -> Vec<String> {
 }
 
 /// The caption under a box name, e.g. `«database»`.
+/// Where a line that reaches a box at `port` on `side` meets the box's outline: the
+/// port itself for boxes, further in along the line for round and pointed shapes.
+fn on_outline(kind: BlockKind, r: Rect, side: Side, port: Pos) -> Pos {
+    let c = r.center();
+    let (a, b) = (r.width() / 2.0, r.height() / 2.0);
+    // How far across the side the port lies, 0 at its middle and 1 at its corner.
+    let across = if side.is_horizontal() {
+        ((port.y - c.y) / b).abs().min(1.0)
+    } else {
+        ((port.x - c.x) / a).abs().min(1.0)
+    };
+    // How far in from the side the outline is, as a share of the half size.
+    let inset = match kind {
+        BlockKind::Circle | BlockKind::Cloud => 1.0 - (1.0 - across * across).sqrt(),
+        BlockKind::Diamond => across,
+        _ => return port,
+    };
+    match side {
+        Side::Top => Pos::new(port.x, r.min.y + inset * b),
+        Side::Bottom => Pos::new(port.x, r.max.y - inset * b),
+        Side::Left => Pos::new(r.min.x + inset * a, port.y),
+        Side::Right => Pos::new(r.max.x - inset * a, port.y),
+    }
+}
+
 pub fn kind_caption(kind: BlockKind) -> String {
     format!("\u{ab}{}\u{bb}", kind.label())
 }
