@@ -1,6 +1,8 @@
 //! Every change the editor can make to a [`Project`]. Each operation validates
 //! first and only then mutates, so a failed operation leaves the project unchanged.
 
+use std::collections::BTreeMap;
+
 use super::{
     Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint, LineStyle,
     MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_RELATIONS_PER_DIAGRAM, MAX_TEXT, ModelError, ModelResult,
@@ -284,6 +286,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            frame_sides: BTreeMap::new(),
         });
         Ok((new, rel))
     }
@@ -349,6 +352,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            frame_sides: BTreeMap::new(),
         }))
     }
 
@@ -383,6 +387,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            frame_sides: BTreeMap::new(),
         }))
     }
 
@@ -588,6 +593,36 @@ impl Project {
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?;
         relation.style = style;
+        Ok(())
+    }
+
+    /// Sets the frame side where `rel` enters the whitebox of `outer`; `None` lets
+    /// whiteboxed choose.
+    pub fn set_frame_side(
+        &mut self,
+        rel: RelationId,
+        outer: BlockId,
+        side: Option<Side>,
+    ) -> ModelResult<()> {
+        let relation = self
+            .relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?;
+        // A relation that reaches a box enters its whitebox.
+        let enters = [&relation.a, &relation.b]
+            .iter()
+            .any(|e| e.position_of(outer).is_some());
+        if !enters {
+            return Err(ModelError::NotOnChain);
+        }
+        match side {
+            Some(s) => {
+                relation.frame_sides.insert(outer, s);
+            }
+            None => {
+                relation.frame_sides.remove(&outer);
+            }
+        }
         Ok(())
     }
 

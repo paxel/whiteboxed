@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.4.0] - Unreleased
 
+### Added
+
+- Where a relation enters a whitebox can be chosen by hand: drag its end to another side of the frame, or pick Enters at in the line's dialog (also for the AI, in edit_relation).
+
 ### Changed
 
 - A relation from outside enters a whitebox on the frame side nearest the box that takes it, instead of always on the side it has one level up; the box faces that side.

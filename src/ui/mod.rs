@@ -90,6 +90,8 @@ pub struct App {
     /// The grid cell under the last right-click.
     context_cell: Option<Cell>,
     drag: Option<BlockId>,
+    /// A frame end being dragged to another side of the frame.
+    drag_end: Option<RelationId>,
     picking: bool,
     /// A box waiting for the user to click the box it should move into.
     moving_into: Option<BlockId>,
@@ -124,6 +126,7 @@ impl App {
             context: None,
             context_cell: None,
             drag: None,
+            drag_end: None,
             picking: false,
             moving_into: None,
             leave: None,
@@ -818,7 +821,22 @@ impl App {
         let hit_with = |v: View, p: Pos2| hit::hit(project, &layout, v.diagram(p), v.zoom);
         if resp.drag_started_by(PointerButton::Primary) {
             let start = ui.input(|i| i.pointer.press_origin());
+            // A frame end: drag it to another side of the frame.
+            self.drag_end = start.and_then(|p| {
+                let d = view.diagram(p);
+                layout
+                    .lines
+                    .iter()
+                    .filter(|l| !l.leaves_open())
+                    .find(|l| {
+                        l.frame_port
+                            .as_ref()
+                            .is_some_and(|(fp, _, _)| fp.dist(d) <= 10.0 / view.zoom)
+                    })
+                    .map(|l| l.relation)
+            });
             self.drag = match start.map(|p| hit_with(view, p)) {
+                _ if self.drag_end.is_some() => None,
                 // Bands stay at the bottom; they cannot be dragged.
                 Some(Hit::Block(b))
                     if !self.picks() && project.blocks.get(&b).is_some_and(|x| !x.gridless()) =>
@@ -828,11 +846,29 @@ impl App {
                 _ => None,
             };
         }
-        if self.drag.is_none() && resp.dragged() {
+        if self.drag.is_none() && self.drag_end.is_none() && resp.dragged() {
             view.origin += resp.drag_delta();
         }
         let pointer = resp.interact_pointer_pos().or(resp.hover_pos());
         let mut moved = None;
+        // A frame end dropped: the frame side nearest to where it was let go.
+        let mut new_side = None;
+        if resp.drag_stopped()
+            && let Some(rel) = self.drag_end.take()
+            && let (Some(p), Some(frame)) = (pointer, layout.frame)
+        {
+            let d = view.diagram(p);
+            let side = [
+                (Side::Top, (d.y - frame.min.y).abs()),
+                (Side::Bottom, (d.y - frame.max.y).abs()),
+                (Side::Left, (d.x - frame.min.x).abs()),
+                (Side::Right, (d.x - frame.max.x).abs()),
+            ]
+            .into_iter()
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(s, _)| s);
+            new_side = side.map(|s| (rel, s));
+        }
         if resp.drag_stopped()
             && let Some(b) = self.drag.take()
             && let Some(p) = pointer
@@ -878,6 +914,9 @@ impl App {
         });
         if let Some((b, cell)) = moved {
             self.editor.move_block(b, cell);
+        }
+        if let Some((rel, side)) = new_side {
+            self.editor.set_frame_side(rel, Some(side));
         }
         if let Some((p, h)) = clicked {
             // The release that made the click carries its own modifiers.
@@ -1012,9 +1051,31 @@ impl App {
             resp.ctx.set_cursor_icon(CursorIcon::Grabbing);
             return;
         }
+        if self.drag_end.is_some()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            painter.rect_filled(
+                egui::Rect::from_center_size(p, vec2(12.0, 12.0)),
+                0.0,
+                ACCENT,
+            );
+            resp.ctx.set_cursor_icon(CursorIcon::Grabbing);
+            return;
+        }
         let Some(p) = resp.hover_pos() else {
             return;
         };
+        // A frame end can be dragged to another side.
+        let d = view.diagram(p);
+        let on_end = layout.lines.iter().filter(|l| !l.leaves_open()).any(|l| {
+            l.frame_port
+                .as_ref()
+                .is_some_and(|(fp, _, _)| fp.dist(d) <= 10.0 / view.zoom)
+        });
+        if on_end && !self.picks() {
+            resp.ctx.set_cursor_icon(CursorIcon::Grab);
+            return;
+        }
         match hit_at(p) {
             Hit::Side(b, _) | Hit::Block(b) if self.picks() => {
                 if let Some(r) = block_rect(b) {
@@ -1366,6 +1427,7 @@ impl App {
         self.draft = None;
         self.view = None;
         self.drag = None;
+        self.drag_end = None;
         self.picking = false;
         self.moving_into = None;
     }

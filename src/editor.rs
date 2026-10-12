@@ -142,6 +142,9 @@ pub enum Popup {
         style: Option<LineStyle>,
         short: String,
         pattern: crate::model::LinePattern,
+        /// The whitebox shown and the frame side chosen there (`None`: automatic),
+        /// when the relation enters it from outside.
+        frame: Option<(BlockId, Option<Side>)>,
         /// The boxes of this diagram the line touches, with the side it leaves them on.
         sides: Vec<(BlockId, Side)>,
     },
@@ -677,6 +680,13 @@ impl Editor {
                 style: r.style,
                 short: r.short.clone(),
                 pattern: r.pattern,
+                frame: self
+                    .diagram
+                    .filter(|d| {
+                        r.owner != Some(*d)
+                            && [&r.a, &r.b].iter().any(|e| e.position_of(*d).is_some())
+                    })
+                    .map(|d| (d, r.frame_sides.get(&d).copied())),
                 sides,
             });
         }
@@ -843,6 +853,7 @@ impl Editor {
                 style,
                 short,
                 pattern,
+                frame,
                 sides,
             } => {
                 if self
@@ -850,6 +861,9 @@ impl Editor {
                         p.edit_relation(rel, direction, &text)?;
                         p.set_relation_short(rel, &short)?;
                         p.set_relation_pattern(rel, pattern)?;
+                        if let Some((outer, side)) = frame {
+                            p.set_frame_side(rel, outer, side)?;
+                        }
                         for (block, side) in &sides {
                             p.set_side_at(rel, *block, *side)?;
                         }
@@ -1215,6 +1229,13 @@ impl Editor {
     /// Asks before dissolving the whitebox of `block`.
     pub fn start_dissolve(&mut self, block: BlockId) {
         self.popup = Some(Popup::ConfirmDissolve { block });
+    }
+
+    /// Sets the side where `rel` enters the shown whitebox (`None`: automatic).
+    pub fn set_frame_side(&mut self, rel: RelationId, side: Option<Side>) {
+        if let Some(outer) = self.diagram {
+            self.apply(|p| p.set_frame_side(rel, outer, side));
+        }
     }
 
     /// Moves a box into the whitebox of a neighbour.

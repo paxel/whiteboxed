@@ -959,3 +959,33 @@ fn the_ai_draws_a_doodle_by_id() -> TestResult {
     assert_eq!(got["pages"][0]["lines"][0]["pattern"], "dotted");
     Ok(())
 }
+
+#[test]
+fn edit_relation_sets_the_frame_side() -> TestResult {
+    let mut e = Editor::new(None);
+    shop(&mut e)?;
+    let rel = *e.project.relations.keys().next().ok_or("relation")?;
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "frame_side": {"whitebox": "Web Shop", "side": "top"}}),
+    )?;
+    let shop_id = e
+        .project
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Web Shop")
+        .map(|(id, _)| *id)
+        .ok_or("shop")?;
+    assert_eq!(
+        e.project.relation(rel)?.frame_sides.get(&shop_id),
+        Some(&whiteboxed::model::Side::Top)
+    );
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "frame_side": {"whitebox": "Web Shop", "side": "automatic"}}),
+    )?;
+    assert!(e.project.relation(rel)?.frame_sides.is_empty());
+    Ok(())
+}

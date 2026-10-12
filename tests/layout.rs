@@ -992,3 +992,41 @@ fn a_relation_enters_a_whitebox_next_to_the_box_that_takes_it() -> TestResult {
     assert_eq!(line.points.len(), 2, "{:?}", line.points);
     Ok(())
 }
+
+#[test]
+fn a_frame_side_chosen_by_hand_stays_until_set_back() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &spec("User", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Shop", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    let web = p.add_block(Some(shop), &spec("Web", BlockKind::Component))?;
+    p.attach(rel, End::B, shop, web, Side::Left)?;
+    let side = |p: &Project| {
+        diagram_view(p, Some(shop))
+            .lines
+            .iter()
+            .find_map(|l| match (&l.a, &l.b) {
+                (ViewEnd::Frame { side, .. }, _) | (_, ViewEnd::Frame { side, .. }) => Some(*side),
+                _ => None,
+            })
+    };
+    p.set_frame_side(rel, shop, Some(Side::Bottom))?;
+    assert_eq!(side(&p), Some(Side::Bottom));
+    p.move_block(web, Cell::new(3, 0))?;
+    assert_eq!(side(&p), Some(Side::Bottom), "a move keeps it");
+    let back = whiteboxed::persist::from_yaml(&whiteboxed::persist::to_yaml(&p)?)?;
+    assert_eq!(side(&back), Some(Side::Bottom));
+    p.set_frame_side(rel, shop, None)?;
+    assert_eq!(side(&p), Some(Side::Left));
+    let other = p.add_block(None, &spec("Other", BlockKind::Component))?;
+    assert_eq!(
+        p.set_frame_side(rel, other, Some(Side::Top)),
+        Err(whiteboxed::model::ModelError::NotOnChain)
+    );
+    Ok(())
+}

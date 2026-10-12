@@ -697,3 +697,30 @@ fn the_relation_dialog_sets_the_pattern_in_a_doodle() -> TestResult {
     assert_eq!(e.project.relation(rel)?.pattern, LinePattern::Dashed);
     Ok(())
 }
+
+#[test]
+fn the_relation_dialog_sets_where_a_line_enters() -> TestResult {
+    let mut e = Editor::new(None);
+    let shop = add_first(&mut e, "Shop")?;
+    connect_new(&mut e, shop, Side::Left, "User", BlockKind::Person)?;
+    let rel = *e.project.relations.keys().next().ok_or("rel")?;
+    // In the context view the relation is the diagram's own: no frame to enter.
+    e.start_edit_relation(rel);
+    assert!(matches!(
+        e.popup,
+        Some(Popup::EditRelation { frame: None, .. })
+    ));
+    e.close_popup();
+    e.open_diagram(Some(shop));
+    e.start_edit_relation(rel);
+    if let Some(Popup::EditRelation { frame, .. }) = &mut e.popup {
+        assert_eq!(*frame, Some((shop, None)));
+        *frame = Some((shop, Some(Side::Top)));
+    }
+    e.confirm();
+    assert_eq!(
+        e.project.relation(rel)?.frame_sides.get(&shop),
+        Some(&Side::Top)
+    );
+    Ok(())
+}

@@ -404,6 +404,29 @@ pub struct EditRelationArgs {
     /// sets its sides back to the ones facing the partner.
     #[serde(default)]
     pub sides: Vec<SideAt>,
+    /// Where the line enters the whitebox of a box it reaches; "automatic" puts it
+    /// next to the box inside that takes it.
+    #[serde(default)]
+    pub frame_side: Option<FrameSideAt>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct FrameSideAt {
+    /// The box whose whitebox the line enters.
+    pub whitebox: BoxRef,
+    pub side: ApiFrameSide,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(rename_all = "snake_case")]
+pub enum ApiFrameSide {
+    Automatic,
+    Top,
+    Right,
+    Bottom,
+    Left,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1000,11 +1023,27 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
         .iter()
         .map(|s| Ok((resolve(&editor.project, &s.target)?, Side::from(s.side))))
         .collect::<ApiResult<Vec<_>>>()?;
+    let frame = match &a.frame_side {
+        Some(f) => {
+            let side = match f.side {
+                ApiFrameSide::Automatic => None,
+                ApiFrameSide::Top => Some(Side::Top),
+                ApiFrameSide::Right => Some(Side::Right),
+                ApiFrameSide::Bottom => Some(Side::Bottom),
+                ApiFrameSide::Left => Some(Side::Left),
+            };
+            Some((resolve(&editor.project, &f.whitebox)?, side))
+        }
+        None => None,
+    };
     editor.apply_ai(|p| {
         p.edit_relation(rel, d, &text)?;
         p.set_relation_short(rel, &short)?;
         for (block, side) in &sides {
             p.set_side_at(rel, *block, *side)?;
+        }
+        if let Some((outer, side)) = frame {
+            p.set_frame_side(rel, outer, side)?;
         }
         p.set_relation_style(rel, style)
     })?;

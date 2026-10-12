@@ -155,6 +155,9 @@ struct RelationDto {
     short: String,
     #[serde(default, skip_serializing_if = "is_solid")]
     pattern: LinePattern,
+    /// Frame sides chosen by hand: whitebox box id to side.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    frame_sides: BTreeMap<BlockId, Side>,
 }
 
 fn is_solid(p: &LinePattern) -> bool {
@@ -264,6 +267,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 style: r.style,
                 short: r.short.clone(),
                 pattern: r.pattern,
+                frame_sides: r.frame_sides.clone(),
             })
             .collect(),
     };
@@ -356,6 +360,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 style: r.style,
                 short: r.short,
                 pattern: r.pattern,
+                frame_sides: r.frame_sides,
             },
         );
     }

@@ -1444,3 +1444,66 @@ fn ctrl_selected_shapes_are_framed_as_a_group() -> TestResult {
     assert_eq!(members, vec![a, b]);
     Ok(())
 }
+
+#[test]
+fn a_frame_end_is_dragged_to_another_side() -> TestResult {
+    use whiteboxed::model::{Direction, End};
+    let mut e = Editor::new(None);
+    let user = e
+        .project
+        .add_block(None, &BlockSpec::new("User", BlockKind::Person))?;
+    let (shop, rel) = e.project.connect_new(
+        user,
+        Side::Right,
+        &BlockSpec::new("Shop", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    let web = e
+        .project
+        .add_block(Some(shop), &BlockSpec::new("Web", BlockKind::Component))?;
+    e.project.attach(rel, End::B, shop, web, Side::Left)?;
+    e.open_diagram(Some(shop));
+    let mut h = harness(e);
+    h.run();
+    let layout = h.state_mut().editor.layout().clone();
+    let port = layout
+        .lines
+        .iter()
+        .find_map(|l| l.frame_port.as_ref().map(|f| f.0))
+        .ok_or("frame end")?;
+    let frame = layout.frame.ok_or("frame")?;
+    let from = screen(&h, port)?;
+    let to = screen(&h, Pos::new(frame.center().x, frame.max.y - 2.0))?;
+    h.event(Event::PointerMoved(from));
+    h.step();
+    h.event(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    for i in 1..=6 {
+        let t = i as f32 / 6.0;
+        h.event(Event::PointerMoved(from + (to - from) * t));
+        h.step();
+    }
+    h.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+    assert_eq!(
+        h.state()
+            .editor
+            .project
+            .relation(rel)?
+            .frame_sides
+            .get(&shop),
+        Some(&Side::Bottom)
+    );
+    Ok(())
+}

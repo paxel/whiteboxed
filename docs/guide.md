@@ -108,7 +108,10 @@ documentation export always carry the full texts.
 
 When a relation reaches a box, it also shows up inside that box's whitebox: it enters
 through the frame on the side nearest the box inside that takes it (before any box
-takes it, on the side it has one level up), labelled with the partner outside. The label goes
+takes it, on the side it has one level up), labelled with the partner outside. To
+put it on another side, drag its end (the small square on the frame) to that side, or
+choose **Enters at** in the line's **Edit…** dialog; **automatic** gives the choice
+back. A side you chose stays when boxes move. The label goes
 as deep as the boxes around it: if the partner's end lands inside the partner, you see
 where, for example `B › b1, b2`. A name longer than the label limit becomes `B › [3]`,
 with the full name in the legend. Inside, you
@@ -380,7 +383,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `connect_open_end`   | A stub's open end to a box                                        |
 | `attach`             | A relation from the level above to a box inside; again: fans out  |
 | `edit_box`           | Name, type, tag                                                   |
-| `edit_relation`      | Direction, text, short label, line style, sides                   |
+| `edit_relation`      | Direction, text, short label, line style, sides, frame side       |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |

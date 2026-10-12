@@ -166,6 +166,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             style,
             short,
             pattern,
+            frame,
             sides,
             ..
         } => {
@@ -173,6 +174,15 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             text_row(ui, text, std::mem::take(focus));
             short_row(ui, short);
             style_row(ui, style, editor.project.line_style);
+            if let Some((_, side)) = frame {
+                ui.horizontal(|ui| {
+                    ui.label("Enters at");
+                    ui.selectable_value(side, None, "automatic");
+                    for s in Side::ALL {
+                        ui.selectable_value(side, Some(s), s.label());
+                    }
+                });
+            }
             if editor.project.is_doodle() {
                 ui.horizontal(|ui| {
                     ui.label("Pattern");

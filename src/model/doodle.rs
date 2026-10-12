@@ -162,8 +162,17 @@ impl Project {
     /// The frame side where an end of a relation enters the whitebox of `outer`:
     /// nearest to the boxes it lands on inside (ties keep the side it has one level
     /// up), or that side when it lands nowhere yet.
-    pub fn frame_side(&self, endpoint: &super::Endpoint, outer: BlockId) -> super::Side {
+    pub fn frame_side(
+        &self,
+        rel: &super::Relation,
+        end: super::End,
+        outer: BlockId,
+    ) -> super::Side {
         use super::Side;
+        if let Some(side) = rel.frame_sides.get(&outer) {
+            return *side;
+        }
+        let endpoint = rel.end(end);
         let above = endpoint
             .anchors
             .iter()

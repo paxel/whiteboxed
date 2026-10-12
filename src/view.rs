@@ -86,7 +86,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 continue;
             }
             // It enters where the boxes that take it are; they face that side.
-            let side = project.frame_side(rel.end(end), owner);
+            let side = project.frame_side(rel, end, owner);
             // One line per box it lands on inside, or one dangling line.
             let mut inners: Vec<ViewEnd> = project
                 .landings(rel.end(end), owner)
