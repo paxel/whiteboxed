@@ -158,6 +158,58 @@ impl Project {
     }
 }
 
+impl Project {
+    /// The frame side where an end of a relation enters the whitebox of `outer`:
+    /// nearest to the boxes it lands on inside (ties keep the side it has one level
+    /// up), or that side when it lands nowhere yet.
+    pub fn frame_side(&self, endpoint: &super::Endpoint, outer: BlockId) -> super::Side {
+        use super::Side;
+        let above = endpoint
+            .anchors
+            .iter()
+            .find(|a| a.block == outer)
+            .map_or(Side::Left, |a| a.side);
+        let landed: Vec<Cell> = self
+            .landings(endpoint, outer)
+            .iter()
+            .filter_map(|a| self.blocks.get(&a.block))
+            .map(|b| b.cell)
+            .collect();
+        let cells: Vec<Cell> = self
+            .blocks_in(Some(outer))
+            .filter(|(_, b)| !b.gridless())
+            .map(|(_, b)| b.cell)
+            .collect();
+        if landed.is_empty() || cells.is_empty() {
+            return above;
+        }
+        let min_col = cells.iter().map(|c| c.col).min().unwrap_or(0);
+        let max_col = cells.iter().map(|c| c.col).max().unwrap_or(0);
+        let min_row = cells.iter().map(|c| c.row).min().unwrap_or(0);
+        let max_row = cells.iter().map(|c| c.row).max().unwrap_or(0);
+        let distance = |side: Side| -> i32 {
+            landed
+                .iter()
+                .map(|c| match side {
+                    Side::Left => c.col - min_col,
+                    Side::Right => max_col - c.col,
+                    Side::Top => c.row - min_row,
+                    Side::Bottom => max_row - c.row,
+                })
+                .sum()
+        };
+        // Ties keep the side one level up, then its opposite, then the others.
+        let across = Side::ALL
+            .into_iter()
+            .filter(|s| *s != above && *s != above.opposite());
+        [above, above.opposite()]
+            .into_iter()
+            .chain(across)
+            .min_by_key(|s| distance(*s))
+            .unwrap_or(above)
+    }
+}
+
 /// Whether `cell` lies in the rectangle from `near` to `far`.
 pub fn inside(cell: Cell, (near, far): (Cell, Cell)) -> bool {
     (near.col..=far.col).contains(&cell.col) && (near.row..=far.row).contains(&cell.row)

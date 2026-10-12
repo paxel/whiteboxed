@@ -658,12 +658,18 @@ impl Editor {
                     .get(b)
                     .is_some_and(|b| b.parent == self.diagram)
             };
-            let sides = [&r.a, &r.b]
-                .into_iter()
-                .flat_map(|e| e.anchors.iter())
-                .filter(|a| here(&a.block))
-                .map(|a| (a.block, a.side))
-                .collect();
+            // Only this diagram's own relations: a line from outside enters where its
+            // boxes are, and they face that side.
+            let sides = if r.owner == self.diagram {
+                [&r.a, &r.b]
+                    .into_iter()
+                    .flat_map(|e| e.anchors.iter())
+                    .filter(|a| here(&a.block))
+                    .map(|a| (a.block, a.side))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             self.popup = Some(Popup::EditRelation {
                 rel,
                 direction: r.direction,

@@ -953,3 +953,42 @@ fn partner_names_on_top_and_bottom_of_a_frame_do_not_overlap() -> TestResult {
     assert!(!s.shapes.is_empty());
     Ok(())
 }
+
+#[test]
+fn a_relation_enters_a_whitebox_next_to_the_box_that_takes_it() -> TestResult {
+    let mut p = Project::new();
+    let user = p.add_block(None, &spec("User", BlockKind::Person))?;
+    let (shop, rel) = p.connect_new(
+        user,
+        Side::Right,
+        &spec("Shop", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    // Inside: Web on the left, Db on the right; the user's line lands on Db.
+    let web = p.add_block(Some(shop), &spec("Web", BlockKind::Component))?;
+    let db = p.add_block(Some(shop), &spec("Db", BlockKind::Database))?;
+    p.move_block(web, Cell::new(0, 0))?;
+    p.move_block(db, Cell::new(1, 0))?;
+    let view = diagram_view(&p, Some(shop));
+    let frame_side = |v: &whiteboxed::view::DiagramView| {
+        v.lines.iter().find_map(|l| match (&l.a, &l.b) {
+            (ViewEnd::Frame { side, .. }, _) | (_, ViewEnd::Frame { side, .. }) => Some(*side),
+            _ => None,
+        })
+    };
+    // Not landed yet: the side it has one level up (Shop's left).
+    assert_eq!(frame_side(&view), Some(Side::Left));
+    p.attach(rel, End::B, shop, db, Side::Left)?;
+    let view = diagram_view(&p, Some(shop));
+    assert_eq!(frame_side(&view), Some(Side::Right));
+    // Db faces that side too, and the line runs straight in without crossing Web.
+    assert!(view.lines.iter().any(
+        |l| matches!(l.b, ViewEnd::Block { block, side: Side::Right } if block == db)
+            || matches!(l.a, ViewEnd::Block { block, side: Side::Right } if block == db)
+    ));
+    let l = render(&p, Some(shop));
+    let line = l.lines.iter().find(|g| g.relation == rel).ok_or("line")?;
+    assert_eq!(line.points.len(), 2, "{:?}", line.points);
+    Ok(())
+}

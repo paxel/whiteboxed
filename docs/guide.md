@@ -107,7 +107,8 @@ documentation export always carry the full texts.
 ### Relations across levels
 
 When a relation reaches a box, it also shows up inside that box's whitebox: it enters
-through the frame on the same side, labelled with the partner outside. The label goes
+through the frame on the side nearest the box inside that takes it (before any box
+takes it, on the side it has one level up), labelled with the partner outside. The label goes
 as deep as the boxes around it: if the partner's end lands inside the partner, you see
 where, for example `B › b1, b2`. A name longer than the label limit becomes `B › [3]`,
 with the full name in the legend. Inside, you

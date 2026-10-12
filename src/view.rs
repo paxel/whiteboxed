@@ -82,16 +82,18 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
         let Some(owner) = diagram else { continue };
         for end in [End::A, End::B] {
             let anchors = &rel.end(end).anchors;
-            let Some(side) = anchors.iter().find(|a| a.block == owner).map(|a| a.side) else {
+            if !anchors.iter().any(|a| a.block == owner) {
                 continue;
-            };
+            }
+            // It enters where the boxes that take it are; they face that side.
+            let side = project.frame_side(rel.end(end), owner);
             // One line per box it lands on inside, or one dangling line.
             let mut inners: Vec<ViewEnd> = project
                 .landings(rel.end(end), owner)
                 .into_iter()
                 .map(|a| ViewEnd::Block {
                     block: a.block,
-                    side: a.side,
+                    side,
                 })
                 .collect();
             if inners.is_empty() {
