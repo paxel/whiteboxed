@@ -915,3 +915,41 @@ fn frame_ends_name_the_partner_down_to_this_depth() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn partner_names_on_top_and_bottom_of_a_frame_do_not_overlap() -> TestResult {
+    let mut p = Project::new();
+    let shop = p.add_block(None, &spec("Shop", BlockKind::Component))?;
+    for name in [
+        "Payment Service Provider",
+        "Warehouse Management",
+        "Customer Relationship",
+    ] {
+        p.connect_new(
+            shop,
+            Side::Bottom,
+            &spec(name, BlockKind::ExternalSystem),
+            Direction::Out,
+            "",
+        )?;
+    }
+    for name in ["A", "B", "C", "D"] {
+        p.add_block(Some(shop), &spec(name, BlockKind::Component))?;
+    }
+    let l = render(&p, Some(shop));
+    let s = scene::scene(&l);
+    let mut ends: Vec<(f32, f32)> = l
+        .lines
+        .iter()
+        .filter_map(|g| g.frame_port.as_ref())
+        .map(|(port, _, partner)| (port.x, whiteboxed::text::width(partner, layout::LABEL_SIZE)))
+        .collect();
+    ends.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(ends.len(), 3);
+    for w in ends.windows(2) {
+        // The second name is written left of its end: it must clear the first end.
+        assert!(w[1].0 - w[1].1 - 8.0 > w[0].0, "{ends:?}");
+    }
+    assert!(!s.shapes.is_empty());
+    Ok(())
+}

@@ -12,6 +12,8 @@ use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
 pub const GAP: f32 = 110.0;
 pub const PORT_SPACING: f32 = 40.0;
+/// Room beside a partner name at a frame end, to the next end.
+const PARTNER_GAP: f32 = 20.0;
 /// How far a group's frame lies outside its cells, and how much further for every
 /// group inside it.
 const GROUP_INSET: f32 = 22.0;
@@ -514,6 +516,17 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             Some(along.clamp(own.0, own.1))
         }
     };
+    // The partner names written next to frame ends on top and bottom, as shown.
+    let shown_partners = short_partners(view, project.label_limit, &mut Vec::new());
+    let partner_width = |li: usize, end: End| -> f32 {
+        match view.lines.get(li).map(|l| l.end(end)) {
+            Some(ViewEnd::Frame { partner, .. }) => {
+                let shown = shown_partners.get(partner).unwrap_or(partner);
+                text::width(shown, LABEL_SIZE)
+            }
+            _ => 0.0,
+        }
+    };
     // Place every side's ports for given wishes; returns the coordinate along the side.
     let place = |wish: &BTreeMap<(usize, End), f32>| -> BTreeMap<(usize, End), f32> {
         let mut out = BTreeMap::new();
@@ -544,12 +557,24 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                     .then(a.2.cmp(&b.2))
             });
             let at: Vec<f32> = wanted.iter().map(|w| w.0).collect();
-            let placed = spread(
-                &at,
-                lo + PORT_SPACING / 2.0,
-                hi - PORT_SPACING / 2.0,
-                PORT_SPACING,
-            );
+            // On top and bottom of a frame the partner names sit beside the ends,
+            // left of each: an end keeps its own name's width from the one before.
+            let named = *owner == Owner::Frame && !side.is_horizontal();
+            let gaps: Vec<f32> = wanted
+                .iter()
+                .map(|(_, _, members)| {
+                    let name = members
+                        .iter()
+                        .map(|(li, end)| partner_width(*li, *end))
+                        .fold(0.0, f32::max);
+                    if named {
+                        PORT_SPACING.max(name + PARTNER_GAP)
+                    } else {
+                        PORT_SPACING
+                    }
+                })
+                .collect();
+            let placed = spread_by(&at, lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0, &gaps);
             for ((_, _, members), v) in wanted.iter().zip(placed) {
                 for (li, end) in members {
                     out.insert((*li, *end), v);
@@ -962,14 +987,17 @@ fn step_out(p: Pos, side: Side, len: f32) -> Pos {
     }
 }
 
-/// Positions as close to `wanted` (sorted) as possible, at least `gap` apart and
-/// within `lo..=hi`. When they do not fit, they are spread evenly.
-fn spread(wanted: &[f32], lo: f32, hi: f32, gap: f32) -> Vec<f32> {
+/// Places items as close to where they want to be as possible, within [lo, hi],
+/// with at least `gaps[i]` between item `i - 1` and item `i`; when they do not fit,
+/// spreads them evenly.
+fn spread_by(wanted: &[f32], lo: f32, hi: f32, gaps: &[f32]) -> Vec<f32> {
     let n = wanted.len();
     if n == 0 {
         return Vec::new();
     }
-    if hi < lo || (n as f32 - 1.0) * gap > hi - lo {
+    let gap = |i: usize| gaps.get(i).copied().unwrap_or(0.0);
+    let needed: f32 = (1..n).map(gap).sum();
+    if hi < lo || needed > hi - lo {
         let mid = (lo + hi) / 2.0;
         let step = if n > 1 {
             (hi - lo).max(0.0) / (n as f32 - 1.0)
@@ -981,16 +1009,16 @@ fn spread(wanted: &[f32], lo: f32, hi: f32, gap: f32) -> Vec<f32> {
     }
     let mut out: Vec<f32> = Vec::with_capacity(n);
     for (i, w) in wanted.iter().enumerate() {
-        let min = if i == 0 { lo } else { out[i - 1] + gap };
+        let min = if i == 0 { lo } else { out[i - 1] + gap(i) };
         out.push(w.clamp(lo, hi).max(min));
     }
     // Pull back from the far end where the forward pass ran over.
     let mut max = hi;
-    for v in out.iter_mut().rev() {
+    for (i, v) in out.iter_mut().enumerate().rev() {
         if *v > max {
             *v = max;
         }
-        max = *v - gap;
+        max = *v - gap(i);
     }
     out
 }
