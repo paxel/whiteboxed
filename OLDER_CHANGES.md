@@ -2,6 +2,17 @@
 
 Releases before the current one. The current version is in [CHANGELOG.md](CHANGELOG.md).
 
+## [0.3.0] - 2026-10-12
+
+### Added
+
+- Doodles: File > New doodle starts a free sketch on named pages (tabs), without levels, whiteboxes or arc42 texts. Shape texts may span several lines and repeat.
+- Doodle shapes: box, rounded box, circle, diamond, cylinder, document, cloud, person and note, each with its own colour; lines reach the outline of round and pointed shapes.
+- Doodle lines can be solid, dashed or dotted.
+- Doodle groups: labelled frames around a rectangle of cells, nestable, with their own colour; a line can end at a group.
+- Doodle export: SVG and PNG per page, and the HTML document with all pages as tabs.
+- AI tools for doodles (doodle_get, doodle_add_shape, doodle_add_line, doodle_group …), addressed by id; with a doodle open, the arc42 tools refuse.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
