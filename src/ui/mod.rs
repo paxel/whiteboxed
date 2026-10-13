@@ -45,10 +45,12 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
     if cfg!(target_os = "linux") {
         std::thread::spawn(crate::launcher::register);
     }
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("whiteboxed")
-        .with_app_id(APP_ID)
-        .with_inner_size([1280.0, 800.0]);
+    let mut viewport = place_window(
+        egui::ViewportBuilder::default()
+            .with_title("whiteboxed")
+            .with_app_id(APP_ID),
+        app.session().window,
+    );
     if let Ok(icon) = eframe::icon_data::from_png_bytes(crate::launcher::ICON) {
         viewport = viewport.with_icon(icon);
     }
@@ -64,6 +66,23 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// The window where it was last time, or 1280×800.
+pub fn place_window(
+    viewport: egui::ViewportBuilder,
+    place: Option<crate::session::WindowPlace>,
+) -> egui::ViewportBuilder {
+    let Some(p) = place.filter(|p| p.width >= 200.0 && p.height >= 150.0) else {
+        return viewport.with_inner_size([1280.0, 800.0]);
+    };
+    let viewport = viewport
+        .with_inner_size([p.width, p.height])
+        .with_maximized(p.maximized);
+    match (p.x, p.y) {
+        (Some(x), Some(y)) => viewport.with_position([x, y]),
+        _ => viewport,
+    }
 }
 
 /// The file to open on start: the one named on the command line, or else the last
@@ -292,16 +311,21 @@ impl App {
         } else {
             egui::Panel::top("breadcrumb").show(ui, |ui| self.breadcrumb(ui));
             egui::Panel::bottom("status").show(ui, |ui| self.status(ui));
-            egui::Panel::left("structure")
+            let structure = egui::Panel::left("structure")
                 .resizable(true)
-                .default_size(230.0)
+                .default_size(self.panel_width("structure", 230.0))
                 .show(ui, |ui| self.sidebar(ui));
-            egui::Panel::right("details")
+            let details = egui::Panel::right("details")
                 .resizable(true)
-                .default_size(260.0)
+                .default_size(self.panel_width("details", 260.0))
                 .show(ui, |ui| {
                     details::show(ui, &mut self.editor, &mut self.draft)
                 });
+            for (name, panel) in [("structure", structure), ("details", details)] {
+                self.session
+                    .panels
+                    .insert(name.to_owned(), panel.response.rect.width());
+            }
         }
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
         self.popup(&ctx);
@@ -326,7 +350,40 @@ impl App {
             self.leave = Some(Leave::Quit);
             // Draw the question right away, even if nothing else moves.
             ctx.request_repaint();
+        } else {
+            self.remember_window(ctx);
+            self.store_session();
         }
+    }
+
+    /// Notes where the window is, for the next start.
+    fn remember_window(&mut self, ctx: &egui::Context) {
+        let (outer, inner, maximized) = ctx.input(|i| {
+            let v = i.viewport();
+            (v.outer_rect, v.inner_rect, v.maximized.unwrap_or(false))
+        });
+        if let Some(inner) = inner {
+            let old = self.session.window;
+            self.session.window = Some(crate::session::WindowPlace {
+                x: outer.map(|r| r.min.x),
+                y: outer.map(|r| r.min.y),
+                // A maximized window keeps the size it had before.
+                width: match (maximized, old) {
+                    (true, Some(o)) => o.width,
+                    _ => inner.width(),
+                },
+                height: match (maximized, old) {
+                    (true, Some(o)) => o.height,
+                    _ => inner.height(),
+                },
+                maximized,
+            });
+        }
+    }
+
+    /// The width a side panel had last time, or `default`.
+    fn panel_width(&self, name: &str, default: f32) -> f32 {
+        self.session.panels.get(name).copied().unwrap_or(default)
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {

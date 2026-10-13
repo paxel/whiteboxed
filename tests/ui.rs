@@ -1637,3 +1637,48 @@ fn the_last_file_is_reopened_unless_one_is_given_or_it_is_turned_off() -> TestRe
     assert_eq!(start_file(None, &on, &s), None);
     Ok(())
 }
+
+#[test]
+fn the_window_and_panels_open_as_they_were_left() -> TestResult {
+    use whiteboxed::session::{Session, WindowPlace};
+    use whiteboxed::ui::place_window;
+    let place = WindowPlace {
+        x: Some(40.0),
+        y: Some(30.0),
+        width: 1000.0,
+        height: 700.0,
+        maximized: true,
+    };
+    let v = place_window(egui::ViewportBuilder::default(), Some(place));
+    assert_eq!(v.inner_size, Some(egui::vec2(1000.0, 700.0)));
+    assert_eq!(v.position, Some(egui::pos2(40.0, 30.0)));
+    assert_eq!(v.maximized, Some(true));
+    // Without a position (Wayland) or without a place at all.
+    let v = place_window(
+        egui::ViewportBuilder::default(),
+        Some(WindowPlace { x: None, ..place }),
+    );
+    assert_eq!(v.position, None);
+    let v = place_window(egui::ViewportBuilder::default(), None);
+    assert_eq!(v.inner_size, Some(egui::vec2(1280.0, 800.0)));
+
+    let dir = tempfile::tempdir()?;
+    let mut s = Session::default();
+    s.panels.insert("structure".into(), 320.0);
+    s.save(dir.path())?;
+    let h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_ui_state(
+            |ui, app: &mut App| app.show(ui),
+            App::new(Editor::new(None), None).with_session_dir(Some(dir.path().to_path_buf())),
+        );
+    let width = h
+        .state()
+        .session()
+        .panels
+        .get("structure")
+        .copied()
+        .ok_or("no width")?;
+    assert!((width - 320.0).abs() < 2.0, "{width}");
+    Ok(())
+}

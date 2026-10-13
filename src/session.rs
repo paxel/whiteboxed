@@ -17,12 +17,17 @@ pub const MAX_RECENT: usize = 10;
 /// Most files whose view is remembered.
 pub const MAX_VIEWS: usize = 100;
 
+/// Where the window was. Some systems (Wayland) do not tell the position.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WindowPlace {
-    pub x: f32,
-    pub y: f32,
+    #[serde(default)]
+    pub x: Option<f32>,
+    #[serde(default)]
+    pub y: Option<f32>,
     pub width: f32,
     pub height: f32,
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 /// The diagram (or doodle page) and zoom last shown of a file.

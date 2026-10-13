@@ -323,8 +323,10 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
 - On start the app **reopens the last file**, unless you name a file on the command
   line. **File > Preferences…** turns this off.
 - **Open** and **Save as** start in the folder you used last.
-- Recent files and folders are remembered in your user data directory
-  (`whiteboxed/state.yaml`), never in a project.
+- The window opens where you left it, at the same size (or maximized), and the side
+  panels keep their widths.
+- Recent files, folders, the window and the panels are remembered in your user data
+  directory (`whiteboxed/state.yaml`), never in a project.
 
 ![The question about unsaved changes before quitting](screenshots/unsaved-changes.png)
 
