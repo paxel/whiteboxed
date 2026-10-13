@@ -1682,3 +1682,37 @@ fn the_window_and_panels_open_as_they_were_left() -> TestResult {
     assert!((width - 320.0).abs() < 2.0, "{width}");
     Ok(())
 }
+
+#[test]
+fn a_file_opens_on_the_diagram_and_zoom_it_was_left_at() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (mut e, shop) = one_box()?;
+    e.project
+        .add_block(Some(shop), &BlockSpec::new("Orders", BlockKind::Component))?;
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    e.save_as(&first)?;
+    Editor::new(None).save_as(&second)?;
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_ui_state(
+            |ui, app: &mut App| app.show(ui),
+            App::new(Editor::new(None), None).with_session_dir(Some(dir.path().to_path_buf())),
+        );
+    h.state_mut().open_path(first.clone());
+    h.run();
+    h.state_mut().editor.open_diagram(Some(shop));
+    h.run();
+    h.get_by_label("+").click();
+    h.run();
+    let zoom = h.state().view().ok_or("view")?.zoom;
+    h.state_mut().open_path(second);
+    h.run();
+    assert_eq!(h.state().editor.diagram, None);
+    h.state_mut().open_path(first);
+    h.run();
+    assert_eq!(h.state().editor.diagram, Some(shop));
+    let again = h.state().view().ok_or("view")?.zoom;
+    assert!((again - zoom).abs() < 1e-3, "{again} vs {zoom}");
+    Ok(())
+}

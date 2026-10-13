@@ -117,6 +117,8 @@ pub struct App {
     view: Option<Shown>,
     /// A zoom step asked for by a key, the menu or the zoom buttons.
     zoom_request: Option<ZoomStep>,
+    /// The zoom a file had when it was last shown, for its first frame.
+    restore_zoom: Option<f32>,
     canvas_rect: egui::Rect,
     anchor: Pos2,
     focus: bool,
@@ -159,6 +161,7 @@ impl App {
             looks: canvas::LookTextures::default(),
             view: None,
             zoom_request: None,
+            restore_zoom: None,
             canvas_rect: egui::Rect::NOTHING,
             anchor: Pos2::new(200.0, 150.0),
             focus: true,
@@ -352,7 +355,32 @@ impl App {
             ctx.request_repaint();
         } else {
             self.remember_window(ctx);
+            self.remember_view();
             self.store_session();
+        }
+    }
+
+    /// Shows the diagram and zoom a file showed last time. Not over a question about
+    /// recovered work, and not a diagram that is gone.
+    fn restore_view(&mut self, path: &Path) {
+        let Some(seen) = self.session.view_of(path) else {
+            return;
+        };
+        if self.editor.popup.is_none() {
+            let message = self.editor.message.take();
+            self.editor.open_diagram(seen.diagram);
+            self.editor.message = message;
+        }
+        if self.editor.diagram == seen.diagram {
+            self.restore_zoom = Some(seen.zoom);
+        }
+    }
+
+    /// Notes the diagram and zoom shown, for the next time the file opens.
+    fn remember_view(&mut self) {
+        if let (Some(path), Some(shown)) = (&self.editor.path, &self.view) {
+            self.session
+                .remember_view(path, shown.diagram, shown.view.zoom);
         }
     }
 
@@ -895,7 +923,11 @@ impl App {
                 }
                 v
             }
-            _ => fit(rect, &layout),
+            // A file opened again shows the zoom it had, around the diagram's centre.
+            _ => match self.restore_zoom.take() {
+                Some(zoom) => zoomed(fit(rect, &layout), rect.center(), zoom),
+                None => fit(rect, &layout),
+            },
         };
         let wanted = match self.zoom_request.take() {
             Some(ZoomStep::In) => Some(view.zoom * ZOOM_STEP),
@@ -1520,10 +1552,13 @@ impl App {
     fn reset(&mut self, editor: Editor) {
         // Folders allowed for AI exports belong to the session, not the project.
         let roots = std::mem::take(&mut self.editor.ai_export_roots);
+        self.remember_view();
+        self.store_session();
         let (library, library_dir) = self.editor.take_library();
         self.editor = editor;
         self.editor.ai_export_roots = roots;
         self.editor.set_library(library, library_dir);
+        self.restore_zoom = None;
         self.editor.apply_prefs(&self.settings.prefs);
         self.draft = None;
         self.view = None;
@@ -1538,6 +1573,7 @@ impl App {
             Ok(editor) => {
                 self.reset(editor);
                 self.used(path);
+                self.restore_view(path);
             }
             Err(e) => self.editor.message = Some(format!("Cannot open {}: {e}", path.display())),
         }
@@ -1606,7 +1642,8 @@ impl App {
         }
     }
 
-    fn open_path(&mut self, path: PathBuf) {
+    /// Opens a project file, asking about unsaved changes first.
+    pub fn open_path(&mut self, path: PathBuf) {
         if self.editor.dirty {
             self.leave = Some(Leave::Open(path));
         } else {
