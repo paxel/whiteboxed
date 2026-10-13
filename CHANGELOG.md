@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - A file opens on the diagram or page and at the zoom it was left at; this is remembered per user, not in the project.
-- The window opens where it was left, at the same size or maximized, and the side panels keep their widths.
+- The window opens where it was left, at the same size or maximized, and the side panels keep their widths. A window left on a monitor that is gone opens centred on the main one.
 - File > Open recent with the last 10 files; missing ones are greyed out and can be removed.
 - The last file is reopened on start unless a file is given on the command line; File > Preferences… turns this off.
 - Open and Save as start in the folder used last.

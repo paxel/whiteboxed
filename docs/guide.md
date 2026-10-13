@@ -326,7 +326,8 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
 - A file opens on the diagram (or doodle page) and at the zoom it showed when you
   last left it.
 - The window opens where you left it, at the same size (or maximized), and the side
-  panels keep their widths.
+  panels keep their widths. A window left on a monitor that is gone opens centred on
+  the main one.
 - Recent files, folders, the window, the panels and each file's diagram and zoom are
   remembered in your user data directory (`whiteboxed/state.yaml`), never in a
   project.

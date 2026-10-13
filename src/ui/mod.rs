@@ -63,6 +63,48 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
         options,
         Box::new(move |cc| {
             cc.egui_ctx.set_theme(egui::Theme::Light);
+            // Back onto the main monitor if the place it was left at is on no monitor
+            // any more (one was unplugged or rearranged). Wayland tells no position.
+            if let Some(window) = cc.winit_window()
+                && let Ok(pos) = window.outer_position()
+            {
+                let size = window.outer_size();
+                let rect = |x: i32, y: i32, w: u32, h: u32| {
+                    egui::Rect::from_min_size(
+                        egui::pos2(x as f32, y as f32),
+                        vec2(w as f32, h as f32),
+                    )
+                };
+                let monitors: Vec<egui::Rect> = window
+                    .available_monitors()
+                    .map(|m| {
+                        rect(
+                            m.position().x,
+                            m.position().y,
+                            m.size().width,
+                            m.size().height,
+                        )
+                    })
+                    .collect();
+                let main = window
+                    .primary_monitor()
+                    .or_else(|| window.available_monitors().next())
+                    .map(|m| {
+                        rect(
+                            m.position().x,
+                            m.position().y,
+                            m.size().width,
+                            m.size().height,
+                        )
+                    });
+                let here = rect(pos.x, pos.y, size.width, size.height);
+                if let Some(to) = main.and_then(|main| off_screen_fix(here, &monitors, main)) {
+                    let mut target = pos;
+                    target.x = to.x as i32;
+                    target.y = to.y as i32;
+                    window.set_outer_position(target);
+                }
+            }
             Ok(Box::new(app))
         }),
     )
@@ -83,6 +125,25 @@ pub fn place_window(
         (Some(x), Some(y)) => viewport.with_position([x, y]),
         _ => viewport,
     }
+}
+
+/// Where to move a window that shows too little of itself on every monitor: centred
+/// on `main` (top-left if it is larger). `None`: it is fine where it is.
+pub fn off_screen_fix(
+    window: egui::Rect,
+    monitors: &[egui::Rect],
+    main: egui::Rect,
+) -> Option<egui::Pos2> {
+    // Enough of the title bar to grab it.
+    let seen = monitors.iter().any(|m| {
+        let i = window.intersect(*m);
+        i.width() >= 100.0 && i.height() >= 40.0
+    });
+    if seen || monitors.is_empty() {
+        return None;
+    }
+    let free = (main.size() - window.size()).max(egui::Vec2::ZERO);
+    Some(main.min + free / 2.0)
 }
 
 /// The file to open on start: the one named on the command line, or else the last

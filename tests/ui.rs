@@ -1716,3 +1716,31 @@ fn a_file_opens_on_the_diagram_and_zoom_it_was_left_at() -> TestResult {
     assert!((again - zoom).abs() < 1e-3, "{again} vs {zoom}");
     Ok(())
 }
+
+#[test]
+fn a_window_left_on_a_missing_monitor_comes_back() {
+    use egui::{Rect, pos2, vec2};
+    use whiteboxed::ui::off_screen_fix;
+    let main = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 1080.0));
+    let right = Rect::from_min_size(pos2(1920.0, 0.0), vec2(2560.0, 1440.0));
+    let window = |x: f32, y: f32| Rect::from_min_size(pos2(x, y), vec2(1280.0, 800.0));
+    // On the second monitor, or partly off the main one but grabbable: stays.
+    assert_eq!(
+        off_screen_fix(window(2500.0, 100.0), &[main, right], main),
+        None
+    );
+    assert_eq!(off_screen_fix(window(1700.0, 900.0), &[main], main), None);
+    // The second monitor is gone: centred on the main one.
+    assert_eq!(
+        off_screen_fix(window(2500.0, 100.0), &[main], main),
+        Some(pos2(320.0, 140.0))
+    );
+    // Only a sliver is visible: not enough to grab it.
+    assert_eq!(
+        off_screen_fix(window(1850.0, 100.0), &[main], main),
+        Some(pos2(320.0, 140.0))
+    );
+    // Larger than the monitor: its top-left corner.
+    let huge = Rect::from_min_size(pos2(-5000.0, 0.0), vec2(3000.0, 2000.0));
+    assert_eq!(off_screen_fix(huge, &[main], main), Some(pos2(0.0, 0.0)));
+}
