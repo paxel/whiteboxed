@@ -724,3 +724,94 @@ fn the_relation_dialog_sets_where_a_line_enters() -> TestResult {
     );
     Ok(())
 }
+
+const ORANGE: &str =
+    r##"<svg viewBox="0 0 30 10"><rect width="30" height="10" fill="#f80"/></svg>"##;
+
+#[test]
+fn looks_live_in_the_library_and_boxes_wear_copies() -> TestResult {
+    use whiteboxed::look::{Library, LookMode};
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), Some(dir.path().to_path_buf()));
+    let kafka = e.add_look("Kafka", LookMode::Icon, ORANGE)?;
+    // The same name again replaces the picture and keeps the id.
+    assert_eq!(e.add_look("kafka", LookMode::Inside, ORANGE)?, kafka);
+    assert_eq!(e.library.looks.len(), 1);
+    assert_eq!(Library::load(dir.path()), e.library);
+    let err = e
+        .add_look(
+            "Evil",
+            LookMode::Icon,
+            r#"<svg viewBox="0 0 1 1"><script/></svg>"#,
+        )
+        .err()
+        .ok_or("accepted")?;
+    assert!(err.contains("<script> is not allowed"), "{err}");
+
+    let shop = add_first(&mut e, "Shop")?;
+    e.start_edit_block(shop);
+    if let Some(Popup::EditBlock(_, form)) = &mut e.popup {
+        form.look = Some(kafka.clone());
+    }
+    e.confirm();
+    assert_eq!(
+        e.project.blocks.get(&shop).and_then(|b| b.look.clone()),
+        Some(kafka.clone())
+    );
+    assert!(e.project.looks.contains_key(&kafka));
+    e.undo();
+    assert_eq!(
+        e.project.blocks.get(&shop).and_then(|b| b.look.clone()),
+        None
+    );
+    e.redo();
+
+    // A rename reaches the project's copy; a deleted look stays in the project.
+    e.rename_look(&kafka, "Kafka topic")?;
+    assert_eq!(
+        e.project.looks.get(&kafka).map(|l| l.name().to_owned()),
+        Some("Kafka topic".into())
+    );
+    e.delete_look(&kafka)?;
+    assert!(e.library.looks.is_empty());
+    assert_eq!(
+        e.looks_offered(),
+        vec![(kafka.clone(), "Kafka topic".to_owned())]
+    );
+    assert!(e.layout().block(shop).ok_or("shop")?.look.is_some());
+    Ok(())
+}
+
+#[test]
+fn an_opened_project_takes_the_newer_library_version() -> TestResult {
+    use whiteboxed::look::{Library, LookMode};
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("p.yaml");
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let id = e.add_look("Old", LookMode::Inside, ORANGE)?;
+    let shop = add_first(&mut e, "Shop")?;
+    e.start_edit_block(shop);
+    if let Some(Popup::EditBlock(_, form)) = &mut e.popup {
+        form.look = Some(id.clone());
+    }
+    e.confirm();
+    e.save_as(&file)?;
+    e.rename_look(&id, "New")?;
+    let (library, _) = e.take_library();
+
+    let mut opened = Editor::open(&file, None)?;
+    assert_eq!(
+        opened.project.looks.get(&id).map(|l| l.name().to_owned()),
+        Some("Old".into())
+    );
+    opened.set_library(library, None);
+    assert_eq!(
+        opened.project.looks.get(&id).map(|l| l.name().to_owned()),
+        Some("New".into())
+    );
+    // Taking the newer version is no edit.
+    assert!(!opened.dirty);
+    Ok(())
+}

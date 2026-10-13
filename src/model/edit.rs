@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::look::{Look, LookId};
+
 use super::{
     Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint, LineStyle,
     MAX_BLOCKS_PER_DIAGRAM, MAX_NAME, MAX_RELATIONS_PER_DIAGRAM, MAX_TEXT, ModelError, ModelResult,
@@ -141,6 +143,29 @@ impl Project {
         if let Some(cell) = cell {
             block.cell = cell;
         }
+        Ok(())
+    }
+
+    /// Dresses a box in a look, keeping a copy of it in the project, or takes its look
+    /// off. A copy already kept is replaced only by a newer one.
+    pub fn wear_look(&mut self, id: BlockId, look: Option<(LookId, Look)>) -> ModelResult<()> {
+        if look.is_some() && self.block(id)?.gridless() {
+            return Err(ModelError::NoLook);
+        }
+        let worn = look.map(|(lid, l)| {
+            let newer = self
+                .looks
+                .get(&lid)
+                .is_none_or(|kept| kept.revision() < l.revision());
+            if newer {
+                self.looks.insert(lid.clone(), l);
+            }
+            lid
+        });
+        self.blocks
+            .get_mut(&id)
+            .ok_or(ModelError::UnknownBlock)?
+            .look = worn;
         Ok(())
     }
 

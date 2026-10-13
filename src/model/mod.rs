@@ -539,6 +539,8 @@ pub enum ModelError {
     AtTop,
     #[error("the box to group at must be one of the grouped boxes")]
     NotInGroup,
+    #[error("pages, groups and bands cannot wear a look")]
+    NoLook,
     #[error("a doodle keeps at least one page")]
     LastPage,
     #[error("lines in a doodle connect two shapes; there are no open ends")]

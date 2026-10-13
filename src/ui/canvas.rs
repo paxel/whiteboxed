@@ -70,7 +70,7 @@ struct LookTexture {
 const MAX_LOOK_PIXELS: u32 = 2048;
 
 impl LookTextures {
-    fn get(&mut self, ctx: &egui::Context, svg: &Arc<str>, pixels: f32) -> Option<TextureId> {
+    pub fn get(&mut self, ctx: &egui::Context, svg: &Arc<str>, pixels: f32) -> Option<TextureId> {
         // Widths in steps of 16 pixels: sharp at every zoom without rendering anew
         // on every frame of a zoom.
         let width = ((pixels / 16.0).ceil().max(1.0) as u32 * 16).min(MAX_LOOK_PIXELS);
@@ -99,7 +99,7 @@ impl LookTextures {
     }
 
     /// Forgets the textures not painted since the last sweep.
-    fn sweep(&mut self) {
+    pub fn sweep(&mut self) {
         self.entries.retain(|e| e.used);
         for e in &mut self.entries {
             e.used = false;

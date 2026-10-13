@@ -6,6 +6,7 @@ pub mod details;
 pub mod export;
 pub mod icons;
 pub mod leave;
+pub mod looks;
 pub mod popups;
 pub mod settings;
 
@@ -42,7 +43,8 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
     };
     let mut app = App::new(editor, dir)
         .with_ai_dir(crate::mcp::settings::default_dir())
-        .with_prefs_dir(crate::mcp::settings::default_dir());
+        .with_prefs_dir(crate::mcp::settings::default_dir())
+        .with_library_dir(crate::mcp::settings::default_dir());
     app.editor.message = message;
     if cfg!(target_os = "linux") {
         std::thread::spawn(crate::launcher::register);
@@ -107,6 +109,7 @@ pub struct App {
     pub ai: ai::Ai,
     pub settings: settings::Settings,
     pub export: export::ExportDialog,
+    pub looks_dialog: looks::LooksDialog,
 }
 
 impl eframe::App for App {
@@ -141,6 +144,7 @@ impl App {
             ai: ai::Ai::new(None),
             settings: settings::Settings::new(None),
             export: export::ExportDialog::default(),
+            looks_dialog: looks::LooksDialog::default(),
         }
     }
 
@@ -148,6 +152,16 @@ impl App {
     pub fn with_prefs_dir(mut self, dir: Option<PathBuf>) -> Self {
         self.settings = settings::Settings::new(dir);
         self.editor.apply_prefs(&self.settings.prefs);
+        self
+    }
+
+    /// Where the library of custom looks is stored.
+    pub fn with_library_dir(mut self, dir: Option<PathBuf>) -> Self {
+        let library = dir
+            .as_deref()
+            .map(crate::look::Library::load)
+            .unwrap_or_default();
+        self.editor.set_library(library, dir);
         self
     }
 
@@ -278,6 +292,7 @@ impl App {
         self.ai.dialog(&ctx, &mut self.editor);
         self.settings.show(&ctx, &mut self.editor);
         self.export.show(&ctx, &mut self.editor);
+        self.looks_dialog.show(&ctx, &mut self.editor);
         self.ai.export_prompt(&ctx, &mut self.editor);
         self.leave_dialog(&ctx);
     }
@@ -405,6 +420,9 @@ impl App {
                 ui.separator();
                 if ui.button("Project settings\u{2026}").clicked() {
                     self.settings.open = true;
+                }
+                if ui.button("Looks\u{2026}").clicked() {
+                    self.looks_dialog.start();
                 }
                 ui.separator();
                 if ui.button("Export\u{2026}").clicked() {
@@ -1424,8 +1442,10 @@ impl App {
     fn reset(&mut self, editor: Editor) {
         // Folders allowed for AI exports belong to the session, not the project.
         let roots = std::mem::take(&mut self.editor.ai_export_roots);
+        let (library, library_dir) = self.editor.take_library();
         self.editor = editor;
         self.editor.ai_export_roots = roots;
+        self.editor.set_library(library, library_dir);
         self.editor.apply_prefs(&self.settings.prefs);
         self.draft = None;
         self.view = None;

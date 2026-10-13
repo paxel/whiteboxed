@@ -1507,3 +1507,51 @@ fn a_frame_end_is_dragged_to_another_side() -> TestResult {
     );
     Ok(())
 }
+
+const ORANGE: &str =
+    r##"<svg viewBox="0 0 30 10"><rect width="30" height="10" fill="#f80"/></svg>"##;
+
+#[test]
+fn the_looks_dialog_lists_and_deletes_looks() -> TestResult {
+    use whiteboxed::look::{Library, LookMode};
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    e.add_look("Kafka", LookMode::Icon, ORANGE)?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Looks\u{2026}").click();
+    h.run();
+    assert!(h.query_by_label_contains("icon above the name").is_some());
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Delete")
+        .click();
+    h.run();
+    assert!(h.state().editor.library.looks.is_empty());
+    assert!(h.query_by_label_contains("No looks yet").is_some());
+    Ok(())
+}
+
+#[test]
+fn a_doodle_offers_library_looks_as_shapes() -> TestResult {
+    use whiteboxed::look::{Library, LookMode};
+    let mut e = Editor::new_doodle(None);
+    e.set_library(Library::default(), None);
+    let kafka = e.add_look("Kafka", LookMode::Below, ORANGE)?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("+ Shape").click();
+    h.run();
+    h.get_by_role(egui::accesskit::Role::ComboBox).click();
+    h.run();
+    h.get_by_label("Kafka").click();
+    h.run();
+    match &h.state().editor.popup {
+        Some(Popup::AddBlock(form, _)) => {
+            assert_eq!(form.look, Some(kafka));
+            assert_eq!(form.kind, BlockKind::Component);
+        }
+        other => return Err(format!("popup {other:?}").into()),
+    }
+    Ok(())
+}

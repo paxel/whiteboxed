@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::doc::{self, DocFormat};
 use crate::export::{self, ExportError};
 use crate::layout::{self, Layout};
+use crate::look::{Library, Look, LookId, LookMode};
 use crate::model::{
     BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, ExportChoice, LineStyle,
     ModelError, Placement, Project, RelationId, Rgb, Side, TagId,
@@ -29,6 +30,8 @@ pub struct BlockForm {
     pub band: bool,
     /// A doodle shape's own colour.
     pub color: Option<Rgb>,
+    /// A custom look from the library or the project.
+    pub look: Option<LookId>,
 }
 
 impl Default for BlockForm {
@@ -39,6 +42,7 @@ impl Default for BlockForm {
             tag: String::new(),
             band: false,
             color: None,
+            look: None,
         }
     }
 }
@@ -205,6 +209,10 @@ pub struct Editor {
     pub ai_export_roots: Vec<PathBuf>,
     /// A folder an AI client wants to export into, waiting for the user's answer.
     pub ai_export_request: Option<PathBuf>,
+    /// The user's custom looks, shared by every project.
+    pub library: Library,
+    /// Where the library is stored; `None`: nowhere (tests).
+    library_dir: Option<PathBuf>,
 }
 
 /// The state before a batch of AI calls, to undo all of them at once.
@@ -247,6 +255,8 @@ impl Editor {
             last_ai: None,
             ai_export_roots: Vec::new(),
             ai_export_request: None,
+            library: Library::default(),
+            library_dir: None,
         };
         editor.offer_recovery();
         editor
@@ -290,6 +300,8 @@ impl Editor {
             last_ai: None,
             ai_export_roots: Vec::new(),
             ai_export_request: None,
+            library: Library::default(),
+            library_dir: None,
         }
     }
 
@@ -648,6 +660,7 @@ impl Editor {
                     tag,
                     band: b.band,
                     color: b.color,
+                    look: b.look.clone(),
                 },
             ));
         }
@@ -831,9 +844,16 @@ impl Editor {
         match popup {
             Popup::AddBlock(form, cell) => {
                 let diagram = self.diagram;
-                let added = self.apply(|p| match cell {
-                    Some(cell) => p.add_block_at(diagram, &form.spec(), cell),
-                    None => p.add_block(diagram, &form.spec()),
+                let look = form.look.as_ref().and_then(|l| self.look_copy(l));
+                let added = self.apply(|p| {
+                    let id = match cell {
+                        Some(cell) => p.add_block_at(diagram, &form.spec(), cell),
+                        None => p.add_block(diagram, &form.spec()),
+                    }?;
+                    if look.is_some() {
+                        p.wear_look(id, look)?;
+                    }
+                    Ok(id)
                 });
                 if let Some(id) = added {
                     self.selected = Some(id);
@@ -842,7 +862,12 @@ impl Editor {
             }
             Popup::Connect(form) => self.confirm_connect(form),
             Popup::EditBlock(block, form) => {
-                if self.apply(|p| p.edit_block(block, &form.spec())).is_some() {
+                let look = form.look.as_ref().and_then(|l| self.look_copy(l));
+                let edited = self.apply(|p| {
+                    p.edit_block(block, &form.spec())?;
+                    p.wear_look(block, look)
+                });
+                if edited.is_some() {
                     self.popup = None;
                 }
             }
@@ -1294,6 +1319,110 @@ impl Editor {
     pub fn apply_prefs(&mut self, prefs: &crate::prefs::Prefs) {
         if self.path.is_none() && !self.dirty && self.project.blocks.is_empty() {
             self.project.line_style = prefs.line_style;
+        }
+    }
+
+    // ----- looks -----
+
+    /// Uses the library stored in `dir`; the project takes newer versions of its looks.
+    pub fn set_library(&mut self, library: Library, dir: Option<PathBuf>) {
+        self.library = library;
+        self.library_dir = dir;
+        self.sync_looks();
+    }
+
+    /// Hands the library over to the editor of the next project.
+    pub fn take_library(&mut self) -> (Library, Option<PathBuf>) {
+        (std::mem::take(&mut self.library), self.library_dir.take())
+    }
+
+    /// The project's copies of looks take newer library versions. Not an edit of the
+    /// project: nothing to undo, nothing unsaved.
+    fn sync_looks(&mut self) {
+        crate::look::sync(&mut self.project.looks, &self.library);
+    }
+
+    /// A look by id, from the library or else the project's copy.
+    pub fn look_copy(&self, id: &LookId) -> Option<(LookId, Look)> {
+        self.library
+            .looks
+            .get(id)
+            .or_else(|| self.project.looks.get(id))
+            .map(|l| (id.clone(), l.clone()))
+    }
+
+    /// Every look a box can wear: the library's and the project's own, by name.
+    pub fn looks_offered(&self) -> Vec<(LookId, String)> {
+        let mut all: Vec<(LookId, String)> = self
+            .library
+            .looks
+            .iter()
+            .chain(
+                self.project
+                    .looks
+                    .iter()
+                    .filter(|(id, _)| !self.library.looks.contains_key(*id)),
+            )
+            .map(|(id, l)| (id.clone(), l.name().to_owned()))
+            .collect();
+        all.sort_by_key(|(_, name)| name.to_lowercase());
+        all
+    }
+
+    /// Adds a look to the library; one with the same name is replaced and keeps its id.
+    pub fn add_look(&mut self, name: &str, mode: LookMode, svg: &str) -> Result<LookId, String> {
+        let existing = self.library.find(name).cloned();
+        let revision = existing
+            .as_ref()
+            .and_then(|id| self.library.looks.get(id))
+            .map_or(0, |l| l.revision() + 1);
+        let look = Look::new(name, mode, svg, revision).map_err(|e| e.to_string())?;
+        let id = match existing {
+            Some(id) => {
+                self.library.looks.insert(id.clone(), look);
+                id
+            }
+            None => self.library.add(look),
+        };
+        self.save_library()?;
+        self.sync_looks();
+        Ok(id)
+    }
+
+    /// Imports an `.svg` file into the library, named after the file.
+    pub fn import_look(&mut self, path: &Path, mode: LookMode) -> Result<LookId, String> {
+        let svg = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.add_look(&name, mode, &svg)
+    }
+
+    pub fn rename_look(&mut self, id: &LookId, name: &str) -> Result<(), String> {
+        if self.library.find(name).is_some_and(|other| other != id) {
+            return Err(format!("a look named \"{}\" exists already", name.trim()));
+        }
+        let look = self.library.looks.get_mut(id).ok_or("no such look")?;
+        look.rename(name).map_err(|e| e.to_string())?;
+        self.save_library()?;
+        self.sync_looks();
+        Ok(())
+    }
+
+    /// Removes a look from the library; projects keep their copies.
+    pub fn delete_look(&mut self, id: &LookId) -> Result<(), String> {
+        self.library.looks.remove(id);
+        self.save_library()
+    }
+
+    fn save_library(&self) -> Result<(), String> {
+        match &self.library_dir {
+            Some(dir) => self
+                .library
+                .save(dir)
+                .map_err(|e| format!("cannot save the looks: {e}")),
+            None => Ok(()),
         }
     }
 

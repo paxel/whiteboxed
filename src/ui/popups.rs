@@ -422,6 +422,21 @@ fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bo
         ui.label("Tag");
         ui.add(egui::TextEdit::singleline(&mut form.tag).hint_text("none"));
         ui.end_row();
+
+        // A look goes on top of the type: the type and its rules stay.
+        let looks = editor.looks_offered();
+        if !looks.is_empty() || form.look.is_some() {
+            ui.label("Look");
+            egui::ComboBox::from_id_salt("block-look")
+                .selected_text(look_name(&looks, form.look.as_ref()))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut form.look, None, "none");
+                    for (id, name) in &looks {
+                        ui.selectable_value(&mut form.look, Some(id.clone()), name);
+                    }
+                });
+            ui.end_row();
+        }
     });
     let suggestions = editor.tag_suggestions(&form.tag);
     if !suggestions.is_empty() {
@@ -446,6 +461,14 @@ fn block_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut bo
     if !editor.kinds().contains(&BlockKind::Person) && form.kind.is_neighbour() {
         form.kind = BlockKind::Component;
     }
+}
+
+fn look_name(
+    looks: &[(crate::look::LookId, String)],
+    look: Option<&crate::look::LookId>,
+) -> String {
+    look.and_then(|l| looks.iter().find(|(id, _)| id == l))
+        .map_or_else(|| "none".to_owned(), |(_, name)| name.clone())
 }
 
 /// A doodle shape: text over several lines, a shape, and a colour.
@@ -474,11 +497,33 @@ fn doodle_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut b
             return;
         }
         ui.label("Shape");
+        // The library's looks are shapes too.
+        let looks = editor.looks_offered();
+        let shown = match &form.look {
+            Some(_) => look_name(&looks, form.look.as_ref()),
+            None => form.kind.doodle_label().to_owned(),
+        };
         egui::ComboBox::from_id_salt("shape-kind")
-            .selected_text(form.kind.doodle_label())
+            .selected_text(shown)
+            // Every shape and look at once, without scrolling.
+            .height(600.0)
             .show_ui(ui, |ui| {
                 for kind in editor.kinds() {
-                    ui.selectable_value(&mut form.kind, kind, kind.doodle_label());
+                    let on = form.look.is_none() && form.kind == kind;
+                    if ui.selectable_label(on, kind.doodle_label()).clicked() {
+                        form.kind = kind;
+                        form.look = None;
+                    }
+                }
+                if !looks.is_empty() {
+                    ui.separator();
+                }
+                for (id, name) in &looks {
+                    let on = form.look.as_ref() == Some(id);
+                    if ui.selectable_label(on, name).clicked() {
+                        form.kind = BlockKind::Component;
+                        form.look = Some(id.clone());
+                    }
                 }
             });
     });
