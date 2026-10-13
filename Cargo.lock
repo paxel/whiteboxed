@@ -4596,6 +4596,7 @@ dependencies = [
  "resvg",
  "rfd",
  "rmcp",
+ "roxmltree",
  "serde",
  "serde_json",
  "serde_yaml_ng",

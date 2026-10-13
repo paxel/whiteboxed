@@ -759,6 +759,7 @@ impl Project {
                 band: spec.band,
                 color: spec.color,
                 span: None,
+                look: None,
                 responsibility: String::new(),
                 motivation: String::new(),
             },

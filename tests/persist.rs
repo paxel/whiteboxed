@@ -316,3 +316,46 @@ fn bundling_is_saved_only_when_off() -> TestResult {
     assert!(!persist::from_yaml(&yaml)?.bundle);
     Ok(())
 }
+
+#[test]
+fn a_project_keeps_copies_of_the_looks_its_boxes_wear() -> TestResult {
+    use whiteboxed::look::{Look, LookId, LookMode};
+    let mut p = sample()?;
+    let svg = r##"<svg viewBox="0 0 20 10"><rect width="20" height="10" fill="#f80"/></svg>"##;
+    let worn = LookId("kafka".into());
+    let unused = LookId("old".into());
+    p.looks
+        .insert(worn.clone(), Look::new("Kafka", LookMode::Icon, svg, 3)?);
+    p.looks
+        .insert(unused.clone(), Look::new("Old", LookMode::Inside, svg, 0)?);
+    let shop = *p
+        .blocks
+        .iter()
+        .find(|(_, b)| b.name == "Shop")
+        .ok_or("shop")?
+        .0;
+    p.blocks.get_mut(&shop).ok_or("shop")?.look = Some(worn.clone());
+    let text = persist::to_yaml(&p)?;
+    assert!(text.contains("look: kafka"));
+    let back = persist::from_yaml(&text)?;
+    // Only the look still worn is kept.
+    assert_eq!(back.looks.keys().collect::<Vec<_>>(), vec![&worn]);
+    assert_eq!(back.looks.get(&worn), p.looks.get(&worn));
+    assert_eq!(
+        back.blocks.get(&shop).and_then(|b| b.look.clone()),
+        Some(worn)
+    );
+
+    // A project file is untrusted: a look outside the safe subset is refused.
+    let evil = text
+        .replace("<rect", "<script")
+        .replace("</rect>", "</script>");
+    let err = persist::from_yaml(&evil).err().ok_or("loaded")?;
+    assert!(err.to_string().contains("<script> is not allowed"), "{err}");
+    // So is a box wearing a look the file does not have.
+    let missing = text.replace("look: kafka", "look: nothing");
+    assert!(
+        matches!(persist::from_yaml(&missing), Err(PersistError::Invalid(m)) if m.contains("unknown look"))
+    );
+    Ok(())
+}

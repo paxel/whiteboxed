@@ -8,6 +8,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::look::{self, LookDto, LookId};
+
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
     ExportChoice, LinePattern, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM,
@@ -59,6 +61,9 @@ struct FileDto {
     blocks: Vec<BlockDto>,
     #[serde(default)]
     relations: Vec<RelationDto>,
+    /// Copies of the custom looks the boxes wear.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    looks: Vec<LookDto>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -127,6 +132,9 @@ struct BlockDto {
     /// A group's far corner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     span: Option<Cell>,
+    /// A custom look from `looks`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    look: Option<LookId>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     responsibility: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -250,6 +258,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 band: b.band,
                 color: b.color,
                 span: b.span,
+                look: b.look.clone(),
                 responsibility: b.responsibility.clone(),
                 motivation: b.motivation.clone(),
             })
@@ -270,6 +279,15 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 frame_sides: r.frame_sides.clone(),
             })
             .collect(),
+        // Only the looks still worn.
+        looks: look::to_dto(
+            &project
+                .looks
+                .iter()
+                .filter(|(id, _)| project.blocks.values().any(|b| b.look.as_ref() == Some(id)))
+                .map(|(id, l)| (id.clone(), l.clone()))
+                .collect(),
+        ),
     };
     Ok(serde_yaml_ng::to_string(&dto)?)
 }
@@ -294,6 +312,8 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     };
     project.score_limits = dto.score_limits.unwrap_or_default();
     project.bundle = dto.bundle.unwrap_or(true);
+    // Looks come from anywhere a project file comes from: check them all again.
+    project.looks = look::from_dto(dto.looks).map_err(PersistError::Invalid)?;
     project.export = dto.export.map(|e| ExportChoice {
         all: e.all,
         svg: e.svg,
@@ -342,6 +362,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 band: b.band,
                 color: b.color,
                 span: b.span,
+                look: b.look,
                 responsibility: b.responsibility,
                 motivation: b.motivation,
             },
@@ -383,6 +404,11 @@ fn check(project: &Project) -> Result<(), PersistError> {
             && !project.tags.contains_key(&tag)
         {
             return invalid(format!("box {} has an unknown tag", id.0));
+        }
+        if let Some(look) = &b.look
+            && !project.looks.contains_key(look)
+        {
+            return invalid(format!("box {} has an unknown look", id.0));
         }
         if project.path(b.parent).contains(id) {
             return invalid(format!("box {} is nested inside itself", id.0));

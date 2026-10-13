@@ -11,6 +11,7 @@ pub mod hit;
 pub mod html;
 pub mod launcher;
 pub mod layout;
+pub mod look;
 pub mod mcp;
 pub mod model;
 pub mod persist;

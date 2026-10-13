@@ -17,6 +17,8 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::look::{LookId, Looks};
+
 pub use edit::{BlockSpec, Placement};
 pub use restructure::SplitPart;
 
@@ -334,6 +336,8 @@ pub struct Block {
     /// A group's far corner; `cell` is the near one. Every shape in the rectangle
     /// belongs to the group.
     pub span: Option<Cell>,
+    /// A custom look from the project's [`Project::looks`].
+    pub look: Option<LookId>,
     /// What this building block is responsible for (arc42 blackbox description).
     pub responsibility: String,
     /// Why the whitebox of this block is decomposed the way it is.
@@ -593,6 +597,8 @@ pub struct Project {
     pub score_limits: ScoreLimits,
     /// Whether relations between the same two boxes are drawn as one line.
     pub bundle: bool,
+    /// Copies of the custom looks the boxes wear.
+    pub looks: Looks,
     pub next_id: u64,
 }
 
@@ -675,6 +681,7 @@ impl Default for Project {
             export: None,
             score_limits: ScoreLimits::default(),
             bundle: true,
+            looks: Looks::new(),
             next_id: 0,
         }
     }
