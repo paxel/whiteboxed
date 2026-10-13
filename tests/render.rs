@@ -738,3 +738,101 @@ fn doc_screenshot_looks_dialog() -> TestResult {
     h.run();
     save(&mut h, "looks-dialog")
 }
+
+const CAT_LOOK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 92">
+<g stroke="#6b3a10" stroke-width="3" stroke-linejoin="round">
+<polygon points="16,44 24,4 48,28" fill="#f4a340"/><polygon points="84,44 76,4 52,28" fill="#f4a340"/>
+<ellipse cx="50" cy="56" rx="38" ry="33" fill="#f4a340"/></g>
+<g fill="#f7b6c2"><polygon points="24,32 27,14 40,27"/><polygon points="76,32 73,14 60,27"/></g>
+<g stroke="#c9761f" stroke-width="3" stroke-linecap="round">
+<line x1="44" y1="26" x2="46" y2="35"/><line x1="50" y1="25" x2="50" y2="35"/><line x1="56" y1="26" x2="54" y2="35"/></g>
+<g fill="#9ccc65" stroke="#33691e" stroke-width="1.5"><ellipse cx="35" cy="52" rx="7" ry="8.5"/><ellipse cx="65" cy="52" rx="7" ry="8.5"/></g>
+<g fill="#1b1b1b"><ellipse cx="35" cy="52" rx="1.8" ry="6.5"/><ellipse cx="65" cy="52" rx="1.8" ry="6.5"/></g>
+<g fill="#ffffff"><circle cx="37.5" cy="48" r="1.6"/><circle cx="67.5" cy="48" r="1.6"/></g>
+<polygon points="45,64 55,64 50,70" fill="#e57373" stroke="#6b3a10" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M50 70 Q46 77 40 73 M50 70 Q54 77 60 73" fill="none" stroke="#6b3a10" stroke-width="2" stroke-linecap="round"/>
+<g stroke="#6b3a10" stroke-width="1.5" stroke-linecap="round">
+<line x1="30" y1="66" x2="4" y2="62"/><line x1="30" y1="70" x2="5" y2="72"/>
+<line x1="70" y1="66" x2="96" y2="62"/><line x1="70" y1="70" x2="95" y2="72"/></g>
+</svg>"##;
+
+const MOUSE_LOOK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 72">
+<path d="M88 56 C104 60 110 44 100 34 C94 28 98 20 106 18" fill="none" stroke="#d98c9a" stroke-width="3" stroke-linecap="round"/>
+<ellipse cx="64" cy="50" rx="30" ry="19" fill="#b8b8b8" stroke="#555555" stroke-width="2.5"/>
+<g stroke="#555555" stroke-width="2.5"><circle cx="34" cy="20" r="12" fill="#a8a8a8"/><circle cx="54" cy="22" r="11" fill="#a8a8a8"/></g>
+<g fill="#f7b6c2"><circle cx="34" cy="20" r="7"/><circle cx="54" cy="22" r="6.5"/></g>
+<ellipse cx="36" cy="44" rx="20" ry="15" fill="#c4c4c4" stroke="#555555" stroke-width="2.5"/>
+<circle cx="31" cy="40" r="3.5" fill="#222222"/><circle cx="32.2" cy="38.8" r="1.1" fill="#ffffff"/>
+<circle cx="16.5" cy="48" r="3.5" fill="#e57373" stroke="#555555" stroke-width="1"/>
+<g stroke="#555555" stroke-width="1.2" stroke-linecap="round">
+<line x1="20" y1="50" x2="4" y2="46"/><line x1="20" y1="52" x2="5" y2="56"/><line x1="22" y1="53" x2="10" y2="62"/></g>
+<g fill="#b8b8b8" stroke="#555555" stroke-width="2"><ellipse cx="52" cy="68" rx="6" ry="3"/><ellipse cx="78" cy="67" rx="6" ry="3"/></g>
+</svg>"##;
+
+/// The README example: a cat and a mouse as custom looks in a doodle.
+fn cat_and_mouse() -> Result<Editor, Box<dyn std::error::Error>> {
+    use whiteboxed::look::{Library, LookMode};
+    use whiteboxed::model::{Cell, LinePattern, Placement, Rgb};
+    let mut e = Editor::new_doodle(None);
+    e.set_library(Library::default(), None);
+    let cat_look = e.add_look("Cat", LookMode::Below, CAT_LOOK)?;
+    let mouse_look = e.add_look("Mouse", LookMode::Below, MOUSE_LOOK)?;
+    let page = e.project.pages()[0];
+    e.open_diagram(Some(page));
+    let p = &mut e.project;
+    p.edit_block(page, &BlockSpec::new("Kitchen", BlockKind::Page))?;
+    let shape = |text: &str, kind| BlockSpec::new(text, kind);
+    let mouse = p.add_block(Some(page), &shape("Mouse", BlockKind::Component))?;
+    let asleep = BlockSpec {
+        color: Some(Rgb(0xff, 0xe6, 0x99)),
+        ..shape("Cat\nasleep?", BlockKind::Diamond)
+    };
+    let (check, _) = p.connect_new(mouse, Side::Right, &asleep, Direction::Out, "sniffs")?;
+    let cheese = BlockSpec {
+        color: Some(Rgb(0xff, 0xd8, 0x4d)),
+        ..shape("Grab\nthe cheese", BlockKind::Rounded)
+    };
+    p.connect_new(check, Side::Right, &cheese, Direction::Out, "yes")?;
+    p.connect_new(
+        check,
+        Side::Bottom,
+        &shape("Back into\nthe hole", BlockKind::Rounded),
+        Direction::Out,
+        "no",
+    )?;
+    let cat = p.add_block_at(
+        Some(page),
+        &shape("Tom", BlockKind::Component),
+        Cell::new(0, 1),
+    )?;
+    let chase = p.connect_existing(
+        cat,
+        Side::Top,
+        mouse,
+        Direction::Out,
+        "chases",
+        Placement::Keep,
+    )?;
+    p.set_relation_pattern(chase, LinePattern::Dashed)?;
+    p.add_block_at(
+        Some(page),
+        &BlockSpec {
+            color: Some(Rgb(0xff, 0xf4, 0xb8)),
+            ..shape("Tom only\npretends to sleep", BlockKind::Note)
+        },
+        Cell::new(2, 1),
+    )?;
+    let mouse_copy = e.look_copy(&mouse_look).ok_or("mouse")?;
+    let cat_copy = e.look_copy(&cat_look).ok_or("cat")?;
+    e.project.wear_look(mouse, Some(mouse_copy))?;
+    e.project.wear_look(cat, Some(cat_copy))?;
+    Ok(e)
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_cat_and_mouse() -> TestResult {
+    let mut h = harness(cat_and_mouse()?);
+    h.run();
+    save(&mut h, "cat-and-mouse")
+}

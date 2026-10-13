@@ -50,6 +50,14 @@ levels cannot drift apart.
 
 ![The whitebox of the web shop, with two interfaces not assigned yet](docs/screenshots/whitebox.png)
 
+![A doodle: a mouse and a cat as custom looks, a decision, a dashed chase and a sticky note](docs/screenshots/cat-and-mouse.png)
+
+The mouse and the cat are custom looks. You don't have to draw them yourself: ask the
+AI through the MCP endpoint ("add a cat and a mouse look and use them"), and it draws
+the SVG, adds it to your library with `add_look` and puts it on the shapes. The looks
+then work in every project and doodle. Only a safe part of SVG is accepted (shapes,
+paths, groups, gradients, text); anything else is refused with a message naming it.
+
 ## Documentation
 
 - [Workflows](docs/workflows.md): step-by-step recipes, from the first box to the
