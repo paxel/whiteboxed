@@ -1,11 +1,14 @@
 //! A layout turned into plain drawing primitives. The canvas and the SVG export
 //! both draw exactly this list, so what you see is what you export.
 
+use std::sync::Arc;
+
 use crate::geom::{Pos, Rect};
 use crate::layout::{
-    KIND_SIZE, LABEL_SIZE, LEGEND_LINE, Layout, LegendEntry, LineGeom, LineKind, NAME_SIZE,
-    kind_caption,
+    BlockGeom, CAPTIONED_H, ICON_H, KIND_SIZE, LABEL_SIZE, LEGEND_LINE, LOOK_GAP, Layout,
+    LegendEntry, LineGeom, LineKind, NAME_SIZE, PAD, kind_caption,
 };
+use crate::look::LookMode;
 use crate::model::{BlockKind, LineStyle, Rgb, Side};
 use crate::text;
 
@@ -81,6 +84,14 @@ pub enum Shape {
         fill: Option<Rgb>,
         stroke: Option<Stroke>,
     },
+    /// A custom look, scaled into `rect` without stretching. `key` is unique per box,
+    /// so ids inside never clash with another look in the same document.
+    Look {
+        rect: Rect,
+        svg: Arc<str>,
+        size: (f32, f32),
+        key: u64,
+    },
     /// Single-line text, vertically centred on `pos`.
     Text {
         pos: Pos,
@@ -123,8 +134,22 @@ pub fn scene(layout: &Layout) -> Scene {
             group_shapes(&mut shapes, block);
             continue;
         }
-        block_shapes(&mut shapes, block.kind, block.rect, block.fill);
-        let c = block.rect.center();
+        let (picture, c) = look_place(block, layout.captions);
+        if block
+            .look
+            .as_ref()
+            .is_none_or(|l| l.mode() == LookMode::Icon)
+        {
+            block_shapes(&mut shapes, block.kind, block.rect, block.fill);
+        }
+        if let (Some(look), Some(area)) = (&block.look, picture) {
+            shapes.push(Shape::Look {
+                rect: crate::look::fit(look.size(), area),
+                svg: look.svg().clone(),
+                size: look.size(),
+                key: block.id.0,
+            });
+        }
         if layout.captions {
             shapes.push(Shape::Text {
                 pos: Pos::new(c.x, c.y - 7.0),
@@ -212,6 +237,39 @@ pub fn scene(layout: &Layout) -> Scene {
         None => layout.bounds,
     };
     Scene { bounds, shapes }
+}
+
+/// Where a box's look goes, and the centre of its text.
+fn look_place(block: &BlockGeom, captions: bool) -> (Option<Rect>, Pos) {
+    let r = block.rect;
+    let Some(look) = &block.look else {
+        return (None, r.center());
+    };
+    let text_h = if captions {
+        CAPTIONED_H
+    } else {
+        block.name.lines().count().max(1) as f32 * NAME_LINE
+    };
+    match look.mode() {
+        LookMode::Inside => (Some(r), r.center()),
+        LookMode::Below => {
+            let text_y = r.max.y - PAD / 2.0 - text_h / 2.0;
+            let picture = Rect {
+                min: r.min,
+                max: Pos::new(r.max.x, r.max.y - PAD / 2.0 - text_h - LOOK_GAP),
+            };
+            (Some(picture), Pos::new(r.center().x, text_y))
+        }
+        LookMode::Icon => {
+            let icon = Rect::from_min_size(
+                Pos::new(r.min.x + PAD, r.min.y + PAD / 2.0),
+                r.width() - 2.0 * PAD,
+                ICON_H,
+            );
+            let below = icon.max.y + LOOK_GAP;
+            (Some(icon), Pos::new(r.center().x, (below + r.max.y) / 2.0))
+        }
+    }
 }
 
 fn block_shapes(shapes: &mut Vec<Shape>, kind: BlockKind, r: Rect, fill: Rgb) {

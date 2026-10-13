@@ -79,6 +79,8 @@ enum Leave {
 
 pub struct App {
     pub editor: Editor,
+    /// Looks rendered for the canvas.
+    looks: canvas::LookTextures,
     recovery_dir: Option<PathBuf>,
     view: Option<Shown>,
     /// A zoom step asked for by a key, the menu or the zoom buttons.
@@ -118,6 +120,7 @@ impl App {
         App {
             editor,
             recovery_dir,
+            looks: canvas::LookTextures::default(),
             view: None,
             zoom_request: None,
             canvas_rect: egui::Rect::NOTHING,
@@ -884,7 +887,7 @@ impl App {
         });
         let hit_at = |p: Pos2| hit_with(view, p);
 
-        canvas::paint(&painter, view, &scene::scene(&layout));
+        canvas::paint(&painter, view, &scene::scene(&layout), &mut self.looks);
         self.decorate(&painter, &layout, view, &resp, &hit_at);
 
         let clicked = resp

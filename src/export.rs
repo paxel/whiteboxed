@@ -2,7 +2,7 @@
 //! same embedded font as the canvas.
 
 use std::fmt::Write;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::geom::Pos;
 use crate::model::Rgb;
@@ -120,6 +120,20 @@ fn shape_svg(out: &mut String, shape: &Shape) {
                 paint(*fill, *stroke)
             );
         }
+        Shape::Look {
+            rect,
+            svg,
+            size,
+            key,
+        } => {
+            out.push_str(&crate::look::embed(
+                svg,
+                *size,
+                *rect,
+                &format!("look{key}-"),
+            ));
+            out.push('\n');
+        }
         Shape::Text {
             pos,
             text: content,
@@ -157,18 +171,52 @@ fn escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// How resvg reads our pictures: with the one embedded font, and never loading
+/// anything a picture names (no files, no embedded images).
+fn options() -> resvg::usvg::Options<'static> {
+    static FONTS: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
+    let fontdb = FONTS
+        .get_or_init(|| {
+            let mut db = resvg::usvg::fontdb::Database::new();
+            db.load_font_data(text::font_data().to_vec());
+            Arc::new(db)
+        })
+        .clone();
+    resvg::usvg::Options {
+        fontdb,
+        font_family: text::FAMILY.to_owned(),
+        resources_dir: None,
+        image_href_resolver: resvg::usvg::ImageHrefResolver {
+            resolve_data: Box::new(|_, _, _| None),
+            resolve_string: Box::new(|_, _| None),
+        },
+        ..resvg::usvg::Options::default()
+    }
+}
+
+/// A look rendered at `width` pixels wide, keeping its proportions.
+pub fn rasterize(svg: &str, width: u32) -> Option<resvg::tiny_skia::Pixmap> {
+    let tree = resvg::usvg::Tree::from_str(svg, &options()).ok()?;
+    let size = tree.size();
+    let scale = width as f32 / size.width();
+    let height = (size.height() * scale).round().max(1.0) as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width.max(1), height)?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    Some(pixmap)
+}
+
 /// Longest side of an exported PNG, in pixels.
 pub const MAX_PNG_SIDE: f32 = 8192.0;
 
 /// Renders the scene to PNG bytes at `scale` (1.0 = one pixel per diagram unit).
 pub fn to_png(scene: &Scene, scale: f32) -> Result<Vec<u8>, ExportError> {
     let svg = to_svg(scene);
-    let mut opt = resvg::usvg::Options::default();
-    let mut db = resvg::usvg::fontdb::Database::new();
-    db.load_font_data(text::font_data().to_vec());
-    opt.fontdb = Arc::new(db);
-    let tree =
-        resvg::usvg::Tree::from_str(&svg, &opt).map_err(|e| ExportError::Render(e.to_string()))?;
+    let tree = resvg::usvg::Tree::from_str(&svg, &options())
+        .map_err(|e| ExportError::Render(e.to_string()))?;
     let size = tree.size();
     // Keep the image within MAX_PNG_SIDE pixels, however large the diagram.
     let longest = size.width().max(size.height()).max(1.0);

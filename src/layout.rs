@@ -6,6 +6,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::geom::{Pos, Rect};
+use crate::look::{Look, LookMode};
 use crate::model::{BlockId, BlockKind, DiagramId, End, LineStyle, Project, RelationId, Rgb, Side};
 use crate::text;
 use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
@@ -24,6 +25,12 @@ const BAND_GAP: f32 = 12.0;
 pub const MIN_W: f32 = 150.0;
 pub const MIN_H: f32 = 80.0;
 pub const PAD: f32 = 18.0;
+/// Height of a look shown as an icon above the name.
+pub const ICON_H: f32 = 32.0;
+/// Between a look and the name next to it.
+pub const LOOK_GAP: f32 = 6.0;
+/// Height of a look that is the shape, with the name below it.
+pub const LOOK_H: f32 = MIN_H;
 pub const NAME_SIZE: f32 = 15.0;
 pub const KIND_SIZE: f32 = 11.0;
 pub const LABEL_SIZE: f32 = 12.0;
@@ -48,6 +55,8 @@ pub struct BlockGeom {
     pub has_content: bool,
     /// A cross-cutting band across the bottom; it has no lines.
     pub band: bool,
+    /// A custom look the box wears.
+    pub look: Option<Look>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,6 +349,10 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             .max((text_h + 2.0 * PAD) * fh)
             .max((count(o, Side::Left) + 1.0) * PORT_SPACING)
             .max((count(o, Side::Right) + 1.0) * PORT_SPACING);
+        let (w, h) = match b.look.as_ref().and_then(|l| project.looks.get(l)) {
+            Some(look) => look_box(look, (w, h), text_block(project, b)),
+            None => (w, h),
+        };
         sizes.insert(*id, (b.cell, w, h));
     }
     // A group's corners are columns and rows of the grid, even with no shape there.
@@ -397,6 +410,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             fill: b.color.unwrap_or(DEFAULT_FILL),
             has_content: false,
             band: false,
+            look: None,
         });
     }
     for id in &view.blocks {
@@ -428,6 +442,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             fill,
             has_content: project.has_content(*id),
             band: false,
+            look: b.look.as_ref().and_then(|l| project.looks.get(l)).cloned(),
         });
     }
 
@@ -459,6 +474,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                 .map_or(DEFAULT_FILL, |t| t.color),
             has_content: project.has_content(*id),
             band: true,
+            look: None,
         });
     }
     // Below the bands a full gap, so ends entering through the bottom of a whitebox
@@ -966,6 +982,39 @@ fn on_outline(kind: BlockKind, r: Rect, side: Side, port: Pos) -> Pos {
         Side::Bottom => Pos::new(port.x, r.max.y - inset * b),
         Side::Left => Pos::new(r.min.x + inset * a, port.y),
         Side::Right => Pos::new(r.max.x - inset * a, port.y),
+    }
+}
+
+/// Height of a box's text: a doodle shape's lines, or the name and its type caption.
+pub fn text_block(project: &Project, b: &crate::model::Block) -> f32 {
+    if project.is_doodle() {
+        b.name.lines().count().max(1) as f32 * crate::scene::NAME_LINE
+    } else {
+        CAPTIONED_H
+    }
+}
+
+/// Height of a name with its type caption below.
+pub const CAPTIONED_H: f32 = 34.0;
+
+/// The size of a box wearing a look: the box it would be, grown so the picture keeps
+/// its proportions.
+fn look_box(look: &Look, (w, h): (f32, f32), text_h: f32) -> (f32, f32) {
+    let (pw, ph) = look.size();
+    let aspect = pw / ph;
+    match look.mode() {
+        LookMode::Inside => {
+            if w / h < aspect {
+                (h * aspect, h)
+            } else {
+                (w, w / aspect)
+            }
+        }
+        LookMode::Below => (
+            w.max(LOOK_H * aspect),
+            h.max(LOOK_H + LOOK_GAP + text_h + PAD / 2.0),
+        ),
+        LookMode::Icon => (w.max(ICON_H * aspect + 2.0 * PAD), h + ICON_H + LOOK_GAP),
     }
 }
 

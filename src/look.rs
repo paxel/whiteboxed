@@ -11,8 +11,11 @@ use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+use crate::geom::Rect;
 
 /// Largest SVG accepted, in bytes.
 pub const MAX_SVG_BYTES: usize = 512 * 1024;
@@ -169,7 +172,7 @@ impl LookId {
 pub struct Look {
     name: String,
     mode: LookMode,
-    svg: String,
+    svg: Arc<str>,
     /// Grows with every change, so the newer of two copies is known.
     revision: u64,
     /// The picture's size from its viewBox (or width and height).
@@ -186,7 +189,7 @@ impl Look {
         Ok(Look {
             name,
             mode,
-            svg,
+            svg: svg.into(),
             revision,
             size,
         })
@@ -200,7 +203,7 @@ impl Look {
         self.mode
     }
 
-    pub fn svg(&self) -> &str {
+    pub fn svg(&self) -> &Arc<str> {
         &self.svg
     }
 
@@ -248,33 +251,73 @@ pub fn sanitize(input: &str) -> Result<(String, (f32, f32)), LookError> {
     }
     let size = picture_size(root).ok_or(LookError::NoSize)?;
     let mut out = String::new();
-    element(&mut out, root)?;
+    let how = Writing {
+        prefix: "",
+        placed: None,
+    };
+    element(&mut out, root, &how)?;
     Ok((out, size))
 }
 
-fn element(out: &mut String, node: roxmltree::Node) -> Result<(), LookError> {
+/// How [`element`] writes what it checked.
+struct Writing<'a> {
+    /// Put before every id and every reference to one.
+    prefix: &'a str,
+    /// Replaces the attributes of the outermost `<svg>` that place and size it.
+    placed: Option<&'a str>,
+}
+
+/// Attributes of the outermost `<svg>` that [`Writing::placed`] replaces.
+const PLACEMENT: &[&str] = &[
+    "x",
+    "y",
+    "width",
+    "height",
+    "viewBox",
+    "preserveAspectRatio",
+    "version",
+];
+
+fn element(out: &mut String, node: roxmltree::Node, how: &Writing) -> Result<(), LookError> {
     let tag = node.tag_name();
     let name = tag.name();
     if !matches!(tag.namespace(), None | Some(SVG_NS)) || !ELEMENTS.contains(&name) {
         return Err(LookError::Element(qualified(tag.namespace(), name)));
     }
+    let outermost = name == "svg" && node.parent_element().is_none();
     let _ = write!(out, "<{name}");
-    if name == "svg" && node.parent_element().is_none() {
-        let _ = write!(out, r#" xmlns="{SVG_NS}""#);
+    if outermost {
+        match how.placed {
+            Some(placed) => {
+                let _ = write!(out, " {placed}");
+            }
+            None => {
+                let _ = write!(out, r#" xmlns="{SVG_NS}""#);
+            }
+        }
     }
     for attr in node.attributes() {
         let key = attr.name();
         if attr.namespace().is_some() || !ATTRIBUTES.contains(&key) {
             return Err(LookError::Attribute(qualified(attr.namespace(), key)));
         }
-        check_value(key, attr.value())?;
-        let _ = write!(out, r#" {key}="{}""#, escape(attr.value()));
+        let value = attr.value();
+        check_value(key, value)?;
+        if outermost && how.placed.is_some() && PLACEMENT.contains(&key) {
+            continue;
+        }
+        let value = if key == "id" {
+            format!("{}{value}", how.prefix)
+        } else {
+            value.replace("url(#", &format!("url(#{}", how.prefix))
+        };
+        let _ = write!(out, r#" {key}="{}""#, escape(&value));
     }
     out.push('>');
     let keeps_text = TEXT_ELEMENTS.contains(&name);
     for child in node.children() {
         if child.is_element() {
-            element(out, child)?;
+            element(out, child, how)?;
         } else if child.is_text() && keeps_text {
             out.push_str(&escape(child.text().unwrap_or_default()));
         }
@@ -282,6 +325,41 @@ fn element(out: &mut String, node: roxmltree::Node) -> Result<(), LookError> {
     }
     let _ = write!(out, "</{name}>");
     Ok(())
+}
+
+/// The look as an `<svg>` element placed on `rect` of a bigger picture, scaled without
+/// stretching. Its ids get `prefix`, so several looks in one document never share one.
+pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str) -> String {
+    let Ok(doc) = roxmltree::Document::parse(svg) else {
+        return String::new();
+    };
+    let root = doc.root_element();
+    let view_box = root
+        .attribute("viewBox")
+        .map_or_else(|| format!("0 0 {} {}", size.0, size.1), str::to_owned);
+    let placed = format!(
+        r#"x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" viewBox="{}" preserveAspectRatio="xMidYMid meet""#,
+        rect.min.x,
+        rect.min.y,
+        rect.width(),
+        rect.height(),
+        escape(&view_box)
+    );
+    let how = Writing {
+        prefix,
+        placed: Some(&placed),
+    };
+    let mut out = String::new();
+    match element(&mut out, root, &how) {
+        Ok(()) => out,
+        Err(_) => String::new(),
+    }
+}
+
+/// The largest rect of the picture's proportions that fits into `area`, centred.
+pub fn fit(size: (f32, f32), area: Rect) -> Rect {
+    let scale = (area.width() / size.0).min(area.height() / size.1).max(0.0);
+    Rect::from_center(area.center(), size.0 * scale, size.1 * scale)
 }
 
 fn qualified(namespace: Option<&str>, name: &str) -> String {
@@ -374,7 +452,7 @@ pub(crate) fn to_dto(looks: &Looks) -> Vec<LookDto> {
             name: l.name.clone(),
             mode: l.mode,
             revision: l.revision,
-            svg: l.svg.clone(),
+            svg: l.svg.to_string(),
         })
         .collect()
 }
@@ -469,6 +547,27 @@ mod tests {
         assert!(!svg.contains("comment") && !svg.contains("<?xml"));
         // Rebuilding the rebuilt picture changes nothing.
         assert_eq!(sanitize(&svg)?.0, svg);
+        Ok(())
+    }
+
+    #[test]
+    fn an_embedded_look_is_placed_and_its_ids_prefixed() -> Result<(), LookError> {
+        let (svg, size) = sanitize(KAFKA)?;
+        let rect = Rect::from_min_size(crate::geom::Pos::new(10.0, 20.0), 80.0, 40.0);
+        let out = embed(&svg, size, rect, "b7-");
+        assert!(out.starts_with(
+            r#"<svg x="10.0" y="20.0" width="80.0" height="40.0" viewBox="0 0 40 20" preserveAspectRatio="xMidYMid meet">"#
+        ));
+        assert!(out.contains(r#"id="b7-g""#) && out.contains("url(#b7-g)"));
+        assert!(!out.contains("xmlns") && !out.contains(r#"id="g""#));
+        let wide = fit(
+            size,
+            Rect::from_min_size(crate::geom::Pos::new(0.0, 0.0), 100.0, 100.0),
+        );
+        assert_eq!(
+            (wide.width(), wide.height(), wide.min.y),
+            (100.0, 50.0, 25.0)
+        );
         Ok(())
     }
 

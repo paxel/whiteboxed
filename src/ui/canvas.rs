@@ -1,7 +1,11 @@
 //! Painting a scene onto the egui canvas and converting between screen and
 //! diagram coordinates.
 
-use egui::{Align2, Color32, FontId, Painter, Pos2, Stroke as EStroke, StrokeKind};
+use std::sync::Arc;
+
+use egui::{
+    Align2, Color32, FontId, Painter, Pos2, Stroke as EStroke, StrokeKind, TextureHandle, TextureId,
+};
 
 use crate::geom::{Pos, Rect};
 use crate::model::{Rgb, Side};
@@ -48,10 +52,73 @@ fn dashed(painter: &Painter, points: &[Pos2], s: EStroke, (dash, gap): (f32, f32
     painter.extend(egui::Shape::dashed_line(points, s, dash * zoom, gap * zoom));
 }
 
-pub fn paint(painter: &Painter, view: View, scene: &Scene) {
+/// Looks rendered for the canvas, kept while it shows them.
+#[derive(Default)]
+pub struct LookTextures {
+    /// By the look's text (held, so its address stays unique) and pixel width.
+    entries: Vec<LookTexture>,
+}
+
+struct LookTexture {
+    svg: Arc<str>,
+    width: u32,
+    texture: TextureHandle,
+    used: bool,
+}
+
+/// Widest a look is rendered on the canvas, in pixels.
+const MAX_LOOK_PIXELS: u32 = 2048;
+
+impl LookTextures {
+    fn get(&mut self, ctx: &egui::Context, svg: &Arc<str>, pixels: f32) -> Option<TextureId> {
+        // Widths in steps of 16 pixels: sharp at every zoom without rendering anew
+        // on every frame of a zoom.
+        let width = ((pixels / 16.0).ceil().max(1.0) as u32 * 16).min(MAX_LOOK_PIXELS);
+        if let Some(e) = self
+            .entries
+            .iter_mut()
+            .find(|e| Arc::ptr_eq(&e.svg, svg) && e.width == width)
+        {
+            e.used = true;
+            return Some(e.texture.id());
+        }
+        let pixmap = crate::export::rasterize(svg, width)?;
+        let image = egui::ColorImage::from_rgba_premultiplied(
+            [pixmap.width() as usize, pixmap.height() as usize],
+            pixmap.data(),
+        );
+        let texture = ctx.load_texture("look", image, egui::TextureOptions::LINEAR);
+        let id = texture.id();
+        self.entries.push(LookTexture {
+            svg: svg.clone(),
+            width,
+            texture,
+            used: true,
+        });
+        Some(id)
+    }
+
+    /// Forgets the textures not painted since the last sweep.
+    fn sweep(&mut self) {
+        self.entries.retain(|e| e.used);
+        for e in &mut self.entries {
+            e.used = false;
+        }
+    }
+}
+
+pub fn paint(painter: &Painter, view: View, scene: &Scene, looks: &mut LookTextures) {
     let z = view.zoom;
     for shape in &scene.shapes {
         match shape {
+            Shape::Look { rect, svg, .. } => {
+                let r = view.rect(*rect);
+                let pixels = r.width() * painter.ctx().pixels_per_point();
+                if let Some(texture) = looks.get(painter.ctx(), svg, pixels) {
+                    let uv = egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    painter.image(texture, r, uv, Color32::WHITE);
+                }
+            }
             Shape::Rect {
                 rect,
                 radius,
@@ -134,6 +201,7 @@ pub fn paint(painter: &Painter, view: View, scene: &Scene) {
             }
         }
     }
+    looks.sweep();
 }
 
 /// The edge of a box rect on one side, in screen coordinates.

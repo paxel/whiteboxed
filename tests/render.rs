@@ -184,6 +184,34 @@ fn the_canvas_paints_boxes_in_their_tag_colour() -> TestResult {
 }
 
 #[test]
+fn the_canvas_paints_a_look() -> TestResult {
+    use whiteboxed::look::{Look, LookId, LookMode};
+    let (mut p, shop) = shop()?;
+    let svg = r##"<svg viewBox="0 0 40 20"><rect width="40" height="20" fill="#ff0000"/></svg>"##;
+    let id = LookId("red".into());
+    p.looks
+        .insert(id.clone(), Look::new("Red", LookMode::Inside, svg, 0)?);
+    p.blocks.get_mut(&shop).ok_or("shop")?.look = Some(id);
+    let mut h = harness(editor_with(p));
+    h.run();
+    let r = h
+        .state_mut()
+        .editor
+        .layout()
+        .block(shop)
+        .ok_or("shop")?
+        .rect;
+    let inside = screen(&h, Pos::new(r.min.x + 12.0, r.min.y + 12.0))?;
+    let img = h.render()?;
+    let got = pixel(&img, inside);
+    assert!(
+        close(got, Rgb(0xff, 0, 0)),
+        "expected red inside the box, got {got}"
+    );
+    Ok(())
+}
+
+#[test]
 fn hovering_a_border_highlights_that_side() -> TestResult {
     let (p, shop) = shop()?;
     let mut h = harness(editor_with(p));
