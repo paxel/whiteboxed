@@ -10,7 +10,8 @@ dependencies and its build pipeline.
 Version audited: `0.1.0` (unreleased), branch `summer`; findings fixed up to commit
 `5c1a625`. Updated for `0.2.0` (S15, S16): the dependency tree is unchanged since
 `0.1.0`, so the tool results below still apply; the Security workflow re-checks them
-on every push.
+on every push. Updated for `0.4.0` (S17, custom looks): `roxmltree` became a
+direct dependency; it was already in the tree through `resvg`, so no crate was added.
 
 ## Summary
 
@@ -32,6 +33,7 @@ on every push.
 | S14 | Many open MCP sessions use memory                              | Info     | Accepted   |
 | S15 | AI access can listen beyond this computer (0.2.0)              | Medium   | Mitigated  |
 | S16 | `batch` could hide a forbidden call among allowed ones (0.2.0) | Low      | Fixed      |
+| S17 | Custom looks bring outside SVG into the app and exports (0.4.0)| Medium   | Mitigated  |
 
 No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 `Cargo.lock`. whiteboxed itself contains no `unsafe` code and now forbids it.
@@ -41,12 +43,12 @@ No known vulnerability (CVE / RustSec advisory) affects any of the 508 crates in
 | Who                                    | Can reach                                                        | Needs                             |
 |----------------------------------------|------------------------------------------------------------------|-----------------------------------|
 | The user                               | Everything                                                       | —                                 |
-| An AI client the user registered       | The 37 MCP tools                                                 | The token                         |
+| An AI client the user registered       | The 39 MCP tools                                                 | The token                         |
 | Another program or user on the machine | `127.0.0.1:<port>` while AI access is on                         | The token                         |
 | An AI agent in a container             | The Docker bridge, only if the user chose "Docker containers"    | The token                         |
 | Another machine on the network         | Only an address the user typed under "Other address"             | The token                         |
 | A web page in the user's browser       | `127.0.0.1:<port>` (browsers allow it)                           | Refused by Origin and Host checks |
-| A project file from someone else       | The YAML parser and the layout                                   | The user opening it               |
+| A project file from someone else       | The YAML parser, the layout, the SVG check of its looks (S17)    | The user opening it               |
 
 What the token grants, checked tool by tool in `src/api.rs`: reading and changing
 the open model, rendering it to PNG, and `export_docs` into folders the user allowed
@@ -55,7 +57,10 @@ opens projects.** The restructuring tools added in 0.2.0 (`move_up`, `move_into`
 `group`, `dissolve`, `split_relation`) and `batch` only change the open model, each
 as one undo step, through the same validation as the GUI. The 14 `doodle_` tools
 (0.3.0) do the same for doodles; they refuse unless a doodle is open, and the other
-tools refuse while one is.
+tools refuse while one is. `add_look` (0.4.0) is the one tool that writes outside the
+open model: it adds a picture to the user's library of looks (`looks.yaml` in the user
+data directory, a fixed file name), only after the SVG check of S17, and at most 200
+looks; `list_looks` only reads it.
 
 ## Findings
 
@@ -243,9 +248,48 @@ crosses the network unencrypted. Use it only on a network you trust, or tunnel i
 The `batch` tool (0.2.0) runs other tools in one undo step. It refuses before running
 anything when a step is `batch` (no nesting, no unbounded recursion), `export_docs`
 (writes files, needs per-folder approval that a rollback cannot take back) or
-`render_diagram`. At most 200 steps. Every step goes through the same handler and
+`render_diagram`, and since 0.4.0 `add_look` (it writes the user's library, which a
+rollback does not reach). At most 200 steps. Every step goes through the same handler and
 validation as a single call; a failing step rolls the model, the undo stack and the
 last-AI note back to the state before the batch (tests in `tests/api.rs`).
+
+### S17 Custom looks bring outside SVG into the app and exports — Medium, mitigated
+
+Custom looks (0.4.0) are SVG pictures from the AI (`add_look`), from imported files and
+from project files of anyone. They end up in the canvas (rendered by resvg), in SVG and
+PNG exports, and inline in the HTML export, where a `<script>`, an event handler or a
+`javascript:` link would run in the reader's browser (XSS), and where resvg would load
+local files or embedded images an `<image>` names.
+
+Mitigation, in `src/look.rs`:
+
+- An **allowlist** of elements (`svg g defs title desc path rect circle ellipse line
+  polyline polygon text tspan linearGradient radialGradient stop`) and of attributes
+  (geometry, paint, text, gradients). Everything else is **refused with its name**,
+  not stripped: `script`, `style` (element and attribute), `image`, `use`, `a`,
+  `foreignObject`, filters, animations, patterns, every `on*` attribute, every `href`
+  and `xlink:href`, any other namespace.
+- Every attribute value may only reference the picture itself: `url(#name)`; any other
+  `url(...)`, `javascript:` or `data:` is refused.
+- The XML parser refuses a DOCTYPE, so no entities can be declared or expanded. At most
+  512 KiB and 5000 elements.
+- The stored and embedded picture is **rebuilt from the parsed tree**, with every text
+  and value escaped; the input text itself is never written anywhere.
+- The check runs on every way in: the AI, `.svg` import, loading the library (a look
+  that fails is left out) and **opening a project file** (a look that fails refuses the
+  file).
+- In exports, each look's ids get a prefix unique per box, so looks never reference
+  each other's gradients.
+- resvg is called with an image resolver that loads nothing and no resources folder,
+  for the canvas and for PNG export.
+
+Tests: `src/look.rs` (every refused construct with its message, entities, size
+limits), `tests/persist.rs` (a project file with a `<script>` look is refused),
+`tests/api.rs` (`add_look` refuses `<image href="file:///etc/passwd">`), `tests/look.rs`
+(no duplicate ids in an HTML page with two looks).
+
+Residual risk: resvg and the HTML viewer still parse the allowed subset; a bug in
+their handling of paths, gradients or text would be reachable through a look.
 
 ### S14 Many MCP sessions use memory — Info, accepted
 

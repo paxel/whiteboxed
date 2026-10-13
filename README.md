@@ -30,6 +30,9 @@ levels cannot drift apart.
 - **Doodles.** File > New doodle sketches a data flow, a network or some logic on pages:
   whiteboard shapes, multi-line texts, colours, nested groups, dashed and dotted lines,
   same automatic layout, no arc42 rules.
+- **Custom looks.** Your own SVG pictures for special boxes (Kafka, a company system, a
+  device), from a file or drawn by the AI, in a library every project and doodle can
+  use.
 - **Restructure without redrawing.** Group boxes into a new box, dissolve a whitebox,
   move a box up or into a neighbour, split a coarse relation into precise ones; the
   relations follow on every level.

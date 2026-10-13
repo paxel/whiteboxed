@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Custom looks: your own SVG pictures for boxes and doodle shapes, shown as the shape with the name inside or below, or as an icon above the name, always without stretching. They live in a per-user library (File > Looks…, Import .svg…), and a project keeps copies of the looks it uses and takes newer library versions when opened. Only a safe subset of SVG is accepted; anything else is refused by name, also in project files.
+- AI tools list_looks and add_look, and a look for edit_box, doodle_add_shape and doodle_edit_shape.
 - Where a relation enters a whitebox can be chosen by hand: drag its end to another side of the frame, or pick Enters at in the line's dialog (also for the AI, in edit_relation).
 
 ### Changed

@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 37);
+    assert_eq!(tools.len(), 39);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -987,5 +987,75 @@ fn edit_relation_sets_the_frame_side() -> TestResult {
         json!({"relation": rel.0, "frame_side": {"whitebox": "Web Shop", "side": "automatic"}}),
     )?;
     assert!(e.project.relation(rel)?.frame_sides.is_empty());
+    Ok(())
+}
+
+#[test]
+fn the_ai_adds_looks_and_puts_them_on_boxes() -> TestResult {
+    use whiteboxed::look::Library;
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let shop_id = shop(&mut e)?;
+    let svg = r##"<svg viewBox="0 0 20 10"><rect width="20" height="10" fill="#0a0"/></svg>"##;
+    let added = call(
+        &mut e,
+        "add_look",
+        json!({"name": "Kafka", "svg": svg, "mode": "icon"}),
+    )?;
+    assert_eq!(added["replaced"], json!(false));
+    let listed = call(&mut e, "list_looks", json!({}))?;
+    assert_eq!(listed["looks"][0]["name"], json!("Kafka"));
+    assert_eq!(listed["looks"][0]["mode"], json!("icon"));
+
+    // Anything outside the safe subset is refused by name, and nothing is added.
+    let evil = r#"<svg viewBox="0 0 1 1"><image href="file:///etc/passwd"/></svg>"#;
+    let err = call(
+        &mut e,
+        "add_look",
+        json!({"name": "Evil", "svg": evil, "mode": "inside"}),
+    )
+    .err()
+    .ok_or("accepted")?;
+    assert!(err.to_string().contains("<image> is not allowed"), "{err}");
+    assert_eq!(e.library.looks.len(), 1);
+
+    let edited = call(&mut e, "edit_box", json!({"box": shop_id, "look": "kafka"}))?;
+    assert_eq!(edited["look"], json!("Kafka"));
+    assert!(call(&mut e, "edit_box", json!({"box": shop_id, "look": "Nope"})).is_err());
+    let off = call(&mut e, "edit_box", json!({"box": shop_id, "look": ""}))?;
+    assert!(off.get("look").is_none());
+    // The library is the user's, not the project's: no batch reaches it.
+    let step = json!({"tool": "add_look", "args": {"name": "X", "svg": svg, "mode": "icon"}});
+    assert!(call(&mut e, "batch", json!({"steps": [step]})).is_err());
+    Ok(())
+}
+
+#[test]
+fn a_doodle_shape_wears_a_look_from_the_ai() -> TestResult {
+    use whiteboxed::look::Library;
+    let mut e = Editor::new_doodle(None);
+    e.set_library(Library::default(), None);
+    let svg = r##"<svg viewBox="0 0 20 10"><circle cx="10" cy="5" r="4" fill="#00f"/></svg>"##;
+    // The look tools work in a doodle too.
+    call(
+        &mut e,
+        "add_look",
+        json!({"name": "Router", "svg": svg, "mode": "below"}),
+    )?;
+    let page = call(&mut e, "doodle_get", json!({}))?["pages"][0]["id"]
+        .as_u64()
+        .ok_or("page")?;
+    let shape = call(
+        &mut e,
+        "doodle_add_shape",
+        json!({"page": page, "text": "Edge", "look": "Router"}),
+    )?;
+    assert_eq!(shape["look"], "Router");
+    let plain = call(
+        &mut e,
+        "doodle_edit_shape",
+        json!({"shape": id(&shape)?, "look": ""}),
+    )?;
+    assert_eq!(plain["look"], Value::Null);
     Ok(())
 }

@@ -341,16 +341,18 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             BlockKind::Circle | BlockKind::Cloud => (1.45, 1.6),
             _ => (1.0, 1.0),
         };
-        let w = MIN_W
-            .max((text_w + 2.0 * PAD) * fw)
-            .max((count(o, Side::Top) + 1.0) * PORT_SPACING)
-            .max((count(o, Side::Bottom) + 1.0) * PORT_SPACING);
-        let h = MIN_H
-            .max((text_h + 2.0 * PAD) * fh)
-            .max((count(o, Side::Left) + 1.0) * PORT_SPACING)
-            .max((count(o, Side::Right) + 1.0) * PORT_SPACING);
+        // Room for the lines on each side.
+        let ports_w = (count(o, Side::Top).max(count(o, Side::Bottom)) + 1.0) * PORT_SPACING;
+        let ports_h = (count(o, Side::Left).max(count(o, Side::Right)) + 1.0) * PORT_SPACING;
+        let w = MIN_W.max((text_w + 2.0 * PAD) * fw).max(ports_w);
+        let h = MIN_H.max((text_h + 2.0 * PAD) * fh).max(ports_h);
         let (w, h) = match b.look.as_ref().and_then(|l| project.looks.get(l)) {
-            Some(look) => look_box(look, (w, h), text_block(project, b)),
+            Some(look) => look_box(
+                look,
+                (w, h),
+                (text_w, text_block(project, b)),
+                (ports_w, ports_h),
+            ),
             None => (w, h),
         };
         sizes.insert(*id, (b.cell, w, h));
@@ -999,7 +1001,12 @@ pub const CAPTIONED_H: f32 = 34.0;
 
 /// The size of a box wearing a look: the box it would be, grown so the picture keeps
 /// its proportions.
-fn look_box(look: &Look, (w, h): (f32, f32), text_h: f32) -> (f32, f32) {
+fn look_box(
+    look: &Look,
+    (w, h): (f32, f32),
+    (text_w, text_h): (f32, f32),
+    (ports_w, ports_h): (f32, f32),
+) -> (f32, f32) {
     let (pw, ph) = look.size();
     let aspect = pw / ph;
     match look.mode() {
@@ -1010,9 +1017,10 @@ fn look_box(look: &Look, (w, h): (f32, f32), text_h: f32) -> (f32, f32) {
                 (w, w / aspect)
             }
         }
+        // As wide as the picture or the name, so lines reach the picture.
         LookMode::Below => (
-            w.max(LOOK_H * aspect),
-            h.max(LOOK_H + LOOK_GAP + text_h + PAD / 2.0),
+            (LOOK_H * aspect).max(text_w + PAD).max(ports_w),
+            (LOOK_H + LOOK_GAP + text_h + PAD / 2.0).max(ports_h),
         ),
         LookMode::Icon => (w.max(ICON_H * aspect + 2.0 * PAD), h + ICON_H + LOOK_GAP),
     }

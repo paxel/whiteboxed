@@ -99,6 +99,9 @@ pub struct AddShapeArgs {
     /// "#rrggbb"; omitted: white.
     #[serde(default)]
     pub color: Option<String>,
+    /// A custom look by name (see list_looks), instead of a shape.
+    #[serde(default)]
+    pub look: Option<String>,
     /// Grid cell; omitted: the next free column.
     #[serde(default)]
     pub col: Option<i32>,
@@ -118,6 +121,9 @@ pub struct EditShapeArgs {
     /// "#rrggbb", or "" for no colour.
     #[serde(default)]
     pub color: Option<String>,
+    /// A custom look by name (see list_looks); an empty string removes it.
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -327,9 +333,23 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
                     a.shape.map_or(BlockKind::Component, BlockKind::from),
                 )
             };
-            let id = editor.apply_ai(|p| match (a.col, a.row) {
-                (Some(col), Some(row)) => p.add_block_at(Some(page), &spec, Cell::new(col, row)),
-                _ => p.add_block(Some(page), &spec),
+            let look = a
+                .look
+                .as_deref()
+                .map(|name| super::look::by_name(editor, name))
+                .transpose()?
+                .flatten();
+            let id = editor.apply_ai(|p| {
+                let id = match (a.col, a.row) {
+                    (Some(col), Some(row)) => {
+                        p.add_block_at(Some(page), &spec, Cell::new(col, row))
+                    }
+                    _ => p.add_block(Some(page), &spec),
+                }?;
+                if look.is_some() {
+                    p.wear_look(id, look)?;
+                }
+                Ok(id)
             })?;
             shape_done(editor, "added", id)
         }
@@ -349,7 +369,18 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
                 },
                 ..BlockSpec::new(a.text.as_deref().unwrap_or(&b.name), kind)
             };
-            editor.apply_ai(|p| p.edit_block(id, &spec))?;
+            let look = a
+                .look
+                .as_deref()
+                .map(|name| super::look::by_name(editor, name))
+                .transpose()?;
+            editor.apply_ai(|p| {
+                p.edit_block(id, &spec)?;
+                match look {
+                    Some(look) => p.wear_look(id, look),
+                    None => Ok(()),
+                }
+            })?;
             shape_done(editor, "edited", id)
         }
         "doodle_move_shape" => {
@@ -489,6 +520,7 @@ fn shape_json(project: &Project, id: BlockId) -> Value {
             "id": id.0,
             "text": b.name,
             "shape": shape_name(b.kind),
+            "look": b.look.as_ref().and_then(|l| project.looks.get(l)).map(|l| l.name()),
             "color": color,
             "cell": {"col": b.cell.col, "row": b.cell.row},
         }),

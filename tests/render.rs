@@ -651,3 +651,90 @@ fn sample_doodle_html() -> TestResult {
     )?;
     Ok(())
 }
+
+const STREAM_LOOK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#eef6ff"/><stop offset="1" stop-color="#cfe3fb"/></linearGradient></defs>
+<rect x="1" y="1" width="118" height="58" rx="10" fill="url(#bg)" stroke="#2c4f9e" stroke-width="2"/>
+<g stroke="#2c4f9e" stroke-width="1.5"><line x1="14" y1="14" x2="14" y2="46"/>
+<line x1="14" y1="30" x2="22" y2="30"/></g>
+<g fill="#ffffff" stroke="#2c4f9e" stroke-width="1.5">
+<circle cx="14" cy="11" r="3.5"/><circle cx="14" cy="49" r="3.5"/><circle cx="25" cy="30" r="3.5"/></g>
+</svg>"##;
+
+const SERVER_LOOK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 48">
+<g fill="#5b8def" stroke="#2c4f9e" stroke-width="1.5">
+<rect x="4" y="2" width="32" height="12" rx="2"/><rect x="4" y="18" width="32" height="12" rx="2"/>
+<rect x="4" y="34" width="32" height="12" rx="2"/></g>
+<g fill="#b9f6ca"><circle cx="10" cy="8" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="10" cy="40" r="2"/></g>
+</svg>"##;
+
+const VAULT_LOOK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect x="3" y="3" width="26" height="26" rx="4" fill="#f4b400" stroke="#8a6500" stroke-width="2"/>
+<circle cx="16" cy="16" r="7" fill="none" stroke="#8a6500" stroke-width="2.5"/>
+<line x1="16" y1="9" x2="16" y2="13" stroke="#8a6500" stroke-width="2.5"/>
+</svg>"##;
+
+/// A doodle of an event flow whose special nodes wear looks from the library.
+fn looks_doodle() -> Result<Editor, Box<dyn std::error::Error>> {
+    use whiteboxed::look::{Library, LookMode};
+    let mut e = Editor::new_doodle(None);
+    e.set_library(Library::default(), None);
+    let stream = e.add_look("Event stream", LookMode::Inside, STREAM_LOOK)?;
+    let server = e.add_look("Server", LookMode::Below, SERVER_LOOK)?;
+    let vault = e.add_look("Vault", LookMode::Icon, VAULT_LOOK)?;
+    let page = e.project.pages()[0];
+    e.open_diagram(Some(page));
+    let p = &mut e.project;
+    let shape = |text: &str| BlockSpec::new(text, BlockKind::Component);
+    let api = p.add_block(Some(page), &shape("Order API"))?;
+    let (bus, _) = p.connect_new(
+        api,
+        Side::Right,
+        &shape("orders"),
+        Direction::Out,
+        "publish",
+    )?;
+    let (worker, _) = p.connect_new(
+        bus,
+        Side::Right,
+        &shape("Fulfilment"),
+        Direction::Out,
+        "consume",
+    )?;
+    let (secrets, _) = p.connect_new(
+        worker,
+        Side::Bottom,
+        &shape("Secrets"),
+        Direction::Out,
+        "reads keys",
+    )?;
+    for (block, look) in [
+        (api, &server),
+        (bus, &stream),
+        (worker, &server),
+        (secrets, &vault),
+    ] {
+        let copy = e.look_copy(look).ok_or("look")?;
+        e.project.wear_look(block, Some(copy))?;
+    }
+    Ok(e)
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_looks() -> TestResult {
+    let mut h = harness(looks_doodle()?);
+    h.run();
+    save(&mut h, "looks")
+}
+
+#[test]
+#[ignore = "writes docs/screenshots (needs wgpu)"]
+fn doc_screenshot_looks_dialog() -> TestResult {
+    let mut h = harness(looks_doodle()?);
+    h.run();
+    h.state_mut().looks_dialog.start();
+    h.run();
+    save(&mut h, "looks-dialog")
+}

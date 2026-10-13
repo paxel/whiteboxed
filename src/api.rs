@@ -21,6 +21,7 @@ use crate::scene;
 use crate::view::{self, ViewEnd};
 
 mod doodle;
+mod look;
 
 /// Longest side of a rendered diagram, in pixels.
 pub const RENDER_LIMIT: f32 = 1500.0;
@@ -384,6 +385,9 @@ pub struct EditBoxArgs {
     /// Make it a cross-cutting band (it must have no relations) or a grid box again.
     #[serde(default)]
     pub band: Option<bool>,
+    /// The name of a custom look (see list_looks); an empty string removes it.
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -569,11 +573,15 @@ batch runs several calls as one step, all or nothing. Saving the project is up t
 When the user has a doodle open (a free sketch of a data flow, a network or some logic, \
 on pages), only the doodle_ tools work: start with doodle_get, address everything by \
 id, use diamonds for decisions, circles for start and end, groups for zones, and \
-dashed or dotted lines for asynchronous or optional flows.";
+dashed or dotted lines for asynchronous or optional flows. \
+Special boxes (Kafka, a company system, a device) can wear a custom look: list_looks \
+shows the user's library, add_look adds an SVG picture to it, and edit_box (or \
+doodle_add_shape and doodle_edit_shape) puts it on a box by name.";
 
 pub fn tools() -> Vec<ToolInfo> {
     let mut all = arc42_tools();
     all.extend(doodle::tools());
+    all.extend(look::tools());
     all
 }
 
@@ -626,7 +634,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "edit_box",
-            description: "Change name, type or tag of a box; omitted fields stay.",
+            description: "Change name, type, tag or look of a box; omitted fields stay.",
             schema: schema::<EditBoxArgs>(),
         },
         ToolInfo {
@@ -691,7 +699,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "batch",
-            description: "Run several editing calls as one: all of them or none, and one undo step for the user. If a step fails, nothing is changed and the error names the step. Not for export_docs, render_diagram or batch itself.",
+            description: "Run several editing calls as one: all of them or none, and one undo step for the user. If a step fails, nothing is changed and the error names the step. Not for export_docs, render_diagram, add_look or batch itself.",
             schema: schema::<BatchArgs>(),
         },
     ]
@@ -711,6 +719,9 @@ fn args<T: for<'de> Deserialize<'de>>(value: Value) -> ApiResult<T> {
 /// Runs one tool against the editor.
 pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
     if let Some(result) = doodle::call(editor, tool, arguments.clone()) {
+        return result;
+    }
+    if let Some(result) = look::call(editor, tool, arguments.clone()) {
         return result;
     }
     // The arc42 tools do not fit a doodle's pages and shapes.
@@ -1006,7 +1017,18 @@ fn edit_box(editor: &mut Editor, a: EditBoxArgs) -> ApiResult<Output> {
         band: a.band.unwrap_or(b.band),
         color: b.color,
     };
-    editor.apply_ai(|p| p.edit_block(id, &s))?;
+    let look = a
+        .look
+        .as_deref()
+        .map(|name| look::by_name(editor, name))
+        .transpose()?;
+    editor.apply_ai(|p| {
+        p.edit_block(id, &s)?;
+        match look {
+            Some(look) => p.wear_look(id, look),
+            None => Ok(()),
+        }
+    })?;
     done(editor, "edited", Some(id))
 }
 
@@ -1154,7 +1176,8 @@ fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
     if let Some((i, s)) = a.steps.iter().enumerate().find(|(_, s)| {
         matches!(
             s.tool.as_str(),
-            "batch" | "export_docs" | "render_diagram" | "doodle_render"
+            // add_look changes the user's library, which no undo reaches.
+            "batch" | "export_docs" | "render_diagram" | "doodle_render" | "add_look"
         )
     }) {
         return rejected(format!("step {} ({}) cannot run in a batch", i + 1, s.tool));
@@ -1359,6 +1382,9 @@ fn box_json(project: &Project, id: BlockId) -> Value {
     }
     if let Some(tag) = b.tag.and_then(|t| project.tags.get(&t)) {
         v["tag"] = json!(tag.name);
+    }
+    if let Some(look) = b.look.as_ref().and_then(|l| project.looks.get(l)) {
+        v["look"] = json!(look.name());
     }
     if !b.responsibility.is_empty() {
         v["responsibility"] = json!(b.responsibility);

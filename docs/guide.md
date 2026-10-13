@@ -73,6 +73,46 @@ building-block table of the export. It has no lines, so it cannot be connected, 
 does not move. A box with lines has to lose them before it can become a band; a band
 that becomes a box again goes to the next free cell.
 
+### Custom looks
+
+A box can wear a **look**: your own SVG picture, for boxes that deserve to be
+recognised at a glance, such as Kafka, a company system or a device. Looks live in a
+**library** in your user data directory (`whiteboxed/looks.yaml`), so every project and
+every doodle can use them.
+
+![An event flow whose services, stream and vault wear looks](screenshots/looks.png)
+
+Each look is shown in one of three ways, chosen when it is added:
+
+- **shape, name inside**: the picture is the box, with the name written on it;
+- **shape, name below**: the picture is the box, with the name under it;
+- **icon above the name**: the box keeps its own shape and shows the picture above the
+  name; the box grows by the icon.
+
+A picture is always scaled to keep its proportions, never stretched. In a project the
+look goes on top of the box type: choose it under **Look** in the box's dialog; the
+type and its rules stay. In a doodle the looks appear at the end of the **Shape** list.
+
+**File > Looks…** shows the library: rename a look by editing its name, delete it, or
+**Import .svg…** a picture (named after the file, shown the way chosen next to the
+button). The AI can add looks too (`add_look`).
+
+![The Looks dialog with three looks, their modes and the import button](screenshots/looks-dialog.png)
+
+A project keeps a **copy** of every look its boxes wear, so it shows the same on
+another computer. When a project is opened, it takes the library's version of a look
+if that is newer (renamed or replaced); a look deleted from the library stays in the
+projects that use it, and is offered again in their dialogs.
+
+Only a safe part of SVG is accepted: `svg`, `g`, `defs`, `path`, `rect`, `circle`,
+`ellipse`, `line`, `polyline`, `polygon`, `text`, `tspan`, `linearGradient`,
+`radialGradient` and `stop`, with their geometry, paint and text attributes and
+references inside the picture (`url(#name)`). Anything else (scripts, styles, images,
+links, filters, references to files or the web) is refused with a message naming what
+is not allowed; nothing is silently removed. Draw with attributes like
+`fill="#f80"` instead of `style="fill:#f80"`. The same check runs on every look in a
+project file you open.
+
 ## Relations
 
 A relation connects two boxes of the same diagram. It has:
@@ -369,7 +409,8 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
   lists the allowed folders, can revoke them and can allow one in advance. Exports
   never follow symbolic links out of an allowed folder.
 - **What the AI may not do:** save, open or start a project, read files, or run
-  anything. That stays with you.
+  anything. That stays with you. The one thing it writes outside the project is your
+  library of looks (`add_look`), and only pictures that pass the SVG check.
 
 | Tool                 | Does                                                              |
 |----------------------|-------------------------------------------------------------------|
@@ -382,7 +423,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `add_stub`           | A relation that leaves the level                                  |
 | `connect_open_end`   | A stub's open end to a box                                        |
 | `attach`             | A relation from the level above to a box inside; again: fans out  |
-| `edit_box`           | Name, type, tag                                                   |
+| `edit_box`           | Name, type, tag, look                                             |
 | `edit_relation`      | Direction, text, short label, line style, sides, frame side       |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
@@ -396,6 +437,11 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |
 | `batch`              | Several editing calls as one undo step, all or nothing            |
+| `list_looks`         | The looks of the library and the project                          |
+| `add_look`           | A look (name, SVG, mode) into your library; same name: replaced   |
+
+`list_looks` and `add_look` also work with a doodle open. `add_look` changes your
+library, which undo does not reach, so it cannot run in a `batch`.
 
 With a **doodle** open, the AI works with the `doodle_` tools instead, and the tools
 above refuse (and the other way round). Doodle tools address pages, shapes, groups
@@ -406,8 +452,8 @@ and lines by id, since texts may repeat:
 | `doodle_get`          | Every page with its shapes, groups and lines            |
 | `doodle_render`       | One page as PNG                                         |
 | `doodle_add_page`     | A new page; `doodle_rename_page`, `doodle_delete_page`  |
-| `doodle_add_shape`    | A shape with text, shape type, colour and cell          |
-| `doodle_edit_shape`   | Text, shape type or colour of a shape or group          |
+| `doodle_add_shape`    | A shape with text, shape type or look, colour and cell  |
+| `doodle_edit_shape`   | Text, shape type, look or colour of a shape or group    |
 | `doodle_move_shape`   | A shape to another cell                                 |
 | `doodle_delete_shape` | A shape or group                                        |
 | `doodle_add_line`     | A line between two shapes or groups, with a pattern     |

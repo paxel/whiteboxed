@@ -77,10 +77,9 @@ impl LooksDialog {
                                     .names
                                     .entry(id.clone())
                                     .or_insert_with(|| look.name().to_owned());
-                                let field = ui.add(
-                                    egui::TextEdit::singleline(name)
-                                        .desired_width(180.0)
-                                        .id_salt(("look-name", id)),
+                                let field = ui.add_sized(
+                                    [180.0, ui.spacing().interact_size.y],
+                                    egui::TextEdit::singleline(name).id_salt(("look-name", id)),
                                 );
                                 if field.lost_focus() && name.trim() != look.name() {
                                     rename = Some((id.clone(), name.clone()));
