@@ -367,6 +367,7 @@ fn line_styles_change_with_one_undo_step_each() -> TestResult {
     let mut e = Editor::new(None);
     e.apply_prefs(&whiteboxed::prefs::Prefs {
         line_style: LineStyle::Curved,
+        ..Default::default()
     });
     assert_eq!(e.project.line_style, LineStyle::Curved);
     assert!(!e.dirty, "starting values are not a change");

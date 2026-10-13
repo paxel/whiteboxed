@@ -1555,3 +1555,85 @@ fn a_doodle_offers_library_looks_as_shapes() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn open_recent_reopens_files_and_removes_missing_ones() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (mut e, _) = one_box()?;
+    let shop = dir.path().join("shop.yaml");
+    let gone = dir.path().join("gone.yaml");
+    e.save_as(&shop)?;
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_ui_state(
+            |ui, app: &mut App| app.show(ui),
+            App::new(Editor::new(None), None).with_session_dir(Some(dir.path().to_path_buf())),
+        );
+    h.state_mut().used(&gone);
+    h.state_mut().used(&shop);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label_contains("Open recent").hover();
+    h.run();
+    h.get_by_label("shop.yaml").click();
+    h.run();
+    assert_eq!(h.state().editor.path.as_deref(), Some(shop.as_path()));
+
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label_contains("Open recent").hover();
+    h.run();
+    h.get_by_label("Remove").click();
+    h.run();
+    assert_eq!(h.state().session().recent, vec![shop.clone()]);
+    // Remembered for the next start.
+    let stored = whiteboxed::session::Session::load(dir.path());
+    assert_eq!(stored.recent, vec![shop]);
+    assert_eq!(stored.folder.as_deref(), Some(dir.path()));
+    Ok(())
+}
+
+#[test]
+fn preferences_turn_reopening_the_last_file_off() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_ui_state(
+            |ui, app: &mut App| app.show(ui),
+            App::new(Editor::new(None), None).with_prefs_dir(Some(dir.path().to_path_buf())),
+        );
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Preferences\u{2026}").click();
+    h.run();
+    h.get_by_label("Reopen the last file on start").click();
+    h.run();
+    assert!(!whiteboxed::prefs::load(dir.path()).reopen_last);
+    Ok(())
+}
+
+#[test]
+fn the_last_file_is_reopened_unless_one_is_given_or_it_is_turned_off() -> TestResult {
+    use whiteboxed::prefs::Prefs;
+    use whiteboxed::session::Session;
+    use whiteboxed::ui::start_file;
+    let dir = tempfile::tempdir()?;
+    let last = dir.path().join("last.yaml");
+    std::fs::write(&last, "format: 1")?;
+    let mut s = Session::default();
+    s.used(&last);
+    let on = Prefs::default();
+    let off = Prefs {
+        reopen_last: false,
+        ..Prefs::default()
+    };
+    let given = std::path::PathBuf::from("given.yaml");
+    assert_eq!(start_file(None, &on, &s), Some(last.clone()));
+    assert_eq!(start_file(Some(given.clone()), &on, &s), Some(given));
+    assert_eq!(start_file(None, &off, &s), None);
+    std::fs::remove_file(&last)?;
+    assert_eq!(start_file(None, &on, &s), None);
+    Ok(())
+}

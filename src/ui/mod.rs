@@ -33,19 +33,15 @@ pub const APP_ID: &str = "io.github.paxel.whiteboxed";
 /// Opens the window; `path` is a project file to open.
 pub fn run(path: Option<PathBuf>) -> eframe::Result {
     let dir = recovery::default_dir();
-    let mut message = None;
-    let editor = match path {
-        Some(p) => Editor::open(&p, dir.clone()).unwrap_or_else(|e| {
-            message = Some(format!("Cannot open {}: {e}", p.display()));
-            Editor::new(dir.clone())
-        }),
-        None => Editor::new(dir.clone()),
-    };
-    let mut app = App::new(editor, dir)
-        .with_ai_dir(crate::mcp::settings::default_dir())
-        .with_prefs_dir(crate::mcp::settings::default_dir())
-        .with_library_dir(crate::mcp::settings::default_dir());
-    app.editor.message = message;
+    let data = crate::mcp::settings::default_dir();
+    let mut app = App::new(Editor::new(dir.clone()), dir)
+        .with_ai_dir(data.clone())
+        .with_prefs_dir(data.clone())
+        .with_library_dir(data.clone())
+        .with_session_dir(data);
+    if let Some(p) = start_file(path, &app.settings.prefs, app.session()) {
+        app.load(&p);
+    }
     if cfg!(target_os = "linux") {
         std::thread::spawn(crate::launcher::register);
     }
@@ -68,6 +64,21 @@ pub fn run(path: Option<PathBuf>) -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// The file to open on start: the one named on the command line, or else the last
+/// one used, if the preferences want that and it still exists.
+pub fn start_file(
+    arg: Option<PathBuf>,
+    prefs: &crate::prefs::Prefs,
+    session: &crate::session::Session,
+) -> Option<PathBuf> {
+    arg.or_else(|| {
+        prefs
+            .reopen_last
+            .then(|| session.last_file().map(Path::to_path_buf))
+            .flatten()
+    })
 }
 
 /// Something that needs the current project out of the way first.
@@ -110,6 +121,9 @@ pub struct App {
     pub settings: settings::Settings,
     pub export: export::ExportDialog,
     pub looks_dialog: looks::LooksDialog,
+    /// Recent files, folders and the window, remembered between runs.
+    session: crate::session::Session,
+    session_dir: Option<PathBuf>,
 }
 
 impl eframe::App for App {
@@ -145,6 +159,8 @@ impl App {
             settings: settings::Settings::new(None),
             export: export::ExportDialog::default(),
             looks_dialog: looks::LooksDialog::default(),
+            session: crate::session::Session::default(),
+            session_dir: None,
         }
     }
 
@@ -293,6 +309,7 @@ impl App {
         self.settings.show(&ctx, &mut self.editor);
         self.export.show(&ctx, &mut self.editor);
         self.looks_dialog.show(&ctx, &mut self.editor);
+        self.settings.show_preferences(&ctx);
         self.ai.export_prompt(&ctx, &mut self.editor);
         self.leave_dialog(&ctx);
     }
@@ -411,6 +428,7 @@ impl App {
                 if ui.button("Open\u{2026}").clicked() {
                     self.open();
                 }
+                ui.menu_button("Open recent", |ui| self.recent_menu(ui));
                 if ui.button("Save").clicked() {
                     self.save();
                 }
@@ -423,6 +441,9 @@ impl App {
                 }
                 if ui.button("Looks\u{2026}").clicked() {
                     self.looks_dialog.start();
+                }
+                if ui.button("Preferences\u{2026}").clicked() {
+                    self.settings.prefs_open = true;
                 }
                 ui.separator();
                 if ui.button("Export\u{2026}").clicked() {
@@ -1457,8 +1478,82 @@ impl App {
 
     fn load(&mut self, path: &Path) {
         match Editor::open(path, self.recovery_dir.clone()) {
-            Ok(editor) => self.reset(editor),
+            Ok(editor) => {
+                self.reset(editor);
+                self.used(path);
+            }
             Err(e) => self.editor.message = Some(format!("Cannot open {}: {e}", path.display())),
+        }
+    }
+
+    /// Where the session (recent files, folders, window) is remembered.
+    pub fn with_session_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.session = dir
+            .as_deref()
+            .map(crate::session::Session::load)
+            .unwrap_or_default();
+        self.session_dir = dir;
+        self
+    }
+
+    pub fn session(&self) -> &crate::session::Session {
+        &self.session
+    }
+
+    /// A file was opened or saved: it becomes the most recent one.
+    pub fn used(&mut self, path: &Path) {
+        self.session.used(path);
+        self.store_session();
+    }
+
+    fn store_session(&mut self) {
+        if let Some(dir) = &self.session_dir
+            && let Err(e) = self.session.save(dir)
+        {
+            self.editor.message = Some(format!("Cannot remember the recent files: {e}"));
+        }
+    }
+
+    fn recent_menu(&mut self, ui: &mut Ui) {
+        if self.session.recent.is_empty() {
+            ui.label(RichText::new("No recent files").weak());
+        }
+        let mut open = None;
+        let mut forget = None;
+        for path in &self.session.recent {
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let exists = path.is_file();
+            ui.horizontal(|ui| {
+                let entry = ui
+                    .add_enabled(exists, Button::new(name))
+                    .on_hover_text(path.display().to_string())
+                    .on_disabled_hover_text(format!("{} is missing", path.display()));
+                if entry.clicked() {
+                    open = Some(path.clone());
+                }
+                if !exists && ui.small_button("Remove").clicked() {
+                    forget = Some(path.clone());
+                }
+            });
+        }
+        if let Some(path) = forget {
+            self.session.forget(&path);
+            self.store_session();
+        }
+        if let Some(path) = open {
+            ui.close();
+            self.open_path(path);
+        }
+    }
+
+    fn open_path(&mut self, path: PathBuf) {
+        if self.editor.dirty {
+            self.leave = Some(Leave::Open(path));
+        } else {
+            self.load(&path);
         }
     }
 
@@ -1480,25 +1575,32 @@ impl App {
         }
     }
 
+    /// A file dialog for projects, in the folder last used.
+    fn project_dialog(&self) -> rfd::FileDialog {
+        let dialog = rfd::FileDialog::new().add_filter("whiteboxed project", &["yaml", "yml"]);
+        match &self.session.folder {
+            Some(folder) if folder.is_dir() => dialog.set_directory(folder),
+            _ => dialog,
+        }
+    }
+
     fn open(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("whiteboxed project", &["yaml", "yml"])
-            .pick_file()
-        else {
+        let Some(path) = self.project_dialog().pick_file() else {
             return;
         };
-        if self.editor.dirty {
-            self.leave = Some(Leave::Open(path));
-        } else {
-            self.load(&path);
-        }
+        self.open_path(path);
     }
 
     /// Saves; asks for a file name the first time. Returns whether it saved.
     fn save(&mut self) -> bool {
         self.commit_draft();
         match self.editor.save() {
-            Ok(true) => true,
+            Ok(true) => {
+                if let Some(path) = self.editor.path.clone() {
+                    self.used(&path);
+                }
+                true
+            }
             Ok(false) => self.save_as(),
             Err(e) => {
                 self.editor.message = Some(format!("Cannot save: {e}"));
@@ -1509,8 +1611,8 @@ impl App {
 
     fn save_as(&mut self) -> bool {
         self.commit_draft();
-        let Some(mut path) = rfd::FileDialog::new()
-            .add_filter("whiteboxed project", &["yaml", "yml"])
+        let Some(mut path) = self
+            .project_dialog()
             .set_file_name(self.editor.suggested_file_name())
             .save_file()
         else {
@@ -1520,7 +1622,10 @@ impl App {
             path.set_extension("yaml");
         }
         match self.editor.save_as(&path) {
-            Ok(()) => true,
+            Ok(()) => {
+                self.used(&path);
+                true
+            }
             Err(e) => {
                 self.editor.message = Some(format!("Cannot save: {e}"));
                 false

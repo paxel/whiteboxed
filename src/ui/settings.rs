@@ -11,6 +11,9 @@ use crate::prefs::{self, Prefs};
 
 pub struct Settings {
     pub open: bool,
+    /// File > Preferences…
+    pub prefs_open: bool,
+    prefs_note: Option<String>,
     dir: Option<PathBuf>,
     pub prefs: Prefs,
     note: Option<String>,
@@ -25,6 +28,8 @@ impl Settings {
         let prefs = dir.as_deref().map(prefs::load).unwrap_or_default();
         Settings {
             open: false,
+            prefs_open: false,
+            prefs_note: None,
             dir,
             prefs,
             note: None,
@@ -173,6 +178,44 @@ impl Settings {
         if !open {
             self.open = false;
             self.note = None;
+        }
+    }
+
+    /// File > Preferences…: how the app behaves for this user, in every project.
+    pub fn show_preferences(&mut self, ctx: &Context) {
+        if !self.prefs_open {
+            return;
+        }
+        let mut open = true;
+        let before = self.prefs;
+        egui::Window::new("Preferences")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(340.0)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .show(ctx, |ui| {
+                ui.checkbox(&mut self.prefs.reopen_last, "Reopen the last file on start");
+                ui.label(
+                    RichText::new("Unless a file is given on the command line.")
+                        .weak()
+                        .small(),
+                );
+                if let Some(note) = &self.prefs_note {
+                    ui.label(RichText::new(note).weak());
+                }
+            });
+        if self.prefs != before
+            && let Some(dir) = &self.dir
+        {
+            self.prefs_note = prefs::save(dir, &self.prefs)
+                .err()
+                .map(|e| format!("Cannot store your preferences: {e}"));
+        }
+        if !open {
+            self.prefs_open = false;
+            self.prefs_note = None;
         }
     }
 }

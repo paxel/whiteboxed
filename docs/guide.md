@@ -318,6 +318,13 @@ Lists are written in a fixed order. See [the file format](#file-format) below.
   start offers to restore the unsaved work.
 - Closing, opening or starting a new project with unsaved changes asks first. Enter
   saves, Esc keeps editing.
+- **File > Open recent** lists the last 10 files you opened or saved. A file that is
+  gone is greyed out, with **Remove** next to it.
+- On start the app **reopens the last file**, unless you name a file on the command
+  line. **File > Preferences…** turns this off.
+- **Open** and **Save as** start in the folder you used last.
+- Recent files and folders are remembered in your user data directory
+  (`whiteboxed/state.yaml`), never in a project.
 
 ![The question about unsaved changes before quitting](screenshots/unsaved-changes.png)
 
