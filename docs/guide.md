@@ -124,6 +124,9 @@ A relation connects two boxes of the same diagram. It has:
 - an optional **short label**, shown on the line instead of a long text;
 - a **line style**: the project's, or its own (square corners, slightly rounded,
   rounded or curved);
+- a **colour**: the default, or any colour from the picker in the **Edit…** dialog. It
+  is the relation's, so its line has it on every level; lines of different colours
+  between the same boxes are not bundled;
 - the **side** of each box it leaves from. It follows the layout (see
   [Layout](#layout)); you can pick another one in the relation's **Edit…** dialog,
   until one of its boxes moves.
@@ -437,7 +440,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `connect_open_end`   | A stub's open end to a box                                        |
 | `attach`             | A relation from the level above to a box inside; again: fans out  |
 | `edit_box`           | Name, type, tag, look                                             |
-| `edit_relation`      | Direction, text, short label, line style, sides, frame side       |
+| `edit_relation`      | Direction, text, short label, style, colour, sides, frame side    |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
@@ -469,8 +472,8 @@ and lines by id, since texts may repeat:
 | `doodle_edit_shape`   | Text, shape type, look or colour of a shape or group    |
 | `doodle_move_shape`   | A shape to another cell                                 |
 | `doodle_delete_shape` | A shape or group                                        |
-| `doodle_add_line`     | A line between two shapes or groups, with a pattern     |
-| `doodle_edit_line`    | Text, direction or pattern; `doodle_delete_line`        |
+| `doodle_add_line`     | A line between two shapes or groups, pattern and colour |
+| `doodle_edit_line`    | Text, direction, pattern, colour; `doodle_delete_line`  |
 | `doodle_group`        | A group framed around shapes; `doodle_widen_group`      |
 
 The problems `get_diagram` lists are lines that cross (both relations and where),
@@ -513,8 +516,8 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 ![A network doodle: a cloud account with a nested DMZ, dashed and dotted lines](screenshots/doodle-network.png)
 - Lines connect two shapes; there are no open ends (stubs). In a line's **Edit…**
   dialog, **Pattern** makes it solid, dashed or dotted, for example for asynchronous
-  or optional flows. Lines with different patterns between the same shapes are not
-  bundled.
+  or optional flows, and **Colour** gives it a colour of its own. Lines with different
+  patterns or colours between the same shapes are not bundled.
 - Placing, connecting by clicking a border, routing, line styles, undo and saving work
   as in a project.
 

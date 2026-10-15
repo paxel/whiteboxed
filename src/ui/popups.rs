@@ -166,6 +166,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             style,
             short,
             pattern,
+            color,
             frame,
             sides,
             ..
@@ -183,6 +184,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                     }
                 });
             }
+            line_color_row(ui, color);
             if editor.project.is_doodle() {
                 ui.horizontal(|ui| {
                     ui.label("Pattern");
@@ -541,6 +543,24 @@ fn doodle_form(ui: &mut Ui, editor: &Editor, form: &mut BlockForm, focus: &mut b
             if ui.add(swatch).clicked() {
                 form.color = Some(c);
             }
+        }
+    });
+}
+
+/// The colour of a line: the default, or any colour from the picker.
+fn line_color_row(ui: &mut Ui, color: &mut Option<crate::model::Rgb>) {
+    ui.horizontal(|ui| {
+        ui.label("Colour");
+        if ui
+            .add(egui::Button::new("default").selected(color.is_none()))
+            .clicked()
+        {
+            *color = None;
+        }
+        let crate::model::Rgb(r, g, b) = color.unwrap_or(crate::scene::LINE);
+        let mut rgb = [r, g, b];
+        if ui.color_edit_button_srgb(&mut rgb).changed() {
+            *color = Some(crate::model::Rgb(rgb[0], rgb[1], rgb[2]));
         }
     });
 }

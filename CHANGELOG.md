@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Doodle pages get a readability colour, shown as a dot on the page tab that explains on hover what helps; the limits are in File > Project settings… and the AI sees it in doodle_get.
+- Lines can have a colour of their own, picked in the line's Edit… dialog or set by the AI; a relation keeps it on every level.
 
 ### Changed
 

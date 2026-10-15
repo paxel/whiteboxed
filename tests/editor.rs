@@ -816,3 +816,39 @@ fn an_opened_project_takes_the_newer_library_version() -> TestResult {
     assert!(!opened.dirty);
     Ok(())
 }
+
+#[test]
+fn the_relation_dialog_sets_the_colour_on_every_level() -> TestResult {
+    use whiteboxed::model::Rgb;
+    let mut e = Editor::new(None);
+    let shop = e.project.add_block(
+        None,
+        &whiteboxed::model::BlockSpec::new("Shop", BlockKind::Component),
+    )?;
+    let (_, rel) = e.project.connect_new(
+        shop,
+        Side::Right,
+        &whiteboxed::model::BlockSpec::new("Bank", BlockKind::ExternalSystem),
+        Direction::Out,
+        "pays",
+    )?;
+    e.project.add_block(
+        Some(shop),
+        &whiteboxed::model::BlockSpec::new("Billing", BlockKind::Component),
+    )?;
+    e.start_edit_relation(rel);
+    if let Some(Popup::EditRelation { color, .. }) = &mut e.popup {
+        *color = Some(Rgb(0x20, 0x60, 0xc0));
+    }
+    e.confirm();
+    assert_eq!(e.project.relation(rel)?.color, Some(Rgb(0x20, 0x60, 0xc0)));
+    // The relation's line inside the whitebox carries the same colour.
+    let inside = whiteboxed::view::diagram_view(&e.project, Some(shop));
+    let line = inside
+        .lines
+        .iter()
+        .find(|l| l.relation == rel)
+        .ok_or("no line inside")?;
+    assert_eq!(line.color, Some(Rgb(0x20, 0x60, 0xc0)));
+    Ok(())
+}

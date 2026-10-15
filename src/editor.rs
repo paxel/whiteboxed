@@ -146,6 +146,8 @@ pub enum Popup {
         style: Option<LineStyle>,
         short: String,
         pattern: crate::model::LinePattern,
+        /// The line's own colour (`None`: the default).
+        color: Option<crate::model::Rgb>,
         /// The whitebox shown and the frame side chosen there (`None`: automatic),
         /// when the relation enters it from outside.
         frame: Option<(BlockId, Option<Side>)>,
@@ -692,6 +694,7 @@ impl Editor {
                 style: r.style,
                 short: r.short.clone(),
                 pattern: r.pattern,
+                color: r.color,
                 frame: self
                     .diagram
                     .filter(|d| {
@@ -877,6 +880,7 @@ impl Editor {
                 style,
                 short,
                 pattern,
+                color,
                 frame,
                 sides,
             } => {
@@ -885,6 +889,7 @@ impl Editor {
                         p.edit_relation(rel, direction, &text)?;
                         p.set_relation_short(rel, &short)?;
                         p.set_relation_pattern(rel, pattern)?;
+                        p.set_relation_color(rel, color)?;
                         if let Some((outer, side)) = frame {
                             p.set_frame_side(rel, outer, side)?;
                         }

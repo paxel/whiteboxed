@@ -31,6 +31,8 @@ pub struct ViewLine {
     /// Further relations drawn as this one line (see [`bundle`]).
     pub bundle: Vec<RelationId>,
     pub pattern: crate::model::LinePattern,
+    /// The relation's own colour (`None`: the default).
+    pub color: Option<crate::model::Rgb>,
 }
 
 impl ViewLine {
@@ -76,6 +78,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 short: rel.short.clone(),
                 bundle: Vec::new(),
                 pattern: rel.pattern,
+                color: rel.color,
             });
             continue;
         }
@@ -119,6 +122,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                     short: rel.short.clone(),
                     bundle: Vec::new(),
                     pattern: rel.pattern,
+                    color: rel.color,
                 });
             }
         }
@@ -145,10 +149,11 @@ pub fn bundle(view: &DiagramView) -> DiagramView {
     for line in &view.lines {
         let (ka, kb) = (key(&line.a), key(&line.b));
         let found = match (&ka, &kb) {
-            // Lines drawn differently (dashed, dotted) stay apart.
+            // Lines drawn differently (dashed, dotted, another colour) stay apart.
             (Some(ka), Some(kb)) => lines.iter().position(|l| {
                 let (la, lb) = (key(&l.a), key(&l.b));
                 l.pattern == line.pattern
+                    && l.color == line.color
                     && ((la.as_ref() == Some(ka) && lb.as_ref() == Some(kb))
                         || (la.as_ref() == Some(kb) && lb.as_ref() == Some(ka)))
             }),

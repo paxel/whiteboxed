@@ -931,6 +931,7 @@ fn the_ai_draws_a_doodle_by_id() -> TestResult {
         json!({"from": s, "to": c, "text": "login", "pattern": "dashed"}),
     )?;
     assert_eq!(line["pattern"], "dashed");
+    assert_eq!(line["color"], Value::Null);
     let group = call(
         &mut e,
         "doodle_group",
@@ -1059,5 +1060,68 @@ fn a_doodle_shape_wears_a_look_from_the_ai() -> TestResult {
         json!({"shape": id(&shape)?, "look": ""}),
     )?;
     assert_eq!(plain["look"], Value::Null);
+    Ok(())
+}
+
+#[test]
+fn relations_and_doodle_lines_take_a_colour() -> TestResult {
+    let mut e = Editor::new(None);
+    let shop = shop(&mut e)?;
+    let made = call(
+        &mut e,
+        "connect_new",
+        json!({"from": shop, "side": "right", "name": "Bank", "kind": "external_system", "text": "pays"}),
+    )?;
+    let rel = made["relation"].clone();
+    let edited = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "color": "#2060c0"}),
+    )?;
+    assert_eq!(edited["color"], "#2060c0");
+    // Leaving it out keeps it, an empty one goes back to the default.
+    let kept = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "text": "pays bills"}),
+    )?;
+    assert_eq!(kept["color"], "#2060c0");
+    assert!(matches!(
+        call(&mut e, "edit_relation", json!({"relation": rel, "color": "blue"})),
+        Err(ApiError::Rejected(m)) if m.contains("#rrggbb")
+    ));
+    let reset = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "color": ""}),
+    )?;
+    assert_eq!(reset["color"], Value::Null);
+
+    let mut d = Editor::new_doodle(None);
+    let page = call(&mut d, "doodle_get", json!({}))?["pages"][0]["id"].clone();
+    let a = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "A"}),
+    )?["id"]
+        .clone();
+    let b = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "B", "col": 1, "row": 0}),
+    )?["id"]
+        .clone();
+    let line = call(
+        &mut d,
+        "doodle_add_line",
+        json!({"from": a, "to": b, "color": "#c02020"}),
+    )?;
+    assert_eq!(line["color"], "#c02020");
+    let line = call(
+        &mut d,
+        "doodle_edit_line",
+        json!({"line": line["id"], "color": ""}),
+    )?;
+    assert_eq!(line["color"], Value::Null);
     Ok(())
 }

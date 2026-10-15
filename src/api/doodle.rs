@@ -154,6 +154,9 @@ pub struct AddLineArgs {
     pub text: Option<String>,
     #[serde(default)]
     pub pattern: Option<ApiPattern>,
+    /// The line's colour as #rrggbb; left out: the default.
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -166,6 +169,9 @@ pub struct EditLineArgs {
     pub direction: Option<super::ApiDirection>,
     #[serde(default)]
     pub pattern: Option<ApiPattern>,
+    /// The line's colour as #rrggbb; "" goes back to the default.
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -250,7 +256,7 @@ pub fn tools() -> Vec<ToolInfo> {
         ),
         tool(
             "doodle_edit_line",
-            "Change a line's text, direction or pattern (solid, dashed, dotted).",
+            "Change a line's text, direction, pattern (solid, dashed, dotted) or colour.",
             schema::<EditLineArgs>(),
         ),
         tool("doodle_delete_line", "Delete a line.", schema::<LineArgs>()),
@@ -409,9 +415,11 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
             let text = a.text.unwrap_or_default();
             let direction = super::direction(a.direction);
             let pattern = a.pattern.map(LinePattern::from).unwrap_or_default();
+            let line_color = color(a.color.as_deref())?;
             let rel = editor.apply_ai(|p| {
                 let rel = p.connect_existing(from, side, to, direction, &text, Placement::Keep)?;
                 p.set_relation_pattern(rel, pattern)?;
+                p.set_relation_color(rel, line_color)?;
                 Ok(rel)
             })?;
             let page = editor.project.block(from)?.parent;
@@ -425,10 +433,15 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
             let direction = a.direction.map_or(r.direction, Direction::from);
             let text = a.text.unwrap_or_else(|| r.text.clone());
             let pattern = a.pattern.map_or(r.pattern, LinePattern::from);
+            let line_color = match a.color.as_deref() {
+                Some(text) => color(Some(text))?,
+                None => r.color,
+            };
             let page = r.owner;
             editor.apply_ai(|p| {
                 p.edit_relation(rel, direction, &text)?;
-                p.set_relation_pattern(rel, pattern)
+                p.set_relation_pattern(rel, pattern)?;
+                p.set_relation_color(rel, line_color)
             })?;
             note(editor, "edited a line".into(), page, None);
             Ok(Output::Json(line_json(&editor.project, rel)))
@@ -554,6 +567,7 @@ fn line_json(project: &Project, rel: RelationId) -> Value {
         "direction": r.direction.label(),
         "text": r.text,
         "pattern": r.pattern.label(),
+        "color": r.color.map(|c| c.to_string()),
     })
 }
 

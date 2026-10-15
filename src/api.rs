@@ -412,6 +412,10 @@ pub struct EditRelationArgs {
     /// next to the box inside that takes it.
     #[serde(default)]
     pub frame_side: Option<FrameSideAt>,
+    /// The line's colour as #rrggbb, the same on every level; "" goes back to the
+    /// default.
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -639,7 +643,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "edit_relation",
-            description: "Change direction, text, short label, line style or the sides of a relation; omitted fields stay.",
+            description: "Change direction, text, short label, line style, colour or the sides of a relation; omitted fields stay.",
             schema: schema::<EditRelationArgs>(),
         },
         ToolInfo {
@@ -1040,6 +1044,10 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     let owner = r.owner;
     let style = a.line_style.map_or(r.style, ApiLineStyle::style);
     let short = a.short_label.unwrap_or_else(|| r.short.clone());
+    let color = match a.color.as_deref() {
+        Some(text) => line_color(text)?,
+        None => r.color,
+    };
     let sides = a
         .sides
         .iter()
@@ -1061,6 +1069,7 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     editor.apply_ai(|p| {
         p.edit_relation(rel, d, &text)?;
         p.set_relation_short(rel, &short)?;
+        p.set_relation_color(rel, color)?;
         for (block, side) in &sides {
             p.set_side_at(rel, *block, *side)?;
         }
@@ -1071,6 +1080,16 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     })?;
     note(editor, "edited a relation".to_owned(), owner, None);
     Ok(Output::Json(relation_json(&editor.project, rel)))
+}
+
+/// A line colour from the AI: #rrggbb, or empty for the default.
+fn line_color(text: &str) -> ApiResult<Option<crate::model::Rgb>> {
+    match text.trim() {
+        "" => Ok(None),
+        t => crate::model::Rgb::parse(t)
+            .map(Some)
+            .ok_or_else(|| ApiError::Rejected(format!("{t} is no colour; use #rrggbb"))),
+    }
 }
 
 fn delete_box(editor: &mut Editor, a: DeleteBoxArgs) -> ApiResult<Output> {
@@ -1420,6 +1439,7 @@ fn relation_json(project: &Project, rel: RelationId) -> Value {
         "text": r.text,
         "line_style": r.style.map(|s| format!("{s:?}").to_lowercase()),
         "short_label": r.short,
+        "color": r.color.map(|c| c.to_string()),
     })
 }
 

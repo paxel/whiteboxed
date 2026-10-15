@@ -311,6 +311,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            color: None,
             frame_sides: BTreeMap::new(),
         });
         Ok((new, rel))
@@ -377,6 +378,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            color: None,
             frame_sides: BTreeMap::new(),
         }))
     }
@@ -412,6 +414,7 @@ impl Project {
             style: None,
             short: String::new(),
             pattern: Default::default(),
+            color: None,
             frame_sides: BTreeMap::new(),
         }))
     }
@@ -661,6 +664,19 @@ impl Project {
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?
             .pattern = pattern;
+        Ok(())
+    }
+
+    /// Sets the colour of a relation's line (`None`: the default).
+    pub fn set_relation_color(
+        &mut self,
+        rel: RelationId,
+        color: Option<super::Rgb>,
+    ) -> ModelResult<()> {
+        self.relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?
+            .color = color;
         Ok(())
     }
 

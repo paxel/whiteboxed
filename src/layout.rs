@@ -97,6 +97,8 @@ pub struct LineGeom {
     /// Further relations drawn as this line, which then stands for all of them.
     pub bundle: Vec<RelationId>,
     pub pattern: crate::model::LinePattern,
+    /// The relation's own colour (`None`: the default).
+    pub color: Option<Rgb>,
 }
 
 impl LineGeom {
@@ -1560,6 +1562,7 @@ fn build_line(
         full_text: line.text.clone(),
         bundle: line.bundle.clone(),
         pattern: line.pattern,
+        color: line.color,
         landing: match (&line.a, &line.b) {
             (ViewEnd::Block { block, .. }, ViewEnd::Frame { .. })
             | (ViewEnd::Frame { .. }, ViewEnd::Block { block, .. }) => Some(*block),

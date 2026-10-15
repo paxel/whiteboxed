@@ -529,11 +529,11 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
 }
 
 fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos]) {
-    let stroke = Stroke::solid(1.5, LINE);
+    let color = line.color.unwrap_or(LINE);
     let along = match line.pattern {
-        crate::model::LinePattern::Solid => stroke,
-        crate::model::LinePattern::Dashed => Stroke::dashed(1.5, LINE),
-        crate::model::LinePattern::Dotted => Stroke::dotted(1.8, LINE),
+        crate::model::LinePattern::Solid => Stroke::solid(1.5, color),
+        crate::model::LinePattern::Dashed => Stroke::dashed(1.5, color),
+        crate::model::LinePattern::Dotted => Stroke::dotted(1.8, color),
     };
     shapes.push(Shape::Polyline {
         points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
@@ -544,10 +544,10 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
     let marked = |p: Pos| line.kind == LineKind::Dangling && line.tip == Some(p);
     if n >= 2 {
         if line.arrow_start && !marked(line.points[0]) {
-            shapes.push(arrow_head(line.points[1], line.points[0]));
+            shapes.push(arrow_head(line.points[1], line.points[0], color));
         }
         if line.arrow_end && !marked(line.points[n - 1]) {
-            shapes.push(arrow_head(line.points[n - 2], line.points[n - 1]));
+            shapes.push(arrow_head(line.points[n - 2], line.points[n - 1], color));
         }
     }
     if let Some((p, _, _)) = &line.frame_port {
@@ -563,7 +563,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             center: tip,
             radius: 5.0,
             fill: Some(PAPER),
-            stroke: Some(stroke),
+            stroke: Some(Stroke::solid(1.5, color)),
         }),
         (LineKind::Dangling, Some(tip)) => {
             shapes.push(Shape::Polygon {
@@ -587,7 +587,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
     }
 }
 
-fn arrow_head(from: Pos, to: Pos) -> Shape {
+fn arrow_head(from: Pos, to: Pos, color: Rgb) -> Shape {
     let (dx, dy) = (to.x - from.x, to.y - from.y);
     let len = (dx * dx + dy * dy).sqrt().max(0.001);
     let (ux, uy) = (dx / len, dy / len);
@@ -599,7 +599,7 @@ fn arrow_head(from: Pos, to: Pos) -> Shape {
             Pos::new(base.x - uy * w, base.y + ux * w),
             Pos::new(base.x + uy * w, base.y - ux * w),
         ],
-        fill: Some(LINE),
+        fill: Some(color),
         stroke: None,
     }
 }

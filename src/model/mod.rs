@@ -408,6 +408,8 @@ pub struct Relation {
     pub short: String,
     /// Solid, dashed or dotted.
     pub pattern: LinePattern,
+    /// The line's own colour on every level; `None`: the default.
+    pub color: Option<Rgb>,
     /// Frame sides chosen by hand, per whitebox (the box whose whitebox it enters);
     /// elsewhere the side is chosen automatically.
     pub frame_sides: BTreeMap<BlockId, Side>,

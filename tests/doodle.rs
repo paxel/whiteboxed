@@ -428,3 +428,40 @@ fn every_page_of_a_doodle_has_a_readability_score() -> TestResult {
     assert!(scores.values().all(|s| s.doodle));
     Ok(())
 }
+
+#[test]
+fn a_line_has_its_own_colour_in_file_and_picture() -> TestResult {
+    use whiteboxed::model::{Placement, Rgb};
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    let a = p.add_block(Some(page), &shape("A"))?;
+    let (b, r) = p.connect_new(a, Side::Right, &shape("B"), Direction::Out, "calls")?;
+    // Without a colour the file says nothing about it.
+    assert!(!persist::to_yaml(&p)?.contains("color:"));
+    let red = Rgb(0xc0, 0x20, 0x20);
+    p.set_relation_color(r, Some(red))?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(yaml.contains("#c02020"), "{yaml}");
+    assert_eq!(persist::from_yaml(&yaml)?.relation(r)?.color, Some(red));
+    // Line and arrowhead are drawn in it.
+    let l = layout::layout(&p, &diagram_view(&p, Some(page)));
+    let svg = whiteboxed::export::to_svg(&whiteboxed::scene::scene(&l));
+    assert!(svg.contains(r##"stroke="#c02020""##), "{svg}");
+    assert!(svg.contains(r##"fill="#c02020""##), "{svg}");
+    // A line of another colour between the same shapes is not bundled with it.
+    p.connect_existing(b, Side::Left, a, Direction::Out, "health", Placement::Keep)?;
+    assert_eq!(
+        layout::layout(&p, &diagram_view(&p, Some(page)))
+            .lines
+            .len(),
+        2
+    );
+    p.set_relation_color(r, None)?;
+    assert_eq!(
+        layout::layout(&p, &diagram_view(&p, Some(page)))
+            .lines
+            .len(),
+        1
+    );
+    Ok(())
+}
