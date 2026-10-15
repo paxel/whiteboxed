@@ -1263,7 +1263,7 @@ impl Editor {
         }
     }
 
-    /// Moves a box into the whitebox of a neighbour.
+    /// Moves a box into the whitebox of another box of its diagram.
     pub fn move_into(&mut self, block: BlockId, target: BlockId) {
         if self.apply(|p| p.move_into(block, target)).is_some() {
             self.selected = Some(target);

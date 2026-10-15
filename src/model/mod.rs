@@ -89,7 +89,7 @@ impl BlockKind {
             BlockKind::Person => "person",
             BlockKind::ExternalSystem => "external system",
             BlockKind::Page => "page",
-            BlockKind::Rounded => "rounded box",
+            BlockKind::Rounded => "rounded rectangle",
             BlockKind::Circle => "circle",
             BlockKind::Diamond => "diamond",
             BlockKind::Document => "document",
@@ -115,7 +115,7 @@ impl BlockKind {
     /// The name of a kind as a doodle shape.
     pub fn doodle_label(self) -> &'static str {
         match self {
-            BlockKind::Component => "box",
+            BlockKind::Component => "rectangle",
             BlockKind::Database => "cylinder",
             other => other.label(),
         }

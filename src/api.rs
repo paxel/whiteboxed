@@ -229,7 +229,7 @@ pub struct GroupArgs {
 pub struct MoveIntoArgs {
     #[serde(rename = "box")]
     pub target: BoxRef,
-    /// The neighbour whose whitebox the box goes into.
+    /// The other box whose whitebox the box goes into.
     pub into: BoxRef,
 }
 
@@ -674,7 +674,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "move_into",
-            description: "Move a box into the whitebox of a neighbour in the same diagram, with everything inside it. Its relations follow.",
+            description: "Move a box into the whitebox of another box in the same diagram, with everything inside it. Its relations follow.",
             schema: schema::<MoveIntoArgs>(),
         },
         ToolInfo {

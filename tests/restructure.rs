@@ -153,7 +153,7 @@ fn moving_up_keeps_what_lies_inside_and_refuses_what_it_cannot() -> TestResult {
 }
 
 #[test]
-fn moving_into_a_neighbour_is_the_reverse_of_moving_up() -> TestResult {
+fn moving_into_another_box_is_the_reverse_of_moving_up() -> TestResult {
     let Shop {
         mut p,
         business,

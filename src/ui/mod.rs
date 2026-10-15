@@ -828,7 +828,7 @@ impl App {
                 if dangling > 0 {
                     ui.label(
                         RichText::new(format!(
-                            "{dangling} interface{} not assigned to a box",
+                            "{dangling} interface{} not attached to a box",
                             if dangling == 1 { "" } else { "s" }
                         ))
                         .color(Color32::from_rgb(0xb0, 0x6a, 0x00)),

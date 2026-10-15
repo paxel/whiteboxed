@@ -255,7 +255,7 @@ fn deleting_a_box_with_content_asks_first() -> TestResult {
 }
 
 #[test]
-fn nudging_swaps_with_a_neighbour() -> TestResult {
+fn nudging_swaps_with_the_box_next_to_it() -> TestResult {
     let mut e = Editor::new(None);
     let a = add_first(&mut e, "A")?;
     let b = connect_new(&mut e, a, Side::Right, "B", BlockKind::Component)?;

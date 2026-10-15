@@ -249,7 +249,7 @@ fn hovering_a_border_highlights_that_side() -> TestResult {
 }
 
 #[test]
-fn the_whitebox_marks_unassigned_interfaces() -> TestResult {
+fn the_whitebox_marks_unattached_interfaces() -> TestResult {
     let (p, shop) = shop()?;
     let mut e = editor_with(p);
     e.open_diagram(Some(shop));

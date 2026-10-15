@@ -86,8 +86,8 @@ fn a_whitebox_has_blocks_external_interfaces_and_internal_relations() -> TestRes
     assert!(adoc.contains("|Orders\n|\u{2013}\n"));
     assert!(adoc.contains("==== External interfaces"));
     assert!(adoc.contains("|Customer\n|Storefront\n|in\n|orders\n"));
-    assert!(adoc.contains("|Payment\n|not assigned\n|bi\n|REST \\| JSON\n"));
-    assert!(adoc.contains("|Warehouse\n|not assigned\n|out\n|shipping orders\n"));
+    assert!(adoc.contains("|Payment\n|not attached\n|bi\n|REST \\| JSON\n"));
+    assert!(adoc.contains("|Warehouse\n|not attached\n|out\n|shipping orders\n"));
     assert!(adoc.contains("==== Internal relations"));
     assert!(adoc.contains("|Storefront\n|Orders\n|out\n|place order\n"));
     Ok(())

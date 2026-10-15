@@ -396,7 +396,7 @@ fn whitebox_text(project: &Project, owner: BlockId) -> DiagramText {
         let end_name = |end: &ViewEnd| match end {
             ViewEnd::Block { block, .. } => name(project, *block),
             ViewEnd::Open => "open".to_owned(),
-            ViewEnd::Dangling => "not assigned".to_owned(),
+            ViewEnd::Dangling => "not attached".to_owned(),
             ViewEnd::Frame { partner, .. } => partner.clone(),
         };
         let key = RowKey::Relation(line.relation);
@@ -439,7 +439,7 @@ fn whitebox_text(project: &Project, owner: BlockId) -> DiagramText {
     if !external.is_empty() {
         tables.push(Table {
             title: "External interfaces",
-            header: &["Partner outside", "Handled by", "Direction", "Text"],
+            header: &["Partner outside", "Attached to", "Direction", "Text"],
             rows: external,
         });
     }

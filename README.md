@@ -31,11 +31,11 @@ levels cannot drift apart.
   whiteboard shapes, multi-line texts, colours, nested groups, dashed and dotted lines,
   same automatic layout, no arc42 rules.
 - **Custom looks.** Your own SVG pictures for special boxes (Kafka, a company system, a
-  device), from a file or drawn by the AI, in a library every project and doodle can
+  device), from a file or drawn by the AI, in a library every file can
   use.
 - **Restructure without redrawing.** Group boxes into a new box, dissolve a whitebox,
-  move a box up or into a neighbour, split a coarse relation into precise ones; the
-  relations follow on every level.
+  move a box up a level or into another box, split a coarse relation into precise
+  ones; the relations follow on every level.
 - **Tags** colour boxes project-wide.
 - **Git-friendly files.** One YAML file per project with the model and grid cells, no
   pixel coordinates. Unsaved work is recovered after a crash.
@@ -48,14 +48,14 @@ levels cannot drift apart.
   (AsciiDoc or Markdown) holding the partner, building-block and interface tables,
   and an index that ties them together, or as one clickable HTML document.
 
-![The whitebox of the web shop, with two interfaces not assigned yet](docs/screenshots/whitebox.png)
+![The whitebox of the web shop, with two interfaces not attached yet](docs/screenshots/whitebox.png)
 
 ![A doodle: a mouse and a cat as custom looks, a decision, a dashed chase and a sticky note](docs/screenshots/cat-and-mouse.png)
 
 The mouse and the cat are custom looks. You don't have to draw them yourself: ask the
 AI through the MCP endpoint ("add a cat and a mouse look and use them"), and it draws
 the SVG, adds it to your library with `add_look` and puts it on the shapes. The looks
-then work in every project and doodle. Only a safe part of SVG is accepted (shapes,
+then work in every file. Only a safe part of SVG is accepted (shapes,
 paths, groups, gradients, text); anything else is refused with a message naming it.
 
 ## Documentation

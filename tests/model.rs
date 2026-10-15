@@ -696,3 +696,12 @@ fn a_box_moved_by_connecting_faces_all_its_partners() -> TestResult {
     assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
     Ok(())
 }
+
+#[test]
+fn doodle_shapes_are_named_by_their_outline_not_as_boxes() {
+    let names: Vec<&str> = BlockKind::DOODLE.iter().map(|k| k.doodle_label()).collect();
+    assert_eq!(names[..2], ["rectangle", "rounded rectangle"]);
+    assert!(!names.iter().any(|n| n.contains("box")));
+    // In a project the same kind stays a component box.
+    assert_eq!(BlockKind::Component.label(), "component");
+}

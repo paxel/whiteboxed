@@ -30,7 +30,7 @@ next to each diagram and exports them. For step-by-step recipes see
   **motivation** of the current diagram when nothing is selected, together with its
   readability and what helps. See [arc42 texts](#arc42-texts).
 - **Status bar** (bottom): hints, errors, and the number of interfaces in this
-  whitebox that are not assigned to a box yet.
+  whitebox that are not attached to a box yet.
 
 ## Levels
 
@@ -70,15 +70,15 @@ box. A band runs across the bottom of the diagram, below the grid; several bands
 in the order you added them. A band is a real building block: it has a name, a type
 and a responsibility, it can be opened into its own whitebox, and it appears in the
 building-block table of the export. It has no lines, so it cannot be connected, and it
-does not move. A box with lines has to lose them before it can become a band; a band
-that becomes a box again goes to the next free cell.
+does not move. A box with lines has to lose them before it can be drawn as a band;
+a band that stops being one goes to the next free cell.
 
 ### Custom looks
 
 A box can wear a **look**: your own SVG picture, for boxes that deserve to be
 recognised at a glance, such as Kafka, a company system or a device. Looks live in a
-**library** in your user data directory (`whiteboxed/looks.yaml`), so every project and
-every doodle can use them.
+**library** in your user data directory (`whiteboxed/looks.yaml`), so every file can
+use them.
 
 ![An event flow whose services, stream and vault wear looks](screenshots/looks.png)
 
@@ -218,13 +218,13 @@ it is in the right-click menu of a box:
 
 - **Move up a level** (right-click a box inside a whitebox): the box leaves the
   whitebox, with everything inside it, and lands next to its old whitebox box on the
-  side its lines point to. Its lines follow: a line to a former neighbour now enters
-  the old whitebox and lands on that neighbour there. A line from outside that landed
+  side its lines point to. Its lines follow: a line to a box of its old whitebox now
+  enters the old whitebox and lands on that box there. A line from outside that landed
   on it now goes to it directly; if it also landed on other boxes, it becomes one
   relation per box.
-- **Move into…** (right-click a box, then click a neighbour): the reverse. The box,
-  with everything inside it, goes into the neighbour's whitebox, next to the box
-  there it has the most lines with. A line to the neighbour now lands on the box
+- **Move into…** (right-click a box, then click another box of the same diagram):
+  the reverse. The box, with everything inside it, goes into the other box's
+  whitebox, next to the box there it has the most lines with. A line to the other box now lands on the box
   inside; a line that reached nothing inside becomes an open end.
 - **Group into new box…**: Ctrl+click boxes to select several (Ctrl+click again takes
   one out), then right-click one of them. You name the new box; it takes the cell of
@@ -376,10 +376,10 @@ A whitebox file holds the image, the motivation and three tables:
 | Table                     | Columns                                      |
 |---------------------------|----------------------------------------------|
 | Contained building blocks | Name, Responsibility                         |
-| External interfaces       | Partner outside, Handled by, Direction, Text |
+| External interfaces       | Partner outside, Attached to, Direction, Text |
 | Internal relations        | From, To, Direction, Text                    |
 
-An interface no box takes yet appears as "not assigned"; an empty cell shows "–".
+An interface attached to no box yet appears as "not attached"; an empty cell shows "–".
 Each file starts at heading level 3 (`===` / `###`), so it fits under a chapter of
 your own arc42 document: `include::context - Web Shop.adoc[]` in AsciiDoc. In
 Markdown, which has no includes, the index links the files.
@@ -442,7 +442,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
 | `move_up`            | A box out of its whitebox, one level up                           |
-| `move_into`          | A box into the whitebox of a neighbour                            |
+| `move_into`          | A box into the whitebox of another box                            |
 | `group`              | Boxes of one diagram into the whitebox of a new box               |
 | `dissolve`           | A whitebox: its boxes take the box's place one level up           |
 | `split_relation`     | One relation into several, one per pair of boxes                  |
@@ -493,7 +493,7 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
   last page stays).
 - No levels and no whiteboxes: shapes do not open, there is no breadcrumb, structure
   tree, details panel or readability score.
-- **Shapes**: box, rounded box (a step), circle (start, end), diamond (a decision),
+- **Shapes**: rectangle, rounded rectangle (a step), circle (start, end), diamond (a decision),
   cylinder (data), document, cloud (a network, the internet), person, and note (text
   without a border; with a colour it becomes a sticky note). Lines reach the outline
   of round and pointed shapes.

@@ -789,7 +789,7 @@ fn move_up_takes_a_box_out_of_its_whitebox() -> TestResult {
 }
 
 #[test]
-fn move_into_puts_a_box_inside_a_neighbour() -> TestResult {
+fn move_into_puts_a_box_inside_another_box() -> TestResult {
     let mut e = Editor::new(None);
     shop(&mut e)?;
     call(&mut e, "add_box", json!({"name": "Cache", "kind": "cache"}))?;

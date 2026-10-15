@@ -1,5 +1,5 @@
-//! Changing the nesting of boxes: move a box up out of its whitebox, move it into a
-//! neighbour, group boxes into a new box, dissolve a whitebox. Relations follow on
+//! Changing the nesting of boxes: move a box up out of its whitebox, move it into
+//! another box, group boxes into a new box, dissolve a whitebox. Relations follow on
 //! their own: every end keeps landing on the same boxes, and the relation is rebuilt
 //! around the new nesting.
 
@@ -49,7 +49,7 @@ impl Project {
         self.reface(up, &[id])
     }
 
-    /// Moves `id` into the whitebox of its neighbour `target`, next to the box inside
+    /// Moves `id` into the whitebox of `target`, another box of its diagram, next to the box inside
     /// it has the most lines with (else into the next free cell).
     pub fn move_into(&mut self, id: BlockId, target: BlockId) -> ModelResult<()> {
         if id == target {
