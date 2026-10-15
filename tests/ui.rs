@@ -1744,3 +1744,13 @@ fn a_window_left_on_a_missing_monitor_comes_back() {
     let huge = Rect::from_min_size(pos2(-5000.0, 0.0), vec2(3000.0, 2000.0));
     assert_eq!(off_screen_fix(huge, &[main], main), Some(pos2(0.0, 0.0)));
 }
+
+#[test]
+fn doodle_settings_offer_readability_limits_for_shapes() {
+    let mut h = harness(Editor::new_doodle(None));
+    h.state_mut().settings.open = true;
+    h.run();
+    assert!(h.query_by_label("Readability").is_some());
+    assert!(h.query_by_label("Shapes").is_some());
+    assert!(h.query_by_label("Boxes").is_none());
+}

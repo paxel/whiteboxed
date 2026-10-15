@@ -117,7 +117,11 @@ fn the_editor_always_shows_a_page() -> TestResult {
         e.confirm();
     }
     assert_eq!(e.diagram, Some(first));
-    assert!(e.scores().is_empty());
+    // Only the pages have a readability score.
+    assert_eq!(
+        e.scores().keys().copied().collect::<Vec<_>>(),
+        [Some(first)]
+    );
     // Shapes do not open into anything.
     let a = e.project.add_block(Some(first), &shape("A"))?;
     e.open_diagram(Some(a));
@@ -407,5 +411,20 @@ fn a_doodle_exports_its_pages_and_one_html_with_tabs() -> TestResult {
     assert!(page.contains(&format!("href=\"#page-{}\"", first.0)));
     assert!(page.contains(&format!("id=\"page-{}\"", second.0)));
     assert!(!page.contains("<table"));
+    Ok(())
+}
+
+#[test]
+fn every_page_of_a_doodle_has_a_readability_score() -> TestResult {
+    let mut e = Editor::new_doodle(None);
+    e.add_page();
+    let pages = e.project.pages();
+    let first = pages[0];
+    e.project.add_block(Some(first), &shape("A"))?;
+    let scores = e.scores();
+    for page in &pages {
+        assert!(scores.contains_key(&Some(*page)), "{page:?}");
+    }
+    assert!(scores.values().all(|s| s.doodle));
     Ok(())
 }

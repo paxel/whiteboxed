@@ -200,7 +200,7 @@ pub fn tools() -> Vec<ToolInfo> {
     vec![
         tool(
             "doodle_get",
-            "The open doodle: every page with its shapes (id, text, shape, colour, cell), groups (id, name, cells, members) and lines (id, from, to, direction, text, pattern).",
+            "The open doodle: every page with its shapes (id, text, shape, colour, cell), groups (id, name, cells, members), lines (id, from, to, direction, text, pattern) and readability (level, counts, causes with what helps).",
             schema::<super::NoArgs>(),
         ),
         tool(
@@ -582,6 +582,7 @@ fn doodle_json(project: &Project) -> Value {
                 "shapes": shapes.iter().map(|s| shape_json(project, *s)).collect::<Vec<_>>(),
                 "groups": groups.iter().map(|g| shape_json(project, *g)).collect::<Vec<_>>(),
                 "lines": lines,
+                "readability": super::score_json(&crate::score::of(project, Some(page))),
             })
         })
         .collect();

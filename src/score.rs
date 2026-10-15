@@ -1,11 +1,11 @@
-//! How readable a diagram is: the number of boxes, the lines that cross, and the
-//! busiest box, each judged against limits the project can change. The worst of the
-//! three gives the diagram's colour.
+//! How readable a diagram is: the number of boxes (on a doodle page: shapes), the
+//! lines that cross, and the busiest box, each judged against limits the file can
+//! change. The worst of the three gives the diagram's colour.
 
 use std::collections::BTreeMap;
 
 use crate::layout::{self, Layout};
-use crate::model::{BlockId, DiagramId, Project, ScoreLimits};
+use crate::model::{BlockId, BlockKind, DiagramId, Project, ScoreLimits};
 use crate::view::{self, ViewEnd};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,6 +34,8 @@ pub struct Score {
     pub boxes_level: Level,
     pub crossings_level: Level,
     pub lines_level: Level,
+    /// A doodle page: shapes instead of boxes, and help without arc42.
+    pub doodle: bool,
 }
 
 impl Score {
@@ -50,12 +52,18 @@ impl Score {
         if self.boxes_level > Level::Green {
             out.push(Cause {
                 level: self.boxes_level,
-                what: format!("{} boxes", self.boxes),
-                help: "Group boxes that belong together into a new box (Ctrl+click them, then \
-                       right-click > Group into new box), or move details into the whitebox of \
-                       a box. A concern that every part uses, such as logging or security, can \
-                       be a cross-cutting band or a concept in arc42 section 8."
-                    .into(),
+                what: format!("{} {}", self.boxes, self.things()),
+                help: if self.doodle {
+                    "Move part of the sketch to a page of its own (+ Page), or leave out \
+                     shapes that add little."
+                        .into()
+                } else {
+                    "Group boxes that belong together into a new box (Ctrl+click them, then \
+                     right-click > Group into new box), or move details into the whitebox of \
+                     a box. A concern that every part uses, such as logging or security, can \
+                     be a cross-cutting band or a concept in arc42 section 8."
+                        .into()
+                },
             });
         }
         if self.crossings_level > Level::Green {
@@ -66,20 +74,46 @@ impl Score {
                     self.crossings,
                     if self.crossings == 1 { "" } else { "s" }
                 ),
-                help: "Drag boxes so partners face each other. If lines still cross, the \
-                       diagram may hold too much: group boxes."
-                    .into(),
+                help: if self.doodle {
+                    "Drag shapes so partners face each other. If lines still cross, the page \
+                     may hold too much: split it."
+                        .into()
+                } else {
+                    "Drag boxes so partners face each other. If lines still cross, the \
+                     diagram may hold too much: group boxes."
+                        .into()
+                },
             });
         }
         if let (true, Some((_, name, n))) = (self.lines_level > Level::Green, &self.busiest) {
             out.push(Cause {
                 level: self.lines_level,
                 what: format!("{name} has {n} lines"),
-                help: format!(
-                    "{name} may do too much. Split it into several boxes, or move partners \
-                     that only it talks to into its whitebox (right-click > Move into…)."
-                ),
+                help: if self.doodle {
+                    format!("{name} may do too much. Split it into several shapes.")
+                } else {
+                    format!(
+                        "{name} may do too much. Split it into several boxes, or move partners \
+                         that only it talks to into its whitebox (right-click > Move into…)."
+                    )
+                },
             });
+        }
+        out
+    }
+
+    /// What the diagram holds: boxes, or on a doodle page shapes.
+    pub fn things(&self) -> &'static str {
+        if self.doodle { "shapes" } else { "boxes" }
+    }
+
+    /// For a tooltip where no details panel explains it (doodle pages): the summary,
+    /// then what helps.
+    pub fn explained(&self) -> String {
+        let mut out = self.summary();
+        for cause in self.causes() {
+            out.push_str("\n\n");
+            out.push_str(&cause.help);
         }
         out
     }
@@ -89,9 +123,10 @@ impl Score {
         let causes: Vec<String> = self.causes().into_iter().map(|c| c.what).collect();
         if causes.is_empty() {
             format!(
-                "Readability: {} ({} boxes, no crossings)",
+                "Readability: {} ({} {}, no crossings)",
                 self.level().label(),
-                self.boxes
+                self.boxes,
+                self.things()
             )
         } else {
             format!(
@@ -124,7 +159,17 @@ fn judge(value: usize, limits: (u32, u32)) -> Level {
 /// The score of a diagram, from its layout.
 pub fn score(project: &Project, l: &Layout) -> Score {
     let limits: ScoreLimits = project.score_limits;
-    let boxes = l.blocks.len();
+    // Groups only frame shapes; they are not counted themselves.
+    let boxes = l
+        .blocks
+        .iter()
+        .filter(|g| {
+            project
+                .blocks
+                .get(&g.id)
+                .is_none_or(|b| b.kind != BlockKind::Group)
+        })
+        .count();
     let crossings = layout::crossings(l).len();
     let v = view::diagram_view(project, l.diagram);
     let mut per_box: BTreeMap<BlockId, usize> = BTreeMap::new();
@@ -152,6 +197,7 @@ pub fn score(project: &Project, l: &Layout) -> Score {
         crossings_level: judge(crossings, limits.crossings),
         lines_level: judge(busiest.as_ref().map_or(0, |b| b.2), limits.lines),
         busiest,
+        doodle: project.is_doodle(),
     }
 }
 

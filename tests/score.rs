@@ -104,3 +104,32 @@ fn crossings_and_a_busy_box_are_named() -> TestResult {
     assert!(what.iter().any(|w| w == "B4 has 6 lines"), "{what:?}");
     Ok(())
 }
+
+#[test]
+fn a_doodle_page_counts_shapes_but_not_groups() -> TestResult {
+    let mut p = Project::new_doodle();
+    let page = p.pages()[0];
+    let mut shapes = Vec::new();
+    for i in 0..8 {
+        shapes.push(p.add_block(Some(page), &component(&format!("S{i}")))?);
+    }
+    p.add_group(&shapes[..2], "Auth", None)?;
+    let s = score::of(&p, Some(page));
+    assert!(s.doodle);
+    assert_eq!((s.boxes, s.boxes_level), (8, Level::Yellow));
+    let causes = s.causes();
+    assert_eq!(causes[0].what, "8 shapes");
+    // Help for a sketch, without arc42 advice.
+    assert!(causes[0].help.contains("page"));
+    assert!(!causes[0].help.contains("arc42"));
+    assert!(s.explained().contains(&causes[0].help));
+    // The file's own limits decide here too.
+    p.set_score_limits(ScoreLimits {
+        boxes: (20, 30),
+        ..ScoreLimits::default()
+    });
+    let s = score::of(&p, Some(page));
+    assert_eq!(s.level(), Level::Green);
+    assert!(s.summary().contains("8 shapes"));
+    Ok(())
+}

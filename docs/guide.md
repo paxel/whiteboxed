@@ -247,8 +247,8 @@ Each restructuring is one step for undo.
 
 Every diagram gets a colour: green (good), yellow (getting crowded) or red (hard to
 read). It shows as a dot next to the diagram in the structure tree and next to the
-breadcrumb; hovering it names the causes. With nothing selected, the details panel
-lists each cause with what helps.
+breadcrumb (on a doodle page: on its tab); hovering it names the causes. With nothing
+selected, the details panel lists each cause with what helps.
 
 ![A whitebox with 10 boxes is red; the details panel suggests grouping](screenshots/readability.png)
 
@@ -462,7 +462,7 @@ and lines by id, since texts may repeat:
 
 | Tool                  | Does                                                    |
 |-----------------------|---------------------------------------------------------|
-| `doodle_get`          | Every page with its shapes, groups and lines            |
+| `doodle_get`          | Every page with its shapes, groups, lines, readability  |
 | `doodle_render`       | One page as PNG                                         |
 | `doodle_add_page`     | A new page; `doodle_rename_page`, `doodle_delete_page`  |
 | `doodle_add_shape`    | A shape with text, shape type or look, colour and cell  |
@@ -492,7 +492,10 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
   a tab (or right-click it) to rename it; right-click > **Delete page** removes it (the
   last page stays).
 - No levels and no whiteboxes: shapes do not open, there is no breadcrumb, structure
-  tree, details panel or readability score.
+  tree or details panel.
+- Every page gets a [readability](#readability) colour, as a dot on its tab; hovering
+  it names the causes and what helps. Shapes count instead of boxes, groups do not
+  count, and the limits are under **File > Project settings…**.
 - **Shapes**: rectangle, rounded rectangle (a step), circle (start, end), diamond (a decision),
   cylinder (data), document, cloud (a network, the internet), person, and note (text
   without a border; with a colour it becomes a sticky note). Lines reach the outline

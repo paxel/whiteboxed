@@ -946,6 +946,8 @@ fn the_ai_draws_a_doodle_by_id() -> TestResult {
     let got = call(&mut e, "doodle_get", json!({}))?;
     assert_eq!(got["pages"].as_array().map(Vec::len), Some(2));
     assert_eq!(got["pages"][0]["lines"][0]["text"], "login");
+    assert_eq!(got["pages"][0]["readability"]["level"], "green");
+    assert!(got["pages"][1]["readability"]["boxes"].is_number());
     // Several steps as one.
     call(
         &mut e,

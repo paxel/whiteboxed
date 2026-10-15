@@ -337,15 +337,14 @@ impl Editor {
 
     /// The readability score of every diagram (and of the open one, even if empty).
     pub fn scores(&mut self) -> &BTreeMap<DiagramId, crate::score::Score> {
-        static NONE: BTreeMap<DiagramId, crate::score::Score> = BTreeMap::new();
-        // Doodles are sketches: no readability judgement.
-        if self.project.is_doodle() {
-            return &NONE;
-        }
         let fresh = matches!(&self.score_cache, Some((p, map)) if *p == self.project
             && map.contains_key(&self.diagram));
         if !fresh {
-            let mut diagrams = doc::diagrams(&self.project);
+            let mut diagrams = if self.project.is_doodle() {
+                self.project.pages().into_iter().map(Some).collect()
+            } else {
+                doc::diagrams(&self.project)
+            };
             if !diagrams.contains(&self.diagram) {
                 diagrams.push(self.diagram);
             }

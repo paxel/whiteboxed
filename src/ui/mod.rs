@@ -720,9 +720,13 @@ impl App {
         let mut rename = None;
         let mut delete = None;
         let mut add = false;
+        let scores = self.editor.scores().clone();
         ui.horizontal(|ui| {
             for (page, name) in &pages {
                 let tab = ui.selectable_label(self.editor.diagram == Some(*page), name);
+                if let Some(s) = scores.get(&Some(*page)) {
+                    page_score_dot(ui, s);
+                }
                 if tab.double_clicked() {
                     rename = Some(*page);
                 } else if tab.clicked() {
@@ -1804,6 +1808,14 @@ fn score_dot(ui: &mut Ui, score: &crate::score::Score) {
     ui.painter()
         .circle_filled(rect.center(), 4.5, level_color(score.level()));
     resp.on_hover_text(score.summary());
+}
+
+/// The readability dot of a doodle page: no details panel, so the hover says what helps.
+fn page_score_dot(ui: &mut Ui, score: &crate::score::Score) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), 4.5, level_color(score.level()));
+    resp.on_hover_text(score.explained());
 }
 
 /// What the canvas showed in the last frame.
