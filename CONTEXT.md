@@ -113,7 +113,7 @@ How easy a diagram is to read, pages included: green, yellow or red, set by its 
 _Avoid_: Score, traffic light
 
 **Measure**:
-One count that feeds a diagram's readability: boxes (or shapes) in the diagram, lines that cross, lines on the busiest box (or shape), or lines that go through mouseholes. A line through mouseholes crosses nothing but still counts for its boxes.
+One count that feeds a diagram's readability: boxes (or shapes) in the diagram, lines that cross, lines on the busiest box (or shape), or pairs of mouseholes (a bundle's pair counts once, each branch of a fan-out once). A line through mouseholes crosses nothing but still counts for its boxes.
 
 **Limit**:
 The count from which a measure turns a diagram yellow, or red; set per file.
