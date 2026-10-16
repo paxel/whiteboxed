@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - An interface no box handles yet is "not attached" in the status bar and the export, whose column is now "Attached to".
 - The plain doodle shapes are called rectangle and rounded rectangle.
 
+### Fixed
+
+- Lines reach the drawing of a look, not the empty margin of its viewBox, which AI-drawn pictures often have. With the name below, the picture is the box: the name sits in a frame of its own under it, a line from below lands on that frame, and the picture grows as a whole when a side needs room for more lines.
+
 ---
 
 Historical changes have been moved to [OLDER_CHANGES.md](OLDER_CHANGES.md).

@@ -146,6 +146,15 @@ pub fn scene(layout: &Layout) -> Scene {
         {
             block_shapes(&mut shapes, block.kind, block.rect, block.fill);
         }
+        // The frame around the name under a picture: where lines from below land.
+        if let Some(frame) = block.caption {
+            shapes.push(Shape::Rect {
+                rect: frame,
+                radius: 4.0,
+                fill: Some(block.fill),
+                stroke: Some(OUTLINE),
+            });
+        }
         if let (Some(look), Some(area)) = (&block.look, picture) {
             shapes.push(Shape::Look {
                 rect: crate::look::fit(look.size(), area),
@@ -249,6 +258,9 @@ fn look_place(block: &BlockGeom, captions: bool) -> (Option<Rect>, Pos) {
     let Some(look) = &block.look else {
         return (None, r.center());
     };
+    if let (Some(picture), Some(caption)) = (block.picture, block.caption) {
+        return (Some(picture), caption.center());
+    }
     let text_h = if captions {
         CAPTIONED_H
     } else {

@@ -249,14 +249,67 @@ pub fn sanitize(input: &str) -> Result<(String, (f32, f32)), LookError> {
     if doc.descendants().filter(|n| n.is_element()).count() > MAX_ELEMENTS {
         return Err(LookError::TooManyElements);
     }
-    let size = picture_size(root).ok_or(LookError::NoSize)?;
+    let vb = view_box(root).ok_or(LookError::NoSize)?;
     let mut out = String::new();
     let how = Writing {
         prefix: "",
         placed: None,
     };
     element(&mut out, root, &how)?;
-    Ok((out, size))
+    // Cropped to what it draws: an AI-drawn picture often sits small in a large
+    // viewBox, and lines should reach the drawing, not the margin around it.
+    match drawn_extent(root, vb) {
+        Some(tight) => {
+            let placed = format!(
+                r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}""#,
+                tight.0, tight.1, tight.2, tight.3
+            );
+            let mut cropped = String::new();
+            element(
+                &mut cropped,
+                root,
+                &Writing {
+                    prefix: "",
+                    placed: Some(&placed),
+                },
+            )?;
+            Ok((cropped, (tight.2, tight.3)))
+        }
+        None => Ok((out, (vb.2, vb.3))),
+    }
+}
+
+/// The smallest viewBox around what the picture draws (strokes included), when that
+/// is smaller than its own viewBox `vb`; in viewBox units, rounded to hundredths.
+fn drawn_extent(root: roxmltree::Node, vb: (f32, f32, f32, f32)) -> Option<(f32, f32, f32, f32)> {
+    // Read with only the viewBox, so the drawing's coordinates are viewBox units
+    // shifted to the origin.
+    let placed = format!(
+        r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}""#,
+        vb.0, vb.1, vb.2, vb.3
+    );
+    let mut text = String::new();
+    element(
+        &mut text,
+        root,
+        &Writing {
+            prefix: "",
+            placed: Some(&placed),
+        },
+    )
+    .ok()?;
+    let tree = resvg::usvg::Tree::from_str(&text, &crate::export::options()).ok()?;
+    let b = tree.root().abs_stroke_bounding_box();
+    let hundredths = |v: f32| (v * 100.0).round() / 100.0;
+    let tight = (
+        hundredths(b.x() + vb.0),
+        hundredths(b.y() + vb.1),
+        hundredths(b.width()),
+        hundredths(b.height()),
+    );
+    let drawn = tight.2 > 0.5 && tight.3 > 0.5 && tight.2.is_finite() && tight.3.is_finite();
+    let smaller = tight.2 < vb.2 - 0.5 || tight.3 < vb.3 - 0.5;
+    (drawn && smaller).then_some(tight)
 }
 
 /// How [`element`] writes what it checked.
@@ -404,16 +457,19 @@ fn escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn picture_size(root: roxmltree::Node) -> Option<(f32, f32)> {
-    let positive = |(w, h): (f32, f32)| w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite();
+/// The picture's viewBox: x, y, width and height; from its width and height when it
+/// has none.
+fn view_box(root: roxmltree::Node) -> Option<(f32, f32, f32, f32)> {
+    let positive =
+        |(_, _, w, h): (f32, f32, f32, f32)| w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite();
     if let Some(vb) = root.attribute("viewBox") {
         let n: Vec<f32> = vb
             .split(|c: char| c.is_whitespace() || c == ',')
             .filter(|s| !s.is_empty())
             .filter_map(|s| s.parse().ok())
             .collect();
-        if let [_, _, w, h] = n[..] {
-            return Some((w, h)).filter(|s| positive(*s));
+        if let [x, y, w, h] = n[..] {
+            return Some((x, y, w, h)).filter(|s| positive(*s));
         }
         return None;
     }
@@ -424,7 +480,7 @@ fn picture_size(root: roxmltree::Node) -> Option<(f32, f32)> {
             .parse()
             .ok()
     };
-    Some((length("width")?, length("height")?)).filter(|s| positive(*s))
+    Some((0.0, 0.0, length("width")?, length("height")?)).filter(|s| positive(*s))
 }
 
 // ----- the per-user library -----
@@ -540,8 +596,9 @@ mod tests {
     #[test]
     fn the_safe_subset_is_rebuilt() -> Result<(), LookError> {
         let (svg, size) = sanitize(KAFKA)?;
-        assert_eq!(size, (40.0, 20.0));
-        assert!(svg.starts_with(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">"#));
+        // Cropped to the drawing, which sits 1 px inside the viewBox.
+        assert_eq!(size, (38.0, 18.0));
+        assert!(svg.starts_with(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 1 38 18">"#));
         assert!(svg.contains(r##"fill="url(#g)""##));
         assert!(svg.contains(">K &amp; Q</text>"));
         assert!(!svg.contains("comment") && !svg.contains("<?xml"));
@@ -556,7 +613,7 @@ mod tests {
         let rect = Rect::from_min_size(crate::geom::Pos::new(10.0, 20.0), 80.0, 40.0);
         let out = embed(&svg, size, rect, "b7-");
         assert!(out.starts_with(
-            r#"<svg x="10.0" y="20.0" width="80.0" height="40.0" viewBox="0 0 40 20" preserveAspectRatio="xMidYMid meet">"#
+            r#"<svg x="10.0" y="20.0" width="80.0" height="40.0" viewBox="1 1 38 18" preserveAspectRatio="xMidYMid meet">"#
         ));
         assert!(out.contains(r#"id="b7-g""#) && out.contains("url(#b7-g)"));
         assert!(!out.contains("xmlns") && !out.contains(r#"id="g""#));
@@ -564,9 +621,10 @@ mod tests {
             size,
             Rect::from_min_size(crate::geom::Pos::new(0.0, 0.0), 100.0, 100.0),
         );
-        assert_eq!(
-            (wide.width(), wide.height(), wide.min.y),
-            (100.0, 50.0, 25.0)
+        let (w, h, y) = (wide.width(), wide.height(), wide.min.y);
+        assert!(
+            (w - 100.0).abs() < 0.01 && (h - 47.37).abs() < 0.01 && (y - 26.32).abs() < 0.01,
+            "{w} {h} {y}"
         );
         Ok(())
     }

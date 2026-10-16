@@ -131,3 +131,127 @@ fn the_png_shows_the_look() -> TestResult {
     assert_eq!((r, g, bl), (255, 0, 0));
     Ok(())
 }
+
+/// Blue, a 20x40 drawing sitting small in a 100x100 viewBox, as the AI draws them.
+const TALL: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<rect x="40" y="30" width="20" height="40" fill="#0000ff"/></svg>"##;
+
+#[test]
+fn a_look_is_cropped_to_what_it_draws() -> TestResult {
+    let look = Look::new("Postgres", LookMode::Below, TALL, 0)?;
+    assert_eq!(look.size(), (20.0, 40.0));
+    assert!(
+        look.svg().contains(r#"viewBox="40 30 20 40""#),
+        "{}",
+        look.svg()
+    );
+    assert!(
+        look.svg()
+            .starts_with(r#"<svg xmlns="http://www.w3.org/2000/svg""#)
+    );
+    // Strokes count; a picture read again stays as it is; a tight one is untouched.
+    let stroked = TALL.replace(
+        r##"fill="#0000ff""##,
+        r##"fill="#0000ff" stroke="#000000" stroke-width="2""##,
+    );
+    assert_eq!(
+        Look::new("S", LookMode::Below, &stroked, 0)?.size(),
+        (22.0, 42.0)
+    );
+    let again = Look::new("Postgres", LookMode::Below, look.svg(), 0)?;
+    assert_eq!(again.svg(), look.svg());
+    let red = Look::new("Red", LookMode::Inside, RED, 0)?;
+    assert_eq!(red.size(), (40.0, 20.0));
+    Ok(())
+}
+
+#[test]
+fn lines_reach_the_picture_and_the_framed_name_below() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(
+        None,
+        &BlockSpec::new("PostgreSQL cluster", BlockKind::Database),
+    )?;
+    let id = LookId("pg".into());
+    p.looks
+        .insert(id.clone(), Look::new("Postgres", LookMode::Below, TALL, 0)?);
+    p.blocks.get_mut(&a).ok_or("a")?.look = Some(id);
+    let mut rels = Vec::new();
+    for (side, name) in [
+        (Side::Right, "App"),
+        (Side::Bottom, "Backup"),
+        (Side::Top, "Admin"),
+    ] {
+        let (_, rel) = p.connect_new(
+            a,
+            side,
+            &BlockSpec::new(name, BlockKind::Component),
+            Direction::Out,
+            "",
+        )?;
+        rels.push(rel);
+    }
+    let l = render(&p, None);
+    let g = l.block(a).ok_or("a")?;
+    let (picture, caption) = (g.picture.ok_or("picture")?, g.caption.ok_or("caption")?);
+    // The picture keeps its size; the name is wider and sticks out under it.
+    assert!(
+        (picture.width() / picture.height() - 0.5).abs() < 0.01,
+        "{picture:?}"
+    );
+    assert!(caption.width() > picture.width());
+    assert!((g.rect.width() - caption.width()).abs() < 0.01);
+    assert!(g.rect.holds(&picture) && g.rect.holds(&caption));
+    let start = |rel| -> Result<whiteboxed::geom::Pos, Box<dyn std::error::Error>> {
+        Ok(l.lines
+            .iter()
+            .find(|x| x.relation == rel)
+            .ok_or("line")?
+            .points[0])
+    };
+    let (right, below, above) = (start(rels[0])?, start(rels[1])?, start(rels[2])?);
+    assert!(
+        (right.x - picture.max.x).abs() < 0.01
+            && right.y > picture.min.y
+            && right.y < picture.max.y
+    );
+    assert!(
+        (below.y - caption.max.y).abs() < 0.01,
+        "{below:?} {caption:?}"
+    );
+    assert!(
+        (above.y - picture.min.y).abs() < 0.01,
+        "{above:?} {picture:?}"
+    );
+    // The frame is drawn around the name.
+    let s = scene::scene(&l);
+    assert!(
+        s.shapes
+            .iter()
+            .any(|sh| matches!(sh, scene::Shape::Rect { rect, .. } if *rect == caption))
+    );
+    // More lines on a side: the picture grows as a whole, never stretched.
+    for i in 0..3 {
+        p.connect_new(
+            a,
+            Side::Right,
+            &BlockSpec::new(&format!("S{i}"), BlockKind::Component),
+            Direction::Out,
+            "",
+        )?;
+    }
+    let grown = render(&p, None)
+        .block(a)
+        .ok_or("a")?
+        .picture
+        .ok_or("picture")?;
+    assert!(
+        grown.height() >= 5.0 * layout::PORT_SPACING - 0.01,
+        "{grown:?}"
+    );
+    assert!(
+        (grown.width() / grown.height() - 0.5).abs() < 0.01,
+        "{grown:?}"
+    );
+    Ok(())
+}

@@ -173,7 +173,7 @@ fn escape(s: &str) -> String {
 
 /// How resvg reads our pictures: with the one embedded font, and never loading
 /// anything a picture names (no files, no embedded images).
-fn options() -> resvg::usvg::Options<'static> {
+pub(crate) fn options() -> resvg::usvg::Options<'static> {
     static FONTS: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
     let fontdb = FONTS
         .get_or_init(|| {

@@ -67,6 +67,12 @@ pub struct BlockGeom {
     pub band: bool,
     /// A custom look the box wears.
     pub look: Option<Look>,
+    /// With the name below the picture: the picture, which lines from the left,
+    /// right and top reach.
+    pub picture: Option<Rect>,
+    /// With the name below the picture: the frame around the name under it, which
+    /// lines from below reach.
+    pub caption: Option<Rect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,8 +410,10 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
     }
     let count = |owner: Owner, side: Side| ports.get(&(owner, side)).map_or(0, Vec::len) as f32;
 
-    // Box sizes.
+    // Box sizes; for a box with its name below its picture also the picture's and
+    // the name frame's sizes.
     let mut sizes = BTreeMap::new();
+    let mut look_parts: BTreeMap<BlockId, BelowParts> = BTreeMap::new();
     for id in &view.blocks {
         let Some(b) = project.blocks.get(id).filter(|b| !b.gridless()) else {
             continue;
@@ -437,12 +445,16 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         let w = MIN_W.max((text_w + 2.0 * PAD) * fw).max(ports_w);
         let h = MIN_H.max((text_h + 2.0 * PAD) * fh).max(ports_h);
         let (w, h) = match b.look.as_ref().and_then(|l| project.looks.get(l)) {
-            Some(look) => look_box(
-                look,
-                (w, h),
-                (text_w, text_block(project, b)),
-                (ports_w, ports_h),
-            ),
+            Some(look) => {
+                let counts =
+                    [Side::Top, Side::Right, Side::Bottom, Side::Left].map(|s| count(o, s));
+                let (w, h, parts) =
+                    look_box(look, (w, h), (text_w, text_block(project, b)), counts);
+                if let Some(parts) = parts {
+                    look_parts.insert(*id, parts);
+                }
+                (w, h)
+            }
             None => (w, h),
         };
         sizes.insert(*id, (b.cell, w, h));
@@ -503,8 +515,13 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             has_content: false,
             band: false,
             look: None,
+            picture: None,
+            caption: None,
         });
     }
+    // Where lines reach a box whose name sits below its picture: the picture, and
+    // from below the name's frame.
+    let mut look_rects: BTreeMap<BlockId, (Rect, Rect)> = BTreeMap::new();
     for id in &view.blocks {
         let (Some(b), Some((cell, w, h))) = (project.blocks.get(id), sizes.get(id)) else {
             continue;
@@ -516,6 +533,20 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         );
         let rect = Rect::from_center(center, *w, *h);
         rects.insert(*id, (rect, (ci, ci), (ri, ri)));
+        let (picture, caption) = match look_parts.get(id) {
+            Some(&BelowParts {
+                picture: (pw, ph),
+                frame: (fw, fh),
+            }) => {
+                let picture =
+                    Rect::from_min_size(Pos::new(center.x - pw / 2.0, rect.min.y), pw, ph);
+                let caption =
+                    Rect::from_min_size(Pos::new(center.x - fw / 2.0, rect.max.y - fh), fw, fh);
+                look_rects.insert(*id, (picture, caption));
+                (Some(picture), Some(caption))
+            }
+            None => (None, None),
+        };
         let fill = b.color.unwrap_or_else(|| {
             b.tag
                 .and_then(|t| project.tags.get(&t))
@@ -535,6 +566,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             has_content: project.has_content(*id),
             band: false,
             look: b.look.as_ref().and_then(|l| project.looks.get(l)).cloned(),
+            picture,
+            caption,
         });
     }
 
@@ -567,6 +600,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             has_content: project.has_content(*id),
             band: true,
             look: None,
+            picture: None,
+            caption: None,
         });
     }
     // Below the bands a full gap, so ends entering through the bottom of a whitebox
@@ -586,8 +621,17 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
     // Port positions: (line index, end) -> (point, channel entry). A port sits where
     // its partner is, so facing boxes get straight lines; ports on one side then keep
     // a minimum distance from each other.
-    let owner_rect = |owner: Owner| match owner {
-        Owner::Block(id) => rects.get(&id).map(|(r, _, _)| *r),
+    // What a port sits on: the box, or of a box with its name below its picture the
+    // picture (from below: the name's frame).
+    let port_rect = |owner: Owner, side: Side| match owner {
+        Owner::Block(id) => match look_rects.get(&id) {
+            Some((picture, caption)) => Some(if side == Side::Bottom {
+                *caption
+            } else {
+                *picture
+            }),
+            None => rects.get(&id).map(|(r, _, _)| *r),
+        },
         Owner::Frame => Some(bounds),
     };
     let range = |rect: Rect, side: Side| {
@@ -607,12 +651,12 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
     // straight; otherwise in the middle of its side (a frame end around a corner
     // from its box: over that box).
     let ideal = |li: usize, end: End, owner: Owner, side: Side| -> Option<f32> {
-        let own = range(owner_rect(owner)?, side);
+        let own = range(port_rect(owner, side)?, side);
         let middle = (own.0 + own.1) / 2.0;
         let Some(&(o2, s2)) = ends.get(&(li, end.other())) else {
             return Some(middle);
         };
-        let other_rect = owner_rect(o2)?;
+        let other_rect = port_rect(o2, s2)?;
         if side.is_horizontal() == s2.is_horizontal() {
             let other = range(other_rect, s2);
             let (lo, hi) = (own.0.max(other.0), own.1.min(other.1));
@@ -632,7 +676,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
      -> BTreeMap<(usize, End), f32> {
         let mut out = BTreeMap::new();
         for ((owner, side), list) in &ports {
-            let Some(rect) = owner_rect(*owner) else {
+            let Some(rect) = port_rect(*owner, *side) else {
                 continue;
             };
             let (lo, hi) = range(rect, *side);
@@ -721,7 +765,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                         Side::Top => Chan::H(*r0),
                         Side::Bottom => Chan::H(r1 + 1),
                     };
-                    (*rect, chan)
+                    (port_rect(*owner, *side).unwrap_or(*rect), chan)
                 }
                 Owner::Frame => {
                     let chan = match side {
@@ -1294,30 +1338,55 @@ pub fn text_block(project: &Project, b: &crate::model::Block) -> f32 {
 /// Height of a name with its type caption below.
 pub const CAPTIONED_H: f32 = 34.0;
 
+/// With the name below the picture: the picture's and the name frame's sizes.
+#[derive(Debug, Clone, Copy)]
+struct BelowParts {
+    picture: (f32, f32),
+    frame: (f32, f32),
+}
+
 /// The size of a box wearing a look: the box it would be, grown so the picture keeps
-/// its proportions.
+/// its proportions. `counts` are the lines on its top, right, bottom and left. With
+/// the name below the picture, also the picture's and the name frame's sizes: the
+/// picture grows as a whole for the lines on its sides, the frame for those from
+/// below and for a long name.
 fn look_box(
     look: &Look,
     (w, h): (f32, f32),
     (text_w, text_h): (f32, f32),
-    (ports_w, ports_h): (f32, f32),
-) -> (f32, f32) {
+    counts: [f32; 4],
+) -> (f32, f32, Option<BelowParts>) {
     let (pw, ph) = look.size();
     let aspect = pw / ph;
+    let need = |n: f32| (n + 1.0) * PORT_SPACING;
+    let [top, right, bottom, left] = counts;
     match look.mode() {
         LookMode::Inside => {
             if w / h < aspect {
-                (h * aspect, h)
+                (h * aspect, h, None)
             } else {
-                (w, w / aspect)
+                (w, w / aspect, None)
             }
         }
-        // As wide as the picture or the name, so lines reach the picture.
-        LookMode::Below => (
-            (LOOK_H * aspect).max(text_w + PAD).max(ports_w),
-            (LOOK_H + LOOK_GAP + text_h + PAD / 2.0).max(ports_h),
+        LookMode::Below => {
+            let (pw, ph) = (LOOK_H * aspect, LOOK_H);
+            let scale = (need(top) / pw).max(need(left.max(right)) / ph).max(1.0);
+            let (pw, ph) = (pw * scale, ph * scale);
+            let (fw, fh) = ((text_w + PAD).max(need(bottom)), text_h + PAD);
+            (
+                pw.max(fw),
+                ph + LOOK_GAP + fh,
+                Some(BelowParts {
+                    picture: (pw, ph),
+                    frame: (fw, fh),
+                }),
+            )
+        }
+        LookMode::Icon => (
+            w.max(ICON_H * aspect + 2.0 * PAD),
+            h + ICON_H + LOOK_GAP,
+            None,
         ),
-        LookMode::Icon => (w.max(ICON_H * aspect + 2.0 * PAD), h + ICON_H + LOOK_GAP),
     }
 }
 

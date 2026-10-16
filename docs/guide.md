@@ -89,9 +89,14 @@ Each look is shown in one of three ways, chosen when it is added:
 - **icon above the name**: the box keeps its own shape and shows the picture above the
   name; the box grows by the icon.
 
-A picture is always scaled to keep its proportions, never stretched. In a project the
-look goes on top of the box type: choose it under **Look** in the box's dialog; the
-type and its rules stay. In a doodle the looks appear at the end of the **Shape** list.
+A picture is always scaled to keep its proportions, never stretched, and the empty
+margin around its drawing is cut off, so lines reach the drawing itself. With the
+name below, the picture is the box: lines from the left, right and top reach it, the
+name sits in a small frame under it (wider than the picture if need be), and a line
+from below lands on that frame. When a side needs room for more lines, the whole
+picture grows. In a project the look goes on top of the box type: choose it under
+**Look** in the box's dialog; the type and its rules stay. In a doodle the looks
+appear at the end of the **Shape** list.
 
 **File > Looks…** shows the library: rename a look by editing its name, delete it, or
 **Import .svg…** a picture (named after the file, shown the way chosen next to the
