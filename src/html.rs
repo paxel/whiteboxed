@@ -326,20 +326,22 @@ fn clickable_svg(project: &Project, l: &Layout) -> String {
             .unwrap_or_default()
     };
     for (li, line) in l.lines.iter().enumerate() {
-        let points: Vec<String> = line
-            .points
-            .iter()
-            .map(|p| format!("{:.1},{:.1}", p.x, p.y))
-            .collect();
-        let _ = writeln!(
-            hits,
-            "<polyline class=\"hit\" fill=\"none\" stroke=\"transparent\" stroke-width=\"12\" data-rel=\"{}\" data-also=\"{}\" data-ends=\"{}\" points=\"{}\"><title>{}</title></polyline>",
-            line.relation.0,
-            also(li),
-            ends(li),
-            points.join(" "),
-            esc(&line.full_text)
-        );
+        // A line through mouseholes: one hit area per drawn piece.
+        for piece in line.drawn() {
+            let points: Vec<String> = piece
+                .iter()
+                .map(|p| format!("{:.1},{:.1}", p.x, p.y))
+                .collect();
+            let _ = writeln!(
+                hits,
+                "<polyline class=\"hit\" fill=\"none\" stroke=\"transparent\" stroke-width=\"12\" data-rel=\"{}\" data-also=\"{}\" data-ends=\"{}\" points=\"{}\"><title>{}</title></polyline>",
+                line.relation.0,
+                also(li),
+                ends(li),
+                points.join(" "),
+                esc(&line.full_text)
+            );
+        }
     }
     for (li, r) in scene::label_rects(l) {
         let Some(line) = l.lines.get(li) else {

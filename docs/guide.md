@@ -175,6 +175,23 @@ box sees exactly its partner.
 Deleting such a line inside a whitebox only detaches it there (a branch: only from
 that box); the relation itself stays on its own level.
 
+### Mouseholes
+
+A line that would run straight over more than two boxes goes through **mouseholes**
+instead: out of its box a short way into a numbered hole, and out of the hole with
+the same number near its other end; nothing is drawn in between. The number is the
+line's number in the [legend](#long-texts-and-the-legend), which always holds its
+text; a line without text is listed by its two ends (`Orders → Billing`). A short
+label is written at the holes as well. Several relations drawn as one line share a
+pair of holes carrying all their numbers (`2,5`). Inside a whitebox the end at the
+frame can be a hole, and of a fanned-out relation only the branches that need it go
+under.
+
+In the app, hovering a hole highlights both holes and shows the route between them
+faintly; clicking one selects the line. **Mouseholes** in the line's **Edit…** dialog
+sets it for the diagram shown: **automatic**, **always** or **never**. Lines through
+mouseholes count for [readability](#readability).
+
 ### Stubs
 
 A **stub** is a relation whose other end is not known yet, drawn with an open circle.
@@ -268,8 +285,9 @@ selected, the details panel lists each cause with what helps.
 | Boxes in the diagram     | 8           | 10       | Group boxes, move details into a whitebox, bands     |
 | Lines that cross         | 1           | 3        | Rearrange so partners face each other, or group      |
 | Lines on the busiest box | 6           | 9        | Split the box, or move its partners into its whitebox |
+| Lines through mouseholes | 3           | 5        | Move partners closer, or set lines to never go under  |
 
-The worst of the three gives the colour. The limits are a rule of thumb, not part of
+The worst of the four gives the colour. The limits are a rule of thumb, not part of
 arc42: arc42 asks for a level 1 with the major parts of the system and lets you refine
 only the boxes that need it. Change them under [Project settings](#project-settings).
 Concerns that every part uses, such as logging or security, are often better a
@@ -448,7 +466,7 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `connect_open_end`   | A stub's open end to a box                                        |
 | `attach`             | A relation from the level above to a box inside; again: fans out  |
 | `edit_box`           | Name, type, tag, look                                             |
-| `edit_relation`      | Direction, text, short label, style, colour, sides, frame side    |
+| `edit_relation`      | Direction, text, short label, style, colour, mouseholes, sides    |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
@@ -481,7 +499,8 @@ and lines by id, since texts may repeat:
 | `doodle_move_shape`   | A shape to another cell                                 |
 | `doodle_delete_shape` | A shape or group                                        |
 | `doodle_add_line`     | A line between two shapes or groups, pattern and colour |
-| `doodle_edit_line`    | Text, direction, pattern, colour; `doodle_delete_line`  |
+| `doodle_edit_line`    | Text, direction, pattern, colour, mouseholes            |
+| `doodle_delete_line`  | A line                                                  |
 | `doodle_group`        | A group framed around shapes; `doodle_widen_group`      |
 
 The problems `get_diagram` lists are lines that cross (both relations and where),
@@ -525,7 +544,8 @@ sketch for a data flow, a network or a bit of logic, without the arc42 rules:
 - Lines connect two shapes; there are no open ends (stubs). In a line's **Edit…**
   dialog, **Pattern** makes it solid, dashed or dotted, for example for asynchronous
   or optional flows, and **Colour** gives it a colour of its own. Lines with different
-  patterns or colours between the same shapes are not bundled.
+  patterns or colours between the same shapes are not bundled. Long lines go through
+  [mouseholes](#mouseholes) here too.
 - Placing, connecting by clicking a border, routing, line styles, undo and saving work
   as in a project.
 

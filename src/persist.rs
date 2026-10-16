@@ -13,7 +13,7 @@ use crate::look::{self, LookDto, LookId};
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
     ExportChoice, LinePattern, LineStyle, MAX_BLOCKS_PER_DIAGRAM, MAX_RELATIONS_PER_DIAGRAM,
-    Project, ProjectKind, Relation, RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
+    MouseholeMode, Project, ProjectKind, Relation, RelationId, Rgb, ScoreLimits, Side, Tag, TagId,
 };
 
 pub const FORMAT: u32 = 1;
@@ -165,9 +165,19 @@ struct RelationDto {
     pattern: LinePattern,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color: Option<Rgb>,
+    /// Where the line goes through mouseholes, or never does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mouseholes: Vec<MouseholeDto>,
     /// Frame sides chosen by hand: whitebox box id to side.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     frame_sides: BTreeMap<BlockId, Side>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+struct MouseholeDto {
+    /// The diagram: the box whose whitebox shows the line; `None` for the context view.
+    diagram: Option<BlockId>,
+    mode: MouseholeMode,
 }
 
 fn is_solid(p: &LinePattern) -> bool {
@@ -279,6 +289,14 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 short: r.short.clone(),
                 pattern: r.pattern,
                 color: r.color,
+                mouseholes: r
+                    .mouseholes
+                    .iter()
+                    .map(|(d, m)| MouseholeDto {
+                        diagram: *d,
+                        mode: *m,
+                    })
+                    .collect(),
                 frame_sides: r.frame_sides.clone(),
             })
             .collect(),
@@ -385,6 +403,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 short: r.short,
                 pattern: r.pattern,
                 color: r.color,
+                mouseholes: r.mouseholes.iter().map(|m| (m.diagram, m.mode)).collect(),
                 frame_sides: r.frame_sides,
             },
         );

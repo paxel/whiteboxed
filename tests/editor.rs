@@ -852,3 +852,41 @@ fn the_relation_dialog_sets_the_colour_on_every_level() -> TestResult {
     assert_eq!(line.color, Some(Rgb(0x20, 0x60, 0xc0)));
     Ok(())
 }
+
+#[test]
+fn the_relation_dialog_sets_mouseholes_for_the_diagram_shown() -> TestResult {
+    use whiteboxed::model::MouseholeMode;
+    let mut e = Editor::new(None);
+    let shop = e.project.add_block(
+        None,
+        &whiteboxed::model::BlockSpec::new("Shop", BlockKind::Component),
+    )?;
+    let (_, rel) = e.project.connect_new(
+        shop,
+        Side::Right,
+        &whiteboxed::model::BlockSpec::new("Bank", BlockKind::ExternalSystem),
+        Direction::Out,
+        "pays",
+    )?;
+    e.start_edit_relation(rel);
+    assert!(matches!(
+        e.popup,
+        Some(Popup::EditRelation {
+            mousehole: MouseholeMode::Automatic,
+            ..
+        })
+    ));
+    if let Some(Popup::EditRelation { mousehole, .. }) = &mut e.popup {
+        *mousehole = MouseholeMode::Always;
+    }
+    e.confirm();
+    assert_eq!(
+        e.project.relation(rel)?.mousehole_in(None),
+        MouseholeMode::Always
+    );
+    assert_eq!(
+        e.project.relation(rel)?.mousehole_in(Some(shop)),
+        MouseholeMode::Automatic
+    );
+    Ok(())
+}

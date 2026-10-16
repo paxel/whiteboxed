@@ -1315,7 +1315,22 @@ impl App {
                     .find(|l| l.relation == rel && l.landing == landing);
                 if let Some(line) = hovered {
                     let pts: Vec<Pos2> = line.points.iter().map(|q| view.screen(*q)).collect();
-                    painter.line(pts, Stroke::new(4.0, ACCENT.gamma_multiply(0.5)));
+                    match &line.mousehole {
+                        // Both holes, and the route between them faintly.
+                        Some(m) => {
+                            painter.line(pts, Stroke::new(2.0, ACCENT.gamma_multiply(0.25)));
+                            for hole in [m.a, m.b] {
+                                painter.circle_stroke(
+                                    view.screen(hole),
+                                    14.0,
+                                    Stroke::new(2.0, ACCENT),
+                                );
+                            }
+                        }
+                        None => {
+                            painter.line(pts, Stroke::new(4.0, ACCENT.gamma_multiply(0.5)));
+                        }
+                    }
                 }
             }
             Hit::OpenEnd(_) => {

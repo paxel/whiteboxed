@@ -148,6 +148,8 @@ pub enum Popup {
         pattern: crate::model::LinePattern,
         /// The line's own colour (`None`: the default).
         color: Option<crate::model::Rgb>,
+        /// Whether the line goes through mouseholes in the diagram shown.
+        mousehole: crate::model::MouseholeMode,
         /// The whitebox shown and the frame side chosen there (`None`: automatic),
         /// when the relation enters it from outside.
         frame: Option<(BlockId, Option<Side>)>,
@@ -695,6 +697,7 @@ impl Editor {
                 short: r.short.clone(),
                 pattern: r.pattern,
                 color: r.color,
+                mousehole: r.mousehole_in(self.diagram),
                 frame: self
                     .diagram
                     .filter(|d| {
@@ -881,15 +884,18 @@ impl Editor {
                 short,
                 pattern,
                 color,
+                mousehole,
                 frame,
                 sides,
             } => {
+                let diagram = self.diagram;
                 if self
                     .apply(|p| {
                         p.edit_relation(rel, direction, &text)?;
                         p.set_relation_short(rel, &short)?;
                         p.set_relation_pattern(rel, pattern)?;
                         p.set_relation_color(rel, color)?;
+                        p.set_mousehole(rel, diagram, mousehole)?;
                         if let Some((outer, side)) = frame {
                             p.set_frame_side(rel, outer, side)?;
                         }

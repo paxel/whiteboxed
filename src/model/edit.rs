@@ -312,6 +312,7 @@ impl Project {
             short: String::new(),
             pattern: Default::default(),
             color: None,
+            mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
         });
         Ok((new, rel))
@@ -379,6 +380,7 @@ impl Project {
             short: String::new(),
             pattern: Default::default(),
             color: None,
+            mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
         }))
     }
@@ -415,6 +417,7 @@ impl Project {
             short: String::new(),
             pattern: Default::default(),
             color: None,
+            mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
         }))
     }
@@ -677,6 +680,25 @@ impl Project {
             .get_mut(&rel)
             .ok_or(ModelError::UnknownRelation)?
             .color = color;
+        Ok(())
+    }
+
+    /// Sets whether a relation's line goes through mouseholes in `diagram`.
+    pub fn set_mousehole(
+        &mut self,
+        rel: RelationId,
+        diagram: DiagramId,
+        mode: super::MouseholeMode,
+    ) -> ModelResult<()> {
+        let relation = self
+            .relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?;
+        if mode == super::MouseholeMode::Automatic {
+            relation.mouseholes.remove(&diagram);
+        } else {
+            relation.mouseholes.insert(diagram, mode);
+        }
         Ok(())
     }
 

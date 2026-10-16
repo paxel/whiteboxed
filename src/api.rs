@@ -416,6 +416,33 @@ pub struct EditRelationArgs {
     /// default.
     #[serde(default)]
     pub color: Option<String>,
+    /// Whether the line goes through mouseholes: automatic (over more than two
+    /// boxes), always, or never; for the diagram in `in_diagram`.
+    #[serde(default)]
+    pub mousehole: Option<ApiMousehole>,
+    /// The box whose whitebox shows the line the mousehole setting is for; omit for
+    /// the relation's own diagram.
+    #[serde(default)]
+    pub in_diagram: Option<BoxRef>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(rename_all = "snake_case")]
+pub enum ApiMousehole {
+    Automatic,
+    Always,
+    Never,
+}
+
+impl From<ApiMousehole> for crate::model::MouseholeMode {
+    fn from(m: ApiMousehole) -> Self {
+        match m {
+            ApiMousehole::Automatic => crate::model::MouseholeMode::Automatic,
+            ApiMousehole::Always => crate::model::MouseholeMode::Always,
+            ApiMousehole::Never => crate::model::MouseholeMode::Never,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -643,7 +670,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "edit_relation",
-            description: "Change direction, text, short label, line style, colour or the sides of a relation; omitted fields stay.",
+            description: "Change direction, text, short label, line style, colour, mousehole setting or the sides of a relation; omitted fields stay.",
             schema: schema::<EditRelationArgs>(),
         },
         ToolInfo {
@@ -1048,6 +1075,16 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
         Some(text) => line_color(text)?,
         None => r.color,
     };
+    let mousehole = match a.mousehole {
+        Some(mode) => {
+            let diagram = match &a.in_diagram {
+                Some(b) => Some(resolve(&editor.project, b)?),
+                None => r.owner,
+            };
+            Some((diagram, crate::model::MouseholeMode::from(mode)))
+        }
+        None => None,
+    };
     let sides = a
         .sides
         .iter()
@@ -1070,6 +1107,9 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
         p.edit_relation(rel, d, &text)?;
         p.set_relation_short(rel, &short)?;
         p.set_relation_color(rel, color)?;
+        if let Some((diagram, mode)) = mousehole {
+            p.set_mousehole(rel, diagram, mode)?;
+        }
         for (block, side) in &sides {
             p.set_side_at(rel, *block, *side)?;
         }
@@ -1473,12 +1513,14 @@ pub fn diagram_json(project: &Project, d: DiagramId) -> Value {
         "level": project.level(d),
         "motivation": project.motivation(d),
         "boxes": v.blocks.iter().map(|id| box_json(project, *id)).collect::<Vec<_>>(),
-        "lines": v.lines.iter().map(|l| json!({
-            "relation": l.relation.0,
-            "a": view_end_json(project, &l.a),
-            "b": view_end_json(project, &l.b),
-            "direction": l.direction.label(),
-            "text": l.text,
+        "lines": v.lines.iter().map(|vl| json!({
+            "relation": vl.relation.0,
+            "a": view_end_json(project, &vl.a),
+            "b": view_end_json(project, &vl.b),
+            "direction": vl.direction.label(),
+            "text": vl.text,
+            "mousehole": vl.mousehole.label(),
+            "through_mouseholes": l.lines.iter().any(|g| g.relation == vl.relation && g.mousehole.is_some()),
         })).collect::<Vec<_>>(),
         "dangling": view::dangling_count(&v),
         "problems": problems(&l),
@@ -1500,6 +1542,7 @@ fn score_json(s: &crate::score::Score) -> Value {
         "level": level_name(s.level()),
         "boxes": s.boxes,
         "crossings": s.crossings,
+        "mouseholes": s.mouseholes,
         "busiest_box": s.busiest.as_ref().map(|(id, name, n)| json!({"id": id.0, "name": name, "lines": n})),
         "causes": s.causes().iter().map(|c| json!({
             "level": level_name(c.level),

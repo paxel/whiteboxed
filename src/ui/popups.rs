@@ -167,6 +167,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             short,
             pattern,
             color,
+            mousehole,
             frame,
             sides,
             ..
@@ -185,6 +186,14 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 });
             }
             line_color_row(ui, color);
+            ui.horizontal(|ui| {
+                ui.label("Mouseholes").on_hover_text(
+                    "Into a numbered hole near one end, out of its twin near the other",
+                );
+                for m in crate::model::MouseholeMode::ALL {
+                    ui.selectable_value(mousehole, m, m.label());
+                }
+            });
             if editor.project.is_doodle() {
                 ui.horizontal(|ui| {
                     ui.label("Pattern");

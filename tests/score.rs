@@ -133,3 +133,34 @@ fn a_doodle_page_counts_shapes_but_not_groups() -> TestResult {
     assert!(s.summary().contains("8 shapes"));
     Ok(())
 }
+
+#[test]
+fn lines_through_mouseholes_are_a_measure_of_their_own() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let b = p.add_block(None, &component("B"))?;
+    p.move_block(b, Cell::new(4, 0))?;
+    for col in 1..=3 {
+        let f = p.add_block(None, &component(&format!("F{col}")))?;
+        p.move_block(f, Cell::new(col, 0))?;
+    }
+    p.set_bundle(false);
+    for text in ["a", "b", "c"] {
+        let rel = p.connect_existing(a, Side::Right, b, Direction::Out, text, Placement::Keep)?;
+        // The outer lines only graze the boxes in between: told to go under.
+        p.set_mousehole(rel, None, whiteboxed::model::MouseholeMode::Always)?;
+    }
+    let s = score::of(&p, None);
+    assert_eq!((s.mouseholes, s.mouseholes_level), (3, Level::Yellow));
+    assert_eq!(s.level(), Level::Yellow);
+    let causes = s.causes();
+    assert_eq!(causes.len(), 1);
+    assert_eq!(causes[0].what, "3 lines through mouseholes");
+    assert!(causes[0].help.contains("never"));
+    p.set_score_limits(ScoreLimits {
+        mouseholes: (20, 30),
+        ..ScoreLimits::default()
+    });
+    assert_eq!(score::of(&p, None).level(), Level::Green);
+    Ok(())
+}

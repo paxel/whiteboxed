@@ -25,8 +25,9 @@ levels cannot drift apart.
 - **Architecture box types.** Component, database, queue/topic, cache, file storage,
   UI, person, external system, and cross-cutting bands for concerns like logging.
 - **Readable diagrams.** Lines run straight where boxes face each other, avoid
-  crossings and jump where they must; a traffic light per diagram says when it gets
-  crowded and what helps.
+  crossings and jump where they must, and go under the diagram through numbered
+  mouseholes where they would run over too many boxes; a readability colour per
+  diagram says when it gets crowded and what helps.
 - **Doodles.** File > New doodle sketches a data flow, a network or some logic on pages:
   whiteboard shapes, multi-line texts, colours, nested groups, dashed and dotted lines,
   same automatic layout, no arc42 rules.

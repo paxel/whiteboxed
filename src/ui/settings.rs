@@ -130,6 +130,7 @@ impl Settings {
                             (boxes_label, &mut score.boxes),
                             ("Crossings", &mut score.crossings),
                             ("Lines on one box", &mut score.lines),
+                            ("Lines through mouseholes", &mut score.mouseholes),
                         ] {
                             ui.label(label);
                             ui.horizontal(|ui| {

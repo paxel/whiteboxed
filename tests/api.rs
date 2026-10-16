@@ -1125,3 +1125,75 @@ fn relations_and_doodle_lines_take_a_colour() -> TestResult {
     assert_eq!(line["color"], Value::Null);
     Ok(())
 }
+
+#[test]
+fn the_mousehole_setting_is_per_line_and_diagram() -> TestResult {
+    use whiteboxed::model::{MouseholeMode, RelationId};
+    let mut e = Editor::new(None);
+    let shop = shop(&mut e)?;
+    let rel = e
+        .project
+        .relations
+        .keys()
+        .next()
+        .copied()
+        .ok_or("relation")?;
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "mousehole": "never"}),
+    )?;
+    assert_eq!(
+        e.project.relation(rel)?.mousehole_in(None),
+        MouseholeMode::Never
+    );
+    call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel.0, "mousehole": "always", "in_diagram": "Web Shop"}),
+    )?;
+    let r = e.project.relation(rel)?;
+    assert_eq!(
+        r.mousehole_in(Some(whiteboxed::model::BlockId(shop))),
+        MouseholeMode::Always
+    );
+    assert_eq!(r.mousehole_in(None), MouseholeMode::Never);
+    let got = call(&mut e, "get_diagram", json!({}))?;
+    let line = got["lines"]
+        .as_array()
+        .and_then(|l| l.iter().find(|l| l["relation"] == rel.0))
+        .ok_or("line")?;
+    assert_eq!(line["mousehole"], "never");
+    assert_eq!(line["through_mouseholes"], false);
+    assert!(got["score"]["mouseholes"].is_number());
+
+    let mut d = Editor::new_doodle(None);
+    let page = call(&mut d, "doodle_get", json!({}))?["pages"][0]["id"].clone();
+    let a = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "A"}),
+    )?["id"]
+        .clone();
+    let b = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "B", "col": 1, "row": 0}),
+    )?["id"]
+        .clone();
+    let line = call(&mut d, "doodle_add_line", json!({"from": a, "to": b}))?;
+    assert_eq!(line["mousehole"], "automatic");
+    let line = call(
+        &mut d,
+        "doodle_edit_line",
+        json!({"line": line["id"], "mousehole": "always"}),
+    )?;
+    assert_eq!(line["mousehole"], "always");
+    let id = RelationId(line["id"].as_u64().ok_or("id")?);
+    let page_id = whiteboxed::model::BlockId(page.as_u64().ok_or("page")?);
+    assert_eq!(
+        d.project.relation(id)?.mousehole_in(Some(page_id)),
+        MouseholeMode::Always
+    );
+    Ok(())
+}

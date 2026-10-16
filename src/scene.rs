@@ -18,6 +18,10 @@ pub const LINE: Rgb = Rgb(0x44, 0x4b, 0x55);
 pub const FRAME: Rgb = Rgb(0x8a, 0x93, 0x9e);
 pub const WARN: Rgb = Rgb(0xe0, 0x8a, 0x00);
 pub const PAPER: Rgb = Rgb(0xff, 0xff, 0xff);
+/// Radius of a mousehole's arch.
+pub const HOLE_R: f32 = 8.0;
+/// Size of the number at a mousehole.
+const HOLE_SIZE: f32 = 11.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stroke {
@@ -535,14 +539,45 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
         crate::model::LinePattern::Dashed => Stroke::dashed(1.5, color),
         crate::model::LinePattern::Dotted => Stroke::dotted(1.8, color),
     };
-    shapes.push(Shape::Polyline {
-        points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
-        stroke: along,
-    });
+    if let Some(m) = &line.mousehole {
+        // Only the pieces from the ports to the holes, each with its arrowhead; the
+        // holes carry the legend number and the short label.
+        for (piece, at_start, at_end) in [
+            (&m.piece_a, line.arrow_start, false),
+            (&m.piece_b, false, line.arrow_end),
+        ] {
+            shapes.push(Shape::Polyline {
+                points: with_jumps(shaped_around(piece, line.style, crossed), jumps),
+                stroke: along,
+            });
+            let n = piece.len();
+            if n >= 2 && at_start {
+                shapes.push(arrow_head(piece[1], piece[0], color));
+            }
+            if n >= 2 && at_end {
+                shapes.push(arrow_head(piece[n - 2], piece[n - 1], color));
+            }
+        }
+        let label = if line.text.is_empty() {
+            m.label.clone()
+        } else {
+            format!("{} {}", m.label, line.text)
+        };
+        let n = m.piece_a.len();
+        let before_a = m.piece_a.get(n.wrapping_sub(2)).copied().unwrap_or(m.a);
+        let before_b = m.piece_b.get(1).copied().unwrap_or(m.b);
+        hole_shapes(shapes, m.a, before_a, &label, color);
+        hole_shapes(shapes, m.b, before_b, &label, color);
+    } else {
+        shapes.push(Shape::Polyline {
+            points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
+            stroke: along,
+        });
+    }
     let n = line.points.len();
     // A dangling end shows a warning marker instead of an arrowhead.
     let marked = |p: Pos| line.kind == LineKind::Dangling && line.tip == Some(p);
-    if n >= 2 {
+    if n >= 2 && line.mousehole.is_none() {
         if line.arrow_start && !marked(line.points[0]) {
             shapes.push(arrow_head(line.points[1], line.points[0], color));
         }
@@ -585,6 +620,38 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
         }
         _ => {}
     }
+}
+
+/// A mousehole at `c` for a line coming from `from`: a filled arch, its round side
+/// ahead, and the label past it.
+fn hole_shapes(shapes: &mut Vec<Shape>, c: Pos, from: Pos, label: &str, color: Rgb) {
+    let (dx, dy) = (c.x - from.x, c.y - from.y);
+    let len = (dx * dx + dy * dy).sqrt().max(0.001);
+    let (ux, uy) = (dx / len, dy / len);
+    let theta = uy.atan2(ux).to_degrees();
+    shapes.push(Shape::Polygon {
+        points: arc(c, HOLE_R, HOLE_R, theta - 90.0, theta + 90.0),
+        fill: Some(color),
+        stroke: None,
+    });
+    let (pos, align) = if ux.abs() > uy.abs() {
+        if ux > 0.0 {
+            (Pos::new(c.x + HOLE_R + 5.0, c.y), Align::Left)
+        } else {
+            (Pos::new(c.x - HOLE_R - 5.0, c.y), Align::Right)
+        }
+    } else if uy > 0.0 {
+        (Pos::new(c.x, c.y + HOLE_R + 10.0), Align::Center)
+    } else {
+        (Pos::new(c.x, c.y - HOLE_R - 9.0), Align::Center)
+    };
+    shapes.push(Shape::Text {
+        pos,
+        text: label.to_owned(),
+        size: HOLE_SIZE,
+        color,
+        align,
+    });
 }
 
 fn arrow_head(from: Pos, to: Pos, color: Rgb) -> Shape {
@@ -686,7 +753,8 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
             });
         }
     }
-    if line.text.is_empty() {
+    // A line through mouseholes writes its short label at the holes.
+    if line.text.is_empty() || line.mousehole.is_some() {
         return;
     }
     let (pos, align) = match (line.tip, line.tip_dir) {

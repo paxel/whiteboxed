@@ -2,7 +2,7 @@
 //! open end. Pure geometry, so clicking can be tested without a window.
 
 use crate::editor::OpenEnd;
-use crate::geom::{Pos, polyline_dist};
+use crate::geom::Pos;
 use crate::layout::{GAP, Layout, LineKind};
 use crate::model::{BlockId, Cell, End, Project, RelationId, Side};
 
@@ -87,10 +87,10 @@ pub fn hit(project: &Project, layout: &Layout, p: Pos, scale: f32) -> Hit {
     layout
         .lines
         .iter()
-        .filter(|l| polyline_dist(p, &l.points) <= near)
+        .filter(|l| l.hit_dist(p) <= near)
         .min_by(|a, b| {
-            polyline_dist(p, &a.points)
-                .partial_cmp(&polyline_dist(p, &b.points))
+            a.hit_dist(p)
+                .partial_cmp(&b.hit_dist(p))
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .map_or(Hit::Empty, |l| Hit::Line(l.relation, l.landing))

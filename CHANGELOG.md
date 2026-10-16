@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Doodle pages get a readability colour, shown as a dot on the page tab that explains on hover what helps; the limits are in File > Project settings… and the AI sees it in doodle_get.
 - Lines can have a colour of their own, picked in the line's Edit… dialog or set by the AI; a relation keeps it on every level.
+- Mouseholes: a line that would run straight over more than two boxes goes into a numbered hole near each end instead, with its text in the legend; hovering a hole shows both holes and the route. Mouseholes in the line's Edit… dialog (and the AI) set it per line and diagram to automatic, always or never, and lines through mouseholes are a readability measure with limits of their own.
 
 ### Changed
 

@@ -46,6 +46,11 @@ const CROSS: i64 = ((MIN_H + GAP) * 10.0) as i64;
 const SHARE: i64 = (LANE * 10.0) as i64;
 /// How close the legs of an elbow may come to a box they do not end at.
 const ELBOW_CLEARANCE: f32 = 12.0;
+/// How far from its port a line runs before it goes into a mousehole.
+pub const HOLE_IN: f32 = 26.0;
+/// A straight line from end to end over more boxes than this goes through
+/// mouseholes (unless told otherwise).
+pub const HOLE_OVER: usize = 2;
 
 pub const DEFAULT_FILL: Rgb = Rgb(0xff, 0xff, 0xff);
 pub const NEIGHBOUR_FILL: Rgb = Rgb(0xe6, 0xe6, 0xe6);
@@ -97,6 +102,10 @@ pub struct LineGeom {
     /// end (left of it), in which row of names (0: next to the frame), and the width
     /// it wraps to.
     pub frame_name: (bool, usize, f32),
+    /// Set when the line goes through mouseholes: only the pieces from the ports to
+    /// the holes are drawn; `points` still holds the whole route, shown faintly on
+    /// hover.
+    pub mousehole: Option<Mousehole>,
     pub style: LineStyle,
     /// The relation's full text; `text` is what the line shows.
     pub full_text: String,
@@ -110,7 +119,41 @@ pub struct LineGeom {
     pub color: Option<Rgb>,
 }
 
+/// A line through mouseholes: the hole near each end, the pieces drawn from the
+/// ports to the holes, and the legend number(s) the holes carry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mousehole {
+    pub a: Pos,
+    pub b: Pos,
+    pub piece_a: Vec<Pos>,
+    pub piece_b: Vec<Pos>,
+    /// `2`, or `2,5` for a bundle.
+    pub label: String,
+}
+
 impl LineGeom {
+    /// What is drawn of the line: the whole route, or the pieces to the mouseholes.
+    pub fn drawn(&self) -> Vec<&[Pos]> {
+        match &self.mousehole {
+            Some(m) => vec![&m.piece_a, &m.piece_b],
+            None => vec![&self.points],
+        }
+    }
+
+    /// How far `p` is from what is drawn of the line (a mousehole counts as drawn).
+    pub fn hit_dist(&self, p: Pos) -> f32 {
+        let pieces = self
+            .drawn()
+            .into_iter()
+            .map(|piece| crate::geom::polyline_dist(p, piece));
+        let holes = self
+            .mousehole
+            .iter()
+            .flat_map(|m| [m.a, m.b])
+            .map(|hole| (hole.dist(p) - crate::scene::HOLE_R).max(0.0));
+        pieces.chain(holes).fold(f32::MAX, f32::min)
+    }
+
     /// A line that leaves this whitebox toward an open end can be connected here.
     pub fn leaves_open(&self) -> bool {
         self.frame_port
@@ -177,12 +220,18 @@ fn line_crossings(lines: &[LineGeom]) -> Vec<Crossing> {
             if h.relation == v.relation {
                 continue;
             }
-            for at in cross_points(&h.points, &v.points) {
-                out.push(Crossing {
-                    horizontal: hl,
-                    vertical: vl,
-                    at,
-                });
+            for (hp, vp) in h
+                .drawn()
+                .into_iter()
+                .flat_map(|hp| v.drawn().into_iter().map(move |vp| (hp, vp)))
+            {
+                for at in cross_points(hp, vp) {
+                    out.push(Crossing {
+                        horizontal: hl,
+                        vertical: vl,
+                        at,
+                    });
+                }
             }
         }
     }
@@ -280,6 +329,9 @@ fn widened_gaps(layout: &Layout, grid: &Grid) -> (Vec<f32>, Vec<f32>) {
     let mut along_v: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); grid.vspan.len()];
     let mut along_h: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); grid.hspan.len()];
     for (li, line) in layout.lines.iter().enumerate() {
+        if line.mousehole.is_some() {
+            continue;
+        }
         for w in line.points.windows(2) {
             if (w[0].x - w[1].x).abs() < 0.01 {
                 if let Some(v) = within(&grid.vspan, w[0].x) {
@@ -712,6 +764,24 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
     // ports of a side take the order their lines arrive in, so no line crosses
     // another on its way in, and the lines are routed again from there.
     let mut port_at = ports_at(&settle(None));
+    // Lines through mouseholes: as told, or when a straight line from end to end
+    // would run over more than HOLE_OVER boxes. Their route is not drawn, so the
+    // other lines neither avoid it nor leave it a lane.
+    let hidden: BTreeSet<usize> = (0..view.lines.len())
+        .filter(|li| {
+            let (Some(a), Some(b)) = (port_at.get(&(*li, End::A)), port_at.get(&(*li, End::B)))
+            else {
+                return false;
+            };
+            match view.lines[*li].mousehole {
+                crate::model::MouseholeMode::Always => true,
+                crate::model::MouseholeMode::Never => false,
+                crate::model::MouseholeMode::Automatic => {
+                    crossed_boxes(a.0, b.0, &boxes) > HOLE_OVER
+                }
+            }
+        })
+        .collect();
     let mut routes: BTreeMap<usize, Route> = BTreeMap::new();
     let mut segments: Segments = BTreeMap::new();
     let n = view.lines.len();
@@ -722,10 +792,11 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         &heading,
         n,
         2,
+        &hidden,
         &mut routes,
         &mut segments,
     );
-    let mut lanes = lane_order(&routes);
+    let mut lanes = lane_order(&routes, &hidden);
     let mut offsets = BTreeMap::new();
     for _ in 0..2 {
         let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
@@ -738,15 +809,17 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             &heading,
             n,
             1,
+            &hidden,
             &mut routes,
             &mut segments,
         );
-        lanes = lane_order(&routes);
+        lanes = lane_order(&routes, &hidden);
     }
     finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
 
     let mut lines = Vec::new();
-    let (shown, mut legend_keys) = shown_labels(view, project.label_limit);
+    let (shown, mut legend_keys, hole_labels) =
+        shown_labels(project, view, project.label_limit, &hidden);
     let partners = short_partners(view, project.label_limit, &mut legend_keys);
     for (li, line) in view.lines.iter().enumerate() {
         let pa = port_at.get(&(li, End::A)).copied();
@@ -773,7 +846,12 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                 if let Some(last) = points.last_mut() {
                     *last = outline(&line.b, b);
                 }
-                build_line(line, LineKind::Routed, points, None, None)
+                let mut geom = build_line(line, LineKind::Routed, points, None, None);
+                if hidden.contains(&li) {
+                    geom.mousehole = Some(mousehole_of(&geom.points, hole_labels[li].clone()));
+                    geom.label_at = geom.mousehole.as_ref().map_or(geom.label_at, |m| m.a);
+                }
+                geom
             }
             (Some(a), None) | (None, Some(a)) => {
                 let inward = line_is_frame_inward(line);
@@ -899,7 +977,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             .filter(|c| c.horizontal == li || c.vertical == li)
             .map(|c| c.at)
             .collect();
-        if geom.tip.is_none() && !marks.is_empty() {
+        if geom.tip.is_none() && geom.mousehole.is_none() && !marks.is_empty() {
             geom.label_at = clear_of(&geom.points, geom.label_at, geom.label_horizontal, &marks);
         }
     }
@@ -983,12 +1061,49 @@ fn short_partners(
     out
 }
 
-fn shown_labels(view: &DiagramView, limit: Option<u32>) -> (Vec<String>, Vec<(String, String)>) {
+/// Besides the labels: for every line through mouseholes (`hidden`) the number(s)
+/// its holes carry. Such a line always goes to the legend, one entry per relation
+/// of a bundle; a relation without text is listed by its two ends.
+fn shown_labels(
+    project: &Project,
+    view: &DiagramView,
+    limit: Option<u32>,
+    hidden: &BTreeSet<usize>,
+) -> (Vec<String>, Vec<(String, String)>, Vec<String>) {
     let mut shown = Vec::new();
+    let mut holes = Vec::new();
     let mut legend: Vec<(String, String)> = Vec::new();
     let mut numbers: BTreeMap<RelationId, String> = BTreeMap::new();
     let mut seen = BTreeSet::new();
-    for line in &view.lines {
+    for (li, line) in view.lines.iter().enumerate() {
+        if hidden.contains(&li) {
+            let mut keys = Vec::new();
+            for rel in std::iter::once(line.relation).chain(line.bundle.iter().copied()) {
+                let next = numbers.len() + 1;
+                let key = numbers
+                    .entry(rel)
+                    .or_insert_with(|| format!("[{next}]"))
+                    .clone();
+                if seen.insert(rel) {
+                    let text = project
+                        .relations
+                        .get(&rel)
+                        .map(|r| r.text.trim().to_owned())
+                        .unwrap_or_default();
+                    let entry = if text.is_empty() {
+                        ends_of(project, line)
+                    } else {
+                        text
+                    };
+                    legend.push((key.clone(), entry));
+                }
+                keys.push(key.trim_matches(['[', ']']).to_owned());
+            }
+            shown.push(line.short.clone());
+            holes.push(keys.join(","));
+            continue;
+        }
+        holes.push(String::new());
         let full = line.text.trim();
         let too_long = |n: u32| !full.is_empty() && full.chars().count() > n as usize;
         let label = if !line.short.is_empty() {
@@ -1011,7 +1126,111 @@ fn shown_labels(view: &DiagramView, limit: Option<u32>) -> (Vec<String>, Vec<(St
         };
         shown.push(label);
     }
-    (shown, legend)
+    (shown, legend, holes)
+}
+
+/// The two ends of a line, with its direction between them: `A → B`.
+fn ends_of(project: &Project, line: &ViewLine) -> String {
+    let name = |e: &ViewEnd| match e {
+        ViewEnd::Block { block, .. } => project
+            .blocks
+            .get(block)
+            .map_or_else(|| "?".to_owned(), |b| b.name.replace('\n', " ")),
+        ViewEnd::Frame { partner, .. } => partner.clone(),
+        ViewEnd::Open => "open end".to_owned(),
+        ViewEnd::Dangling => "not attached".to_owned(),
+    };
+    let arrow = match (line.direction.arrow_at_a(), line.direction.arrow_at_b()) {
+        (true, true) => "\u{2194}",
+        (false, true) => "\u{2192}",
+        (true, false) => "\u{2190}",
+        (false, false) => "\u{2013}",
+    };
+    format!("{} {arrow} {}", name(&line.a), name(&line.b))
+}
+
+/// Where a line through mouseholes goes under: the hole `HOLE_IN` from each port
+/// (closer on a short line), with the drawn pieces up to them.
+fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
+    let length: f32 = points.windows(2).map(|w| w[0].dist(w[1])).sum();
+    let in_by = HOLE_IN.min(length / 3.0);
+    let (piece_a, rest) = cut_at(points, in_by);
+    let rest_len: f32 = rest.windows(2).map(|w| w[0].dist(w[1])).sum();
+    let (_, piece_b) = cut_at(&rest, rest_len - in_by);
+    Mousehole {
+        a: piece_a.last().copied().unwrap_or_default(),
+        b: piece_b.first().copied().unwrap_or_default(),
+        piece_a,
+        piece_b,
+        label,
+    }
+}
+
+/// Cuts a polyline `at` from its start: the part before the cut, ending at the cut
+/// point, and the part after it, starting there.
+fn cut_at(points: &[Pos], at: f32) -> (Vec<Pos>, Vec<Pos>) {
+    let mut before = Vec::new();
+    let mut left = at.max(0.0);
+    for (i, w) in points.windows(2).enumerate() {
+        let len = w[0].dist(w[1]);
+        before.push(w[0]);
+        if len >= left {
+            let t = if len > 0.0 { left / len } else { 0.0 };
+            let cut = Pos::new(
+                w[0].x + (w[1].x - w[0].x) * t,
+                w[0].y + (w[1].y - w[0].y) * t,
+            );
+            before.push(cut);
+            let mut after = vec![cut];
+            after.extend_from_slice(&points[i + 1..]);
+            return (before, after);
+        }
+        left -= len;
+    }
+    let end = points.last().copied().unwrap_or_default();
+    before.push(end);
+    (before, vec![end])
+}
+
+/// How many boxes a straight line from `a` to `b` runs over, not counting the ones
+/// it starts or ends on.
+fn crossed_boxes(a: Pos, b: Pos, boxes: &[Rect]) -> usize {
+    let on_border = |r: &Rect, p: Pos| {
+        p.x >= r.min.x - 0.5 && p.x <= r.max.x + 0.5 && p.y >= r.min.y - 0.5 && p.y <= r.max.y + 0.5
+    };
+    boxes
+        .iter()
+        .filter(|r| !on_border(r, a) && !on_border(r, b) && segment_meets(a, b, &r.expand(-0.5)))
+        .count()
+}
+
+/// Whether the segment `a`-`b` passes through `r` (Liang-Barsky).
+fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let (mut t0, mut t1) = (0.0f32, 1.0f32);
+    for (p, q) in [
+        (-dx, a.x - r.min.x),
+        (dx, r.max.x - a.x),
+        (-dy, a.y - r.min.y),
+        (dy, r.max.y - a.y),
+    ] {
+        if p.abs() < f32::EPSILON {
+            if q < 0.0 {
+                return false;
+            }
+            continue;
+        }
+        let t = q / p;
+        if p < 0.0 {
+            t0 = t0.max(t);
+        } else {
+            t1 = t1.min(t);
+        }
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
 }
 
 /// Splits `text` into lines no wider than `width` at `size`, at spaces where possible.
@@ -1396,6 +1615,7 @@ fn route_lines(
     heading: &dyn Fn(usize, End, Side) -> Side,
     n: usize,
     passes: usize,
+    hidden: &BTreeSet<usize>,
     routes: &mut BTreeMap<usize, Route>,
     segments: &mut Segments,
 ) {
@@ -1405,7 +1625,7 @@ fn route_lines(
         Chan::H(h) => (p, Pos::new(p.x, grid.hy[h])),
     };
     segments.clear();
-    for li in 0..n {
+    for li in (0..n).filter(|li| !hidden.contains(li)) {
         if let Some((a, b)) = both(li) {
             segments.insert(li, vec![stem(a), stem(b)]);
         }
@@ -1438,7 +1658,9 @@ fn route_lines(
                 }
             };
             let points = route_points(grid, &BTreeMap::new(), li, a.0, b.0, &route);
-            segments.insert(li, pairs(&points));
+            if !hidden.contains(&li) {
+                segments.insert(li, pairs(&points));
+            }
             routes.insert(li, route);
         }
     }
@@ -1670,10 +1892,13 @@ type Lanes = BTreeMap<Chan, Vec<usize>>;
 /// get slow).
 const UNTANGLE_LIMIT: usize = 60;
 
-fn lane_order(routes: &BTreeMap<usize, Route>) -> Lanes {
+fn lane_order(routes: &BTreeMap<usize, Route>, hidden: &BTreeSet<usize>) -> Lanes {
     let mut users: Lanes = BTreeMap::new();
     for (li, route) in routes {
         let Route::Chans(chans) = route else { continue };
+        if hidden.contains(li) {
+            continue;
+        }
         for chan in chans {
             let list = users.entry(*chan).or_default();
             if !list.contains(li) {
@@ -1891,6 +2116,7 @@ fn build_line(
         tip_dir,
         frame_port: None,
         frame_name: (true, 0, f32::MAX),
+        mousehole: None,
         style: line.style,
         full_text: line.text.clone(),
         bundle: line.bundle.clone(),

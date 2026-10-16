@@ -445,9 +445,42 @@ pub struct Relation {
     pub pattern: LinePattern,
     /// The line's own colour on every level; `None`: the default.
     pub color: Option<Rgb>,
+    /// Whether the line goes through mouseholes, per diagram it shows in (its own,
+    /// or the box whose whitebox it enters); absent: automatic.
+    pub mouseholes: BTreeMap<DiagramId, MouseholeMode>,
     /// Frame sides chosen by hand, per whitebox (the box whose whitebox it enters);
     /// elsewhere the side is chosen automatically.
     pub frame_sides: BTreeMap<BlockId, Side>,
+}
+
+/// Whether a line goes through mouseholes in a diagram: into a numbered hole near one
+/// end and out of the hole with the same number near the other, nothing drawn between.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseholeMode {
+    /// When a straight line from end to end would cross more than two boxes.
+    #[default]
+    Automatic,
+    Always,
+    Never,
+}
+
+impl MouseholeMode {
+    pub const ALL: [MouseholeMode; 3] = [
+        MouseholeMode::Automatic,
+        MouseholeMode::Always,
+        MouseholeMode::Never,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MouseholeMode::Automatic => "automatic",
+            MouseholeMode::Always => "always",
+            MouseholeMode::Never => "never",
+        }
+    }
 }
 
 /// How a line is drawn along its length.
@@ -511,6 +544,11 @@ impl LineStyle {
 }
 
 impl Relation {
+    /// Whether the line goes through mouseholes in `diagram`.
+    pub fn mousehole_in(&self, diagram: DiagramId) -> MouseholeMode {
+        self.mouseholes.get(&diagram).copied().unwrap_or_default()
+    }
+
     pub fn end(&self, end: End) -> &Endpoint {
         match end {
             End::A => &self.a,
@@ -659,6 +697,13 @@ pub struct ScoreLimits {
     pub crossings: (u32, u32),
     /// Lines on the busiest box.
     pub lines: (u32, u32),
+    /// Pairs of mouseholes.
+    #[serde(default = "mousehole_limits")]
+    pub mouseholes: (u32, u32),
+}
+
+fn mousehole_limits() -> (u32, u32) {
+    (3, 5)
 }
 
 impl Default for ScoreLimits {
@@ -667,6 +712,7 @@ impl Default for ScoreLimits {
             boxes: (8, 10),
             crossings: (1, 3),
             lines: (6, 9),
+            mouseholes: mousehole_limits(),
         }
     }
 }

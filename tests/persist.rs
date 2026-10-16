@@ -359,3 +359,46 @@ fn a_project_keeps_copies_of_the_looks_its_boxes_wear() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn mousehole_settings_are_saved_per_diagram() -> TestResult {
+    use whiteboxed::model::MouseholeMode;
+    let mut p = sample()?;
+    let rel = *p.relations.keys().next().ok_or("relation")?;
+    assert!(!persist::to_yaml(&p)?.contains("mouseholes"));
+    p.set_mousehole(rel, None, MouseholeMode::Never)?;
+    let yaml = persist::to_yaml(&p)?;
+    assert!(
+        yaml.contains("mouseholes:") && yaml.contains("never"),
+        "{yaml}"
+    );
+    let back = persist::from_yaml(&yaml)?;
+    assert_eq!(back.relation(rel)?.mousehole_in(None), MouseholeMode::Never);
+    assert_eq!(
+        back.relation(rel)?
+            .mousehole_in(Some(whiteboxed::model::BlockId(999))),
+        MouseholeMode::Automatic
+    );
+    p.set_mousehole(rel, None, MouseholeMode::Automatic)?;
+    assert!(!persist::to_yaml(&p)?.contains("mouseholes"));
+    Ok(())
+}
+
+#[test]
+fn files_without_mousehole_limits_get_the_default_ones() -> TestResult {
+    use whiteboxed::model::ScoreLimits;
+    let mut p = sample()?;
+    p.set_score_limits(ScoreLimits {
+        boxes: (12, 15),
+        mouseholes: (4, 6),
+        ..ScoreLimits::default()
+    });
+    let yaml = persist::to_yaml(&p)?;
+    assert_eq!(persist::from_yaml(&yaml)?.score_limits.mouseholes, (4, 6));
+    // A file from before mouseholes knew no limit for them.
+    let start = yaml.find("  mouseholes:").ok_or("no mouseholes limits")?;
+    let end = yaml[start..].find("\n  - 6\n").ok_or("no red limit")? + start + "\n  - 6\n".len();
+    let old = format!("{}{}", &yaml[..start], &yaml[end..]);
+    assert_eq!(persist::from_yaml(&old)?.score_limits.mouseholes, (3, 5));
+    Ok(())
+}

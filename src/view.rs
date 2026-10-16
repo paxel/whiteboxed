@@ -33,6 +33,8 @@ pub struct ViewLine {
     pub pattern: crate::model::LinePattern,
     /// The relation's own colour (`None`: the default).
     pub color: Option<crate::model::Rgb>,
+    /// Whether the line goes through mouseholes in this diagram.
+    pub mousehole: crate::model::MouseholeMode,
 }
 
 impl ViewLine {
@@ -79,6 +81,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 bundle: Vec::new(),
                 pattern: rel.pattern,
                 color: rel.color,
+                mousehole: rel.mousehole_in(diagram),
             });
             continue;
         }
@@ -123,6 +126,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                     bundle: Vec::new(),
                     pattern: rel.pattern,
                     color: rel.color,
+                    mousehole: rel.mousehole_in(diagram),
                 });
             }
         }

@@ -172,6 +172,10 @@ pub struct EditLineArgs {
     /// The line's colour as #rrggbb; "" goes back to the default.
     #[serde(default)]
     pub color: Option<String>,
+    /// Whether the line goes through mouseholes: automatic (over more than two
+    /// shapes), always, or never.
+    #[serde(default)]
+    pub mousehole: Option<super::ApiMousehole>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -256,7 +260,7 @@ pub fn tools() -> Vec<ToolInfo> {
         ),
         tool(
             "doodle_edit_line",
-            "Change a line's text, direction, pattern (solid, dashed, dotted) or colour.",
+            "Change a line's text, direction, pattern (solid, dashed, dotted), colour or mousehole setting.",
             schema::<EditLineArgs>(),
         ),
         tool("doodle_delete_line", "Delete a line.", schema::<LineArgs>()),
@@ -434,10 +438,15 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
                 None => r.color,
             };
             let page = r.owner;
+            let mousehole = a.mousehole.map(crate::model::MouseholeMode::from);
             editor.apply_ai(|p| {
                 p.edit_relation(rel, direction, &text)?;
                 p.set_relation_pattern(rel, pattern)?;
-                p.set_relation_color(rel, line_color)
+                p.set_relation_color(rel, line_color)?;
+                match mousehole {
+                    Some(mode) => p.set_mousehole(rel, page, mode),
+                    None => Ok(()),
+                }
             })?;
             note(editor, "edited a line".into(), page, None);
             Ok(Output::Json(line_json(&editor.project, rel)))
@@ -564,6 +573,7 @@ fn line_json(project: &Project, rel: RelationId) -> Value {
         "text": r.text,
         "pattern": r.pattern.label(),
         "color": r.color.map(|c| c.to_string()),
+        "mousehole": r.mousehole_in(r.owner).label(),
     })
 }
 

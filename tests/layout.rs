@@ -1189,3 +1189,126 @@ fn a_frame_side_chosen_by_hand_stays_until_set_back() -> TestResult {
     );
     Ok(())
 }
+
+/// A and B in one row with `between` boxes in between, and A's line to B.
+fn far_apart(
+    between: usize,
+) -> Result<(Project, BlockId, BlockId, whiteboxed::model::RelationId), Box<dyn std::error::Error>>
+{
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let a = p.add_block(None, &spec("A", k))?;
+    let b = p.add_block(None, &spec("B", k))?;
+    p.move_block(b, Cell::new(between as i32 + 1, 0))?;
+    for col in 1..=between {
+        let f = p.add_block(None, &spec(&format!("F{col}"), k))?;
+        p.move_block(f, Cell::new(col as i32, 0))?;
+    }
+    let ab = p.connect_existing(a, Side::Right, b, Direction::Out, "orders", Placement::Keep)?;
+    Ok((p, a, b, ab))
+}
+
+#[test]
+fn a_line_over_more_than_two_boxes_goes_through_mouseholes() -> TestResult {
+    use whiteboxed::model::MouseholeMode;
+    let (mut p, a, b, ab) = far_apart(3)?;
+    p.set_relation_short(ab, "ord")?;
+    let l = render(&p, None);
+    let line = l.lines.iter().find(|g| g.relation == ab).ok_or("line")?;
+    let m = line.mousehole.as_ref().ok_or("no mouseholes")?;
+    let (ra, rb) = (l.block(a).ok_or("a")?.rect, l.block(b).ok_or("b")?.rect);
+    // A short piece out of each box, then the hole; the route in between stays known.
+    assert!((m.piece_a[0].x - ra.max.x).abs() < 0.01, "{:?}", m.piece_a);
+    assert!((m.piece_a[0].dist(m.a) - layout::HOLE_IN).abs() < 0.01);
+    assert!(
+        (m.piece_b.last().ok_or("b end")?.x - rb.min.x).abs() < 0.01,
+        "{:?}",
+        m.piece_b
+    );
+    assert!(line.points.len() > 2);
+    // The holes carry the legend number, and the legend the text.
+    assert_eq!(m.label, "1");
+    assert_eq!(l.legend.len(), 1);
+    assert_eq!(
+        (l.legend[0].key.as_str(), l.legend[0].lines.join(" ")),
+        ("[1]", "orders".to_owned())
+    );
+    // The pieces are what is drawn and hit: the hole counts, the hidden route does not.
+    let middle = line.points[line.points.len() / 2];
+    assert!(
+        matches!(whiteboxed::hit::hit(&p, &l, m.a, 1.0), whiteboxed::hit::Hit::Line(r, _) if r == ab)
+    );
+    assert!(
+        matches!(
+            whiteboxed::hit::hit(&p, &l, middle, 1.0),
+            whiteboxed::hit::Hit::Empty
+        ),
+        "{middle:?}"
+    );
+    // The holes show the number and the short label; the text is in the legend.
+    let svg = whiteboxed::export::to_svg(&scene::scene(&l));
+    assert_eq!(svg.matches(">1 ord</text>").count(), 2, "{svg}");
+    // Two boxes in between are fine; told to, even a short line goes under.
+    let (p2, _, _, ab2) = far_apart(2)?;
+    let l2 = render(&p2, None);
+    assert!(
+        l2.lines
+            .iter()
+            .find(|g| g.relation == ab2)
+            .ok_or("line")?
+            .mousehole
+            .is_none()
+    );
+    p.set_mousehole(ab, None, MouseholeMode::Never)?;
+    let l3 = render(&p, None);
+    let drawn = l3.lines.iter().find(|g| g.relation == ab).ok_or("line")?;
+    assert!(drawn.mousehole.is_none());
+    // No number any more; only the short label explains itself in the legend.
+    assert!(
+        !l3.legend.iter().any(|e| e.key.starts_with('[')),
+        "{:?}",
+        l3.legend
+    );
+    let mut short = Project::new();
+    let sa = short.add_block(None, &spec("A", BlockKind::Component))?;
+    let (_, sab) = short.connect_new(
+        sa,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    short.set_mousehole(sab, None, MouseholeMode::Always)?;
+    let l4 = render(&short, None);
+    let g = l4.lines.iter().find(|g| g.relation == sab).ok_or("line")?;
+    let m4 = g.mousehole.as_ref().ok_or("no mouseholes")?;
+    assert!(m4.a.dist(g.points[0]) <= g.points[0].dist(g.points[1]) / 3.0 + 0.01);
+    // Without a text the legend names the two ends.
+    assert_eq!(l4.legend[0].lines.join(" "), "A \u{2192} B");
+    Ok(())
+}
+
+#[test]
+fn a_line_through_mouseholes_crosses_nothing_on_its_way() -> TestResult {
+    let (mut p, _, _, ab) = far_apart(3)?;
+    // A straight line down into the middle box, across the hidden route.
+    let f2 = p
+        .blocks_in(None)
+        .find(|(_, b)| b.name == "F2")
+        .ok_or("f2")?
+        .0;
+    let c = p.add_block(None, &spec("C", BlockKind::Component))?;
+    p.move_block(c, Cell::new(2, -2))?;
+    p.connect_existing(c, Side::Bottom, f2, Direction::Out, "", Placement::Keep)?;
+    let l = render(&p, None);
+    assert!(
+        l.lines
+            .iter()
+            .find(|g| g.relation == ab)
+            .ok_or("line")?
+            .mousehole
+            .is_some()
+    );
+    assert_eq!(layout::crossings(&l), Vec::new());
+    Ok(())
+}
