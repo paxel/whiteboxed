@@ -253,6 +253,41 @@ impl Cell {
     }
 
     /// The side of this cell that faces `other`, preferring the dominant axis.
+    /// The side of `to` an L from here arrives at, leaving on `side` and bending once
+    /// in `to`'s column (sideways legs) or row, when `to` lies ahead on that side and
+    /// every cell both legs run through is free. `None`: no such L.
+    pub fn l_side(self, side: Side, to: Cell, free: impl Fn(Cell) -> bool) -> Option<Side> {
+        if !self.sees_on(side, to) || (self.col == to.col || self.row == to.row) {
+            return None;
+        }
+        let between = |a: i32, b: i32| {
+            let (lo, hi) = (a.min(b), a.max(b));
+            (lo + 1)..hi
+        };
+        let (corner, legs_free, arrives) = if side.is_horizontal() {
+            let corner = Cell::new(to.col, self.row);
+            let along = between(self.col, to.col).all(|c| free(Cell::new(c, self.row)));
+            let down = between(self.row, to.row).all(|r| free(Cell::new(to.col, r)));
+            let arrives = if to.row > self.row {
+                Side::Top
+            } else {
+                Side::Bottom
+            };
+            (corner, along && down, arrives)
+        } else {
+            let corner = Cell::new(self.col, to.row);
+            let down = between(self.row, to.row).all(|r| free(Cell::new(self.col, r)));
+            let along = between(self.col, to.col).all(|c| free(Cell::new(c, to.row)));
+            let arrives = if to.col > self.col {
+                Side::Left
+            } else {
+                Side::Right
+            };
+            (corner, down && along, arrives)
+        };
+        (legs_free && free(corner)).then_some(arrives)
+    }
+
     pub fn side_facing(self, other: Cell) -> Side {
         let dc = other.col - self.col;
         let dr = other.row - self.row;
@@ -760,6 +795,47 @@ impl Project {
     }
 
     /// Blocks of one diagram, in id order.
+    /// Whether no box of `diagram` sits in `cell` (groups and bands take no cell).
+    pub fn cell_free(&self, diagram: DiagramId, cell: Cell) -> bool {
+        !self
+            .blocks_in(diagram)
+            .any(|(_, b)| !b.gridless() && b.cell == cell)
+    }
+
+    /// The sides two boxes of one diagram leave on toward each other: facing sides
+    /// when they share a row or column; around one corner through free cells when
+    /// they lie diagonally, the upper box leaving sideways (else the lower one);
+    /// otherwise the sides facing each other, with a step in between.
+    pub fn sides_between(&self, a: BlockId, b: BlockId) -> ModelResult<(Side, Side)> {
+        let (ca, cb) = (self.block(a)?.cell, self.block(b)?.cell);
+        let diagram = self.block(a)?.parent;
+        let facing = ca.side_facing(cb);
+        if ca.col == cb.col || ca.row == cb.row {
+            return Ok((facing, facing.opposite()));
+        }
+        let free = |cell| self.cell_free(diagram, cell);
+        let (upper, lower, a_is_upper) = if ca.row < cb.row {
+            (ca, cb, true)
+        } else {
+            (cb, ca, false)
+        };
+        let sideways = if lower.col > upper.col {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        let l = [sideways, Side::Bottom].into_iter().find_map(|leave| {
+            upper
+                .l_side(leave, lower, free)
+                .map(|arrive| (leave, arrive))
+        });
+        Ok(match (l, a_is_upper) {
+            (Some((leave, arrive)), true) => (leave, arrive),
+            (Some((leave, arrive)), false) => (arrive, leave),
+            (None, _) => (facing, facing.opposite()),
+        })
+    }
+
     pub fn blocks_in(&self, diagram: DiagramId) -> impl Iterator<Item = (BlockId, &Block)> {
         self.blocks
             .iter()

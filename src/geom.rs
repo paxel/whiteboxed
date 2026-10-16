@@ -66,6 +66,14 @@ impl Rect {
         self.contains(other.min) && self.contains(other.max)
     }
 
+    /// The smallest rect holding both.
+    pub fn union(&self, other: Rect) -> Rect {
+        Rect {
+            min: Pos::new(self.min.x.min(other.min.x), self.min.y.min(other.min.y)),
+            max: Pos::new(self.max.x.max(other.max.x), self.max.y.max(other.max.y)),
+        }
+    }
+
     pub fn expand(&self, by: f32) -> Rect {
         Rect {
             min: Pos::new(self.min.x - by, self.min.y - by),

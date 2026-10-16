@@ -154,7 +154,8 @@ fn a_partner_already_on_that_side_does_not_move() -> TestResult {
     assert!(p.conflicts(a, Side::Right, b)?.is_empty());
     let rel = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Move)?;
     assert_eq!(cell(&p, b)?, Cell::new(3, 2));
-    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Left));
+    // B is below-right: one bend from A's right side into B's top.
+    assert_eq!(sides(&p, rel)?, (Side::Right, Side::Top));
     Ok(())
 }
 
@@ -172,7 +173,8 @@ fn moving_into_a_conflict_resides_the_old_relation() -> TestResult {
     assert_eq!(cell(&p, b)?, Cell::new(2, -1));
     // B->C keeps its connection but now leaves B on the side facing C.
     assert_eq!(sides(&p, bc)?, (Side::Bottom, Side::Top));
-    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    // B is above-right of A now: it leaves sideways, one bend down into A's top.
+    assert_eq!(sides(&p, ab)?, (Side::Top, Side::Left));
     Ok(())
 }
 
@@ -463,7 +465,8 @@ fn a_box_swapped_away_faces_its_partners_too() -> TestResult {
     p.move_block(a, Cell::new(1, 0))?;
     assert_eq!(cell(&p, b)?, Cell::new(0, 0));
     assert_eq!(sides(&p, ab)?, (Side::Left, Side::Right));
-    assert_eq!(sides(&p, bc)?, (Side::Right, Side::Left));
+    // C is below-right of B, under A: one bend down and across.
+    assert_eq!(sides(&p, bc)?, (Side::Bottom, Side::Left));
     Ok(())
 }
 
@@ -478,7 +481,8 @@ fn a_side_set_by_hand_holds_until_the_next_move() -> TestResult {
     let c = p.add_block(None, &component("C"))?;
     assert_eq!(p.set_side_at(ab, c, Side::Top), Err(ModelError::NotOnChain));
     p.move_block(b, Cell::new(1, 1))?;
-    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    // B is below-right of A: the upper box leaves sideways, one bend into B's top.
+    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Top));
     Ok(())
 }
 
@@ -693,7 +697,8 @@ fn a_box_moved_by_connecting_faces_all_its_partners() -> TestResult {
     let c = p.add_block(None, &component("C"))?;
     p.connect_existing(c, Side::Bottom, b, Direction::Out, "", Placement::Move)?;
     assert_eq!(cell(&p, b)?, Cell::new(2, 1));
-    assert_eq!(sides(&p, ab)?, (Side::Right, Side::Left));
+    // B is now below-right of A, with C over it: one bend down and across.
+    assert_eq!(sides(&p, ab)?, (Side::Bottom, Side::Left));
     Ok(())
 }
 

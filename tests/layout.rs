@@ -634,8 +634,35 @@ fn a_jump_bulges_over_the_crossing_in_either_direction() {
 
 #[test]
 fn labels_move_off_crossings() -> TestResult {
-    // "receipt" runs down through the middle of the REST line, where its label was.
-    let (p, _) = sample()?;
+    // A box in the middle: the line from top to bottom has to cross the one from
+    // left to right somewhere, and the labels keep away from that point.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let mut ids = Vec::new();
+    for (i, (col, row)) in [(0, 1), (2, 1), (1, 0), (1, 2), (1, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        let id = p.add_block(None, &spec(&format!("B{i}"), k))?;
+        p.move_block(id, Cell { col, row })?;
+        ids.push(id);
+    }
+    p.connect_existing(
+        ids[0],
+        Side::Right,
+        ids[1],
+        Direction::Out,
+        "left to right",
+        Placement::Keep,
+    )?;
+    p.connect_existing(
+        ids[2],
+        Side::Bottom,
+        ids[3],
+        Direction::Out,
+        "top to bottom",
+        Placement::Keep,
+    )?;
     let l = render(&p, None);
     let crossings = layout::crossings(&l);
     assert!(!crossings.is_empty());
@@ -937,20 +964,152 @@ fn partner_names_on_top_and_bottom_of_a_frame_do_not_overlap() -> TestResult {
         p.add_block(Some(shop), &spec(name, BlockKind::Component))?;
     }
     let l = render(&p, Some(shop));
-    let s = scene::scene(&l);
-    let mut ends: Vec<(f32, f32)> = l
+    // The ends keep the usual port spacing; the names give way: wrapped, or on the
+    // other side of their end.
+    let mut ends: Vec<f32> = l
         .lines
         .iter()
         .filter_map(|g| g.frame_port.as_ref())
-        .map(|(port, _, partner)| (port.x, whiteboxed::text::width(partner, layout::LABEL_SIZE)))
+        .map(|(port, _, _)| port.x)
         .collect();
-    ends.sort_by(|a, b| a.0.total_cmp(&b.0));
+    ends.sort_by(f32::total_cmp);
     assert_eq!(ends.len(), 3);
     for w in ends.windows(2) {
-        // The second name is written left of its end: it must clear the first end.
-        assert!(w[1].0 - w[1].1 - 8.0 > w[0].0, "{ends:?}");
+        assert!((w[1] - w[0] - PORT_SPACING).abs() < 0.01, "{ends:?}");
     }
-    assert!(!s.shapes.is_empty());
+    let names = scene::frame_label_rects(&l);
+    assert_eq!(names.len(), 3);
+    for (i, (_, a)) in names.iter().enumerate() {
+        for (_, b) in &names[i + 1..] {
+            assert!(!a.overlaps(b), "{a:?} overlaps {b:?}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_lone_line_leaves_the_middle_of_its_side() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let (b, ab) = p.connect_new(
+        a,
+        Side::Right,
+        &spec("B", BlockKind::Component),
+        Direction::Out,
+        "",
+    )?;
+    let l = render(&p, None);
+    let pts = line_of(&l, ab)?;
+    let (ra, rb) = (l.block(a).ok_or("a")?.rect, l.block(b).ok_or("b")?.rect);
+    assert_eq!(pts.len(), 2);
+    assert!((pts[0].y - ra.center().y).abs() < 0.01, "{pts:?}");
+    assert!((pts[1].y - rb.center().y).abs() < 0.01, "{pts:?}");
+    Ok(())
+}
+
+#[test]
+fn a_diagonal_partner_gets_one_bend_from_the_middle_of_each_side() -> TestResult {
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let b = p.add_block(None, &spec("B", BlockKind::Component))?;
+    p.move_block(b, Cell::new(2, 1))?;
+    let ab = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep)?;
+    let l = render(&p, None);
+    let pts = line_of(&l, ab)?;
+    let (ra, rb) = (l.block(a).ok_or("a")?.rect, l.block(b).ok_or("b")?.rect);
+    // Out of A's right side at its middle, one corner, into B's top at its middle.
+    assert_eq!(pts.len(), 3, "{pts:?}");
+    assert!((pts[0].y - ra.center().y).abs() < 0.01, "{pts:?}");
+    assert!((pts[1].x - rb.center().x).abs() < 0.01 && (pts[1].y - ra.center().y).abs() < 0.01);
+    assert!((pts[2].x - rb.center().x).abs() < 0.01 && (pts[2].y - rb.min.y).abs() < 0.01);
+    Ok(())
+}
+
+#[test]
+fn a_bend_that_would_cross_lines_takes_the_gaps_instead() -> TestResult {
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let a = p.add_block(None, &spec("A", k))?;
+    let b = p.add_block(None, &spec("B", k))?;
+    p.move_block(b, Cell::new(3, 2))?;
+    // Two straight lines down through the cells the bend's first leg would use.
+    for col in [1, 2] {
+        let c = p.add_block(None, &spec(&format!("C{col}"), k))?;
+        p.move_block(c, Cell::new(col, -1))?;
+        let d = p.add_block(None, &spec(&format!("D{col}"), k))?;
+        p.move_block(d, Cell::new(col, 1))?;
+        p.connect_existing(c, Side::Bottom, d, Direction::Out, "", Placement::Keep)?;
+    }
+    let ab = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep)?;
+    let l = render(&p, None);
+    assert!(line_of(&l, ab)?.len() > 3, "{:?}", line_of(&l, ab)?);
+    assert_eq!(layout::crossings(&l), Vec::new());
+    Ok(())
+}
+
+#[test]
+fn lines_sharing_a_gap_run_in_lanes_and_enter_their_box_in_order() -> TestResult {
+    // Three boxes in one column, each with a line into the top of a box below left:
+    // the lines run down the same gap and along the same gap, and the ports take the
+    // order the lanes arrive in, so nothing crosses.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let t = p.add_block(None, &spec("T", k))?;
+    p.move_block(t, Cell::new(0, 3))?;
+    // Filled cells in between, so no line can take one bend through them.
+    for (col, row) in [
+        (1, 0),
+        (2, 0),
+        (1, 1),
+        (2, 1),
+        (1, 2),
+        (2, 2),
+        (0, 1),
+        (0, 2),
+    ] {
+        let f = p.add_block(None, &spec(&format!("F{col}{row}"), k))?;
+        p.move_block(f, Cell::new(col, row))?;
+    }
+    let mut rels = Vec::new();
+    let mut x0 = None;
+    for row in 0..3 {
+        let x = p.add_block(None, &spec(&format!("X{row}"), k))?;
+        p.move_block(x, Cell::new(3, row))?;
+        x0.get_or_insert(x);
+        let rel = p.connect_existing(x, Side::Left, t, Direction::Out, "", Placement::Keep)?;
+        p.set_side_at(rel, t, Side::Top)?;
+        rels.push(rel);
+    }
+    let l = render(&p, None);
+    assert_eq!(layout::crossings(&l), Vec::new());
+    let rt = l.block(t).ok_or("t")?.rect;
+    let rx = l.block(x0.ok_or("x0")?).ok_or("x0")?.rect;
+    // Down the gap between the columns: three lanes, LANE apart, in a gap wide
+    // enough for them.
+    let mut xs: Vec<f32> = rels
+        .iter()
+        .map(|rel| {
+            let pts = line_of(&l, *rel)?;
+            pts.windows(2)
+                .find(|w| (w[0].x - w[1].x).abs() < 0.01 && w[0].x > rt.max.x && w[0].x < rx.min.x)
+                .map(|w| w[0].x)
+                .ok_or_else(|| format!("{rel:?} has no run down the gap: {pts:?}").into())
+        })
+        .collect::<Result<_, Box<dyn std::error::Error>>>()?;
+    xs.sort_by(f32::total_cmp);
+    for w in xs.windows(2) {
+        assert!((w[1] - w[0] - layout::LANE).abs() < 0.01, "{xs:?}");
+    }
+    assert!(rx.min.x - rt.max.x >= 4.0 * layout::LANE - 0.01);
+    // Every line enters T through its top, at its own port.
+    let mut ports: Vec<f32> = rels
+        .iter()
+        .map(|rel| line_of(&l, *rel).map(|pts| pts[pts.len() - 1].x))
+        .collect::<Result<_, _>>()?;
+    ports.sort_by(f32::total_cmp);
+    for w in ports.windows(2) {
+        assert!(w[1] - w[0] >= PORT_SPACING - 0.01, "{ports:?}");
+    }
     Ok(())
 }
 

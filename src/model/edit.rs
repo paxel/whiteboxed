@@ -1005,7 +1005,17 @@ impl Project {
     fn partner_side(&self, from: BlockId, side: Side, target: BlockId) -> ModelResult<Side> {
         let origin = self.block(from)?.cell;
         let partner = self.block(target)?.cell;
-        Ok(if origin.sees_on(side, partner) {
+        let diagram = self.block(from)?.parent;
+        let ahead = origin.sees_on(side, partner);
+        let in_line = origin.row == partner.row || origin.col == partner.col;
+        Ok(if ahead && in_line {
+            side.opposite()
+        } else if let Some(arrive) =
+            origin.l_side(side, partner, |cell| self.cell_free(diagram, cell))
+        {
+            // One bend through free cells beats a step in the gap.
+            arrive
+        } else if ahead {
             side.opposite()
         } else {
             partner.side_facing(origin)
@@ -1018,15 +1028,13 @@ impl Project {
         let (Some(a), Some(b)) = (relation.a.anchors.first(), relation.b.anchors.first()) else {
             return Ok(());
         };
-        let ca = self.block(a.block)?.cell;
-        let cb = self.block(b.block)?.cell;
-        let side = ca.side_facing(cb);
+        let (side_a, side_b) = self.sides_between(a.block, b.block)?;
         if let Some(relation) = self.relations.get_mut(&rel) {
             if let Some(a) = relation.a.anchors.first_mut() {
-                a.side = side;
+                a.side = side_a;
             }
             if let Some(b) = relation.b.anchors.first_mut() {
-                b.side = side.opposite();
+                b.side = side_b;
             }
         }
         Ok(())

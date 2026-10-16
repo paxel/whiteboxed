@@ -604,21 +604,87 @@ fn arrow_head(from: Pos, to: Pos, color: Rgb) -> Shape {
     }
 }
 
+/// The partner name at a frame end: its lines with where each is written, their
+/// alignment, and the rect they cover. Beside the end on the left and right of a
+/// frame; on top and bottom where and how the layout decided (see
+/// [`LineGeom::frame_name`]), the rows further from the frame stacked inward.
+fn frame_name(line: &LineGeom) -> Option<FrameName> {
+    let (p, side, partner) = line.frame_port.as_ref()?;
+    let (left, row, width) = line.frame_name;
+    let (pos, align) = match side {
+        Side::Left => (Pos::new(p.x + 8.0, p.y + 13.0), Align::Left),
+        Side::Right => (Pos::new(p.x - 8.0, p.y + 13.0), Align::Right),
+        Side::Top | Side::Bottom => {
+            let inward = row as f32 * NAME_ROW;
+            let y = if *side == Side::Top {
+                p.y + 16.0 + inward
+            } else {
+                p.y - 14.0 - inward
+            };
+            if left {
+                (Pos::new(p.x - 8.0, y), Align::Right)
+            } else {
+                (Pos::new(p.x + 8.0, y), Align::Left)
+            }
+        }
+    };
+    let lines = if text::width(partner, LABEL_SIZE) > width {
+        crate::layout::wrap(partner, width, LABEL_SIZE)
+    } else {
+        vec![partner.clone()]
+    };
+    // Above the frame's bottom the lines of one name stack upward.
+    let top = if *side == Side::Bottom {
+        pos.y - (lines.len() as f32 - 1.0) * NAME_ROW
+    } else {
+        pos.y
+    };
+    let w = lines
+        .iter()
+        .map(|l| text::width(l, LABEL_SIZE))
+        .fold(0.0, f32::max);
+    let x = match align {
+        Align::Left => pos.x,
+        Align::Center => pos.x - w / 2.0,
+        Align::Right => pos.x - w,
+    };
+    let h = LABEL_SIZE * 1.4 + (lines.len() as f32 - 1.0) * NAME_ROW;
+    let rect = Rect::from_min_size(Pos::new(x, top - LABEL_SIZE * 0.7), w, h);
+    let texts = lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, text)| (Pos::new(pos.x, top + i as f32 * NAME_ROW), text))
+        .collect();
+    Some(FrameName { texts, align, rect })
+}
+
+/// A partner name as written at its frame end.
+struct FrameName {
+    /// Each line of the name and where it is written.
+    texts: Vec<(Pos, String)>,
+    align: Align,
+    /// What the name covers.
+    rect: Rect,
+}
+
 fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
-    if let Some((p, side, partner)) = &line.frame_port {
-        let (pos, align) = match side {
-            Side::Left => (Pos::new(p.x + 8.0, p.y + 13.0), Align::Left),
-            Side::Right => (Pos::new(p.x - 8.0, p.y + 13.0), Align::Right),
-            Side::Top => (Pos::new(p.x - 8.0, p.y + 16.0), Align::Right),
-            Side::Bottom => (Pos::new(p.x - 8.0, p.y - 14.0), Align::Right),
-        };
-        shapes.push(Shape::Text {
-            pos,
-            text: partner.clone(),
-            size: LABEL_SIZE,
-            color: FRAME,
-            align,
+    if let Some(name) = frame_name(line) {
+        // On paper, since a name in a further row lies over neighbouring lines.
+        shapes.push(Shape::Rect {
+            rect: name.rect,
+            radius: 0.0,
+            fill: Some(PAPER),
+            stroke: None,
         });
+        for (pos, text) in name.texts {
+            shapes.push(Shape::Text {
+                pos,
+                text,
+                size: LABEL_SIZE,
+                color: FRAME,
+                align: name.align,
+            });
+        }
     }
     if line.text.is_empty() {
         return;
@@ -701,36 +767,12 @@ pub fn label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
 
 /// Where the partner name next to each frame end is written: line index and rect.
 pub fn frame_label_rects(layout: &Layout) -> Vec<(usize, Rect)> {
-    let area = label_area(layout);
-    let mut out = Vec::new();
-    for (li, line) in layout.lines.iter().enumerate() {
-        if line.frame_port.is_none() {
-            continue;
-        }
-        let mut shapes = Vec::new();
-        label_shapes(&mut shapes, line, area);
-        // The partner name is the first text a frame end writes.
-        if let Some(Shape::Text {
-            pos,
-            text,
-            size,
-            align,
-            ..
-        }) = shapes.first()
-        {
-            let w = text::width(text, *size);
-            let left = match align {
-                Align::Left => pos.x,
-                Align::Center => pos.x - w / 2.0,
-                Align::Right => pos.x - w,
-            };
-            out.push((
-                li,
-                Rect::from_min_size(Pos::new(left, pos.y - size * 0.7), w, size * 1.4),
-            ));
-        }
-    }
-    out
+    layout
+        .lines
+        .iter()
+        .enumerate()
+        .filter_map(|(li, line)| frame_name(line).map(|name| (li, name.rect)))
+        .collect()
 }
 
 /// Distance between the lines of a doodle shape's text.
@@ -738,6 +780,8 @@ pub const NAME_LINE: f32 = 19.0;
 
 /// Distance between wrapped label lines.
 const LINE_HEIGHT: f32 = LABEL_SIZE + 3.0;
+/// Between rows of partner names at a frame, so their papers do not touch.
+const NAME_ROW: f32 = LABEL_SIZE * 1.5;
 
 /// The area every text shape covers, so nothing is drawn outside the picture.
 fn text_bounds(shapes: &[Shape]) -> Option<Rect> {

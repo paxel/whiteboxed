@@ -407,11 +407,7 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
             let a: AddLineArgs = args(arguments)?;
             let from = shape(&editor.project, a.from)?;
             let to = shape(&editor.project, a.to)?;
-            let side = editor
-                .project
-                .block(from)?
-                .cell
-                .side_facing(editor.project.block(to)?.cell);
+            let (side, _) = editor.project.sides_between(from, to)?;
             let text = a.text.unwrap_or_default();
             let direction = super::direction(a.direction);
             let pattern = a.pattern.map(LinePattern::from).unwrap_or_default();

@@ -192,17 +192,25 @@ There is nothing to position by pixel.
   second relation there. A box never gets smaller than its minimum size.
 - Lines run horizontally and vertically through the gaps between cells and never
   through a box. Only a line that enters a whitebox through the bottom of its frame
-  crosses the [cross-cutting bands](#cross-cutting-bands) on its way in. Gaps widen to
-  fit long labels. A line leaves a box where its partner
-  is, so two boxes facing each other are joined by a straight line, also across empty
-  cells.
-- Lines avoid crossing each other where a short detour or a different lane allows it.
-  Where two lines still cross, the horizontal one jumps over the other in a small arc.
+  crosses the [cross-cutting bands](#cross-cutting-bands) on its way in. Gaps widen
+  to fit long labels and the lines that run along them, which keep 40 px apart.
+- A line leaves a box in the middle of its side. Two boxes facing each other are
+  joined by a straight line, also across empty cells, as close to both middles as
+  their sides allow. Boxes that lie diagonally are joined with one bend through free
+  cells, from the middle of one side into the middle of the other; where that would
+  run through a box, or cross more lines than the gaps do, the line takes the gaps.
+- Lines avoid crossing each other where a detour of about one cell, or a free gap
+  nearby, allows it. The lines on one side of a box take the order they arrive in, so
+  none crosses another on its way in. Where two lines still cross, the horizontal one
+  jumps over the other in a small arc.
 - Labels stay inside the whitebox frame, wrapped onto several lines if needed.
 - The side you click is the side the partner ends up on. A new box goes to the cell
   next to it. Several new boxes on the same side fill a block that stays as square as
   possible: 2 side by side, then 2×2, 3×2, 3×3 …
-- Relations from the level above enter a whitebox opposite the box that takes them.
+- Relations from the level above enter a whitebox opposite the box that takes them,
+  in line with its port, so the line runs straight. The partner names along the top
+  and bottom of the frame make room for that: beside their end, and in a further row
+  where they would overlap.
 - Connecting an **existing** box on a side moves it there. If that would break the side
   of another relation, the app asks: **move** it (default) or **keep** it and route
   the line around.

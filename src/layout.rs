@@ -13,8 +13,6 @@ use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
 
 pub const GAP: f32 = 110.0;
 pub const PORT_SPACING: f32 = 40.0;
-/// Room beside a partner name at a frame end, to the next end.
-const PARTNER_GAP: f32 = 20.0;
 /// How far a group's frame lies outside its cells, and how much further for every
 /// group inside it.
 const GROUP_INSET: f32 = 22.0;
@@ -35,12 +33,19 @@ pub const NAME_SIZE: f32 = 15.0;
 pub const KIND_SIZE: f32 = 11.0;
 pub const LABEL_SIZE: f32 = 12.0;
 pub const STUB_LEN: f32 = 40.0;
-pub const LANE: f32 = 8.0;
+/// Between lines that share a gap: as far apart as ports, so a line can leave a box
+/// and take its lane without a step.
+pub const LANE: f32 = PORT_SPACING;
 const EMPTY_W: f32 = 520.0;
 const EMPTY_H: f32 = 360.0;
 const BEND: i64 = 60;
-/// Cost of crossing a line routed earlier: worth a detour of about 150 px.
-const CROSS: i64 = 1500;
+/// Cost of crossing another line: worth a detour of about one cell, no more.
+const CROSS: i64 = ((MIN_H + GAP) * 10.0) as i64;
+/// Cost of running along a gap beside another line, per line already there: a free
+/// gap nearby wins over a slightly shorter route.
+const SHARE: i64 = (LANE * 10.0) as i64;
+/// How close the legs of an elbow may come to a box they do not end at.
+const ELBOW_CLEARANCE: f32 = 12.0;
 
 pub const DEFAULT_FILL: Rgb = Rgb(0xff, 0xff, 0xff);
 pub const NEIGHBOUR_FILL: Rgb = Rgb(0xe6, 0xe6, 0xe6);
@@ -88,6 +93,10 @@ pub struct LineGeom {
     pub tip_dir: Option<Side>,
     /// Where the line crosses the whitebox frame, with the partner outside.
     pub frame_port: Option<(Pos, Side, String)>,
+    /// For a frame end on top or bottom: whether the partner name sits before the
+    /// end (left of it), in which row of names (0: next to the frame), and the width
+    /// it wraps to.
+    pub frame_name: (bool, usize, f32),
     pub style: LineStyle,
     /// The relation's full text; `text` is what the line shows.
     pub full_text: String,
@@ -238,6 +247,8 @@ struct Grid {
     hy: Vec<f32>,
     /// Horizontal extent of every vertical gap.
     vspan: Vec<(f32, f32)>,
+    /// Vertical extent of every horizontal gap.
+    hspan: Vec<(f32, f32)>,
     col_x: Vec<f32>,
     row_y: Vec<f32>,
     col_w: Vec<f32>,
@@ -254,14 +265,39 @@ pub fn layout(project: &Project, view: &DiagramView) -> Layout {
     } else {
         view
     };
-    let (first, grid) = build(project, view, &[]);
-    let gaps = widened_gaps(&first, &grid);
-    build(project, view, &gaps).0
+    let (first, grid) = build(project, view, &[], &[]);
+    let (vgaps, hgaps) = widened_gaps(&first, &grid);
+    build(project, view, &vgaps, &hgaps).0
 }
 
-/// Vertical gaps wide enough for the labels that sit in them.
-fn widened_gaps(layout: &Layout, grid: &Grid) -> Vec<f32> {
+/// Gaps wide enough for the labels that sit in them and for the lines that run
+/// along them, `LANE` apart: vertical gaps, then horizontal ones.
+fn widened_gaps(layout: &Layout, grid: &Grid) -> (Vec<f32>, Vec<f32>) {
     let mut gaps: Vec<f32> = grid.vspan.iter().map(|(a, b)| b - a).collect();
+    let mut hgaps: Vec<f32> = grid.hspan.iter().map(|(a, b)| b - a).collect();
+    let within =
+        |spans: &[(f32, f32)], c: f32| spans.iter().position(|(a, b)| c > *a + 0.5 && c < *b - 0.5);
+    let mut along_v: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); grid.vspan.len()];
+    let mut along_h: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); grid.hspan.len()];
+    for (li, line) in layout.lines.iter().enumerate() {
+        for w in line.points.windows(2) {
+            if (w[0].x - w[1].x).abs() < 0.01 {
+                if let Some(v) = within(&grid.vspan, w[0].x) {
+                    along_v[v].insert(li);
+                }
+            } else if (w[0].y - w[1].y).abs() < 0.01
+                && let Some(h) = within(&grid.hspan, w[0].y)
+            {
+                along_h[h].insert(li);
+            }
+        }
+    }
+    for (v, lines) in along_v.iter().enumerate() {
+        gaps[v] = gaps[v].max((lines.len() as f32 + 1.0) * LANE);
+    }
+    for (h, lines) in along_h.iter().enumerate() {
+        hgaps[h] = hgaps[h].max((lines.len() as f32 + 1.0) * LANE);
+    }
     let mut need = |x: f32, width: f32| {
         if let Some(v) = grid
             .vspan
@@ -290,10 +326,10 @@ fn widened_gaps(layout: &Layout, grid: &Grid) -> Vec<f32> {
             need(p.x, text::width(partner, LABEL_SIZE) + 24.0);
         }
     }
-    gaps
+    (gaps, hgaps)
 }
 
-fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid) {
+fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) -> (Layout, Grid) {
     // Ports per box side and per frame side.
     let mut ports: BTreeMap<(Owner, Side), Vec<PortRef>> = BTreeMap::new();
     let cell_of = |id: BlockId| project.blocks.get(&id).map(|b| b.cell);
@@ -379,7 +415,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             grid_cells.insert(phantom, (*corner, 0.0, 0.0));
         }
     }
-    let grid = grid(&grid_cells, vgaps);
+    let grid = grid(&grid_cells, vgaps, hgaps);
 
     // Box rects, with the columns and rows each covers.
     let mut blocks = Vec::new();
@@ -515,40 +551,33 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             ends.insert((*li, *end), (*owner, *side));
         }
     }
+    // Where a port wants to be: in line with a facing partner, so the line runs
+    // straight; otherwise in the middle of its side (a frame end around a corner
+    // from its box: over that box).
     let ideal = |li: usize, end: End, owner: Owner, side: Side| -> Option<f32> {
         let own = range(owner_rect(owner)?, side);
+        let middle = (own.0 + own.1) / 2.0;
         let Some(&(o2, s2)) = ends.get(&(li, end.other())) else {
-            return Some((own.0 + own.1) / 2.0);
+            return Some(middle);
         };
         let other_rect = owner_rect(o2)?;
         if side.is_horizontal() == s2.is_horizontal() {
             let other = range(other_rect, s2);
             let (lo, hi) = (own.0.max(other.0), own.1.min(other.1));
-            // No overlap: as close to the partner as this side allows.
-            Some(if lo <= hi {
-                (lo + hi) / 2.0
-            } else {
-                ((other.0 + other.1) / 2.0).clamp(own.0, own.1)
-            })
-        } else {
+            Some(if lo <= hi { (lo + hi) / 2.0 } else { middle })
+        } else if owner == Owner::Frame {
             let c = other_rect.center();
             let along = if side.is_horizontal() { c.y } else { c.x };
             Some(along.clamp(own.0, own.1))
+        } else {
+            Some(middle)
         }
     };
-    // The partner names written next to frame ends on top and bottom, as shown.
-    let shown_partners = short_partners(view, project.label_limit, &mut Vec::new());
-    let partner_width = |li: usize, end: End| -> f32 {
-        match view.lines.get(li).map(|l| l.end(end)) {
-            Some(ViewEnd::Frame { partner, .. }) => {
-                let shown = shown_partners.get(partner).unwrap_or(partner);
-                text::width(shown, LABEL_SIZE)
-            }
-            _ => 0.0,
-        }
-    };
-    // Place every side's ports for given wishes; returns the coordinate along the side.
-    let place = |wish: &BTreeMap<(usize, End), f32>| -> BTreeMap<(usize, End), f32> {
+    // Place every side's ports for given wishes, in the order of `order` where given
+    // (else of the wishes); returns the coordinate along the side.
+    let place = |wish: &BTreeMap<(usize, End), f32>,
+                 order: Option<&BTreeMap<(usize, End), OrderKey>>|
+     -> BTreeMap<(usize, End), f32> {
         let mut out = BTreeMap::new();
         for ((owner, side), list) in &ports {
             let Some(rect) = owner_rect(*owner) else {
@@ -557,45 +586,35 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
             let (lo, hi) = range(rect, *side);
             // A relation that fans out to several boxes of a whitebox enters through
             // one frame port: its ends there share a slot, at the mean of their wishes.
-            let mut wanted: Vec<PortSlot> = Vec::new();
+            let mut wanted: Vec<(OrderKey, PortSlot)> = Vec::new();
             for (_, rel, li, end) in list {
                 let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
+                let key = order.and_then(|o| o.get(&(*li, *end)).copied()).unwrap_or((
+                    0,
+                    0,
+                    (at * 10.0).round() as i64,
+                ));
                 let shared = *owner == Owner::Frame;
-                match wanted.iter_mut().find(|w| shared && w.1 == *rel) {
-                    Some(w) => {
+                match wanted.iter_mut().find(|(_, w)| shared && w.1 == *rel) {
+                    Some((k, w)) => {
                         let n = w.2.len() as f32;
                         w.0 = (w.0 * n + at) / (n + 1.0);
+                        *k = (*k).min(key);
                         w.2.push((*li, *end));
                     }
-                    None => wanted.push((at, *rel, vec![(*li, *end)])),
+                    None => wanted.push((key, (at, *rel, vec![(*li, *end)]))),
                 }
             }
-            wanted.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+            wanted.sort_by(|(ka, a), (kb, b)| {
+                ka.cmp(kb)
+                    .then(a.0.total_cmp(&b.0))
                     .then(a.1.cmp(&b.1))
                     .then(a.2.cmp(&b.2))
             });
-            let at: Vec<f32> = wanted.iter().map(|w| w.0).collect();
-            // On top and bottom of a frame the partner names sit beside the ends,
-            // left of each: an end keeps its own name's width from the one before.
-            let named = *owner == Owner::Frame && !side.is_horizontal();
-            let gaps: Vec<f32> = wanted
-                .iter()
-                .map(|(_, _, members)| {
-                    let name = members
-                        .iter()
-                        .map(|(li, end)| partner_width(*li, *end))
-                        .fold(0.0, f32::max);
-                    if named {
-                        PORT_SPACING.max(name + PARTNER_GAP)
-                    } else {
-                        PORT_SPACING
-                    }
-                })
-                .collect();
+            let at: Vec<f32> = wanted.iter().map(|(_, w)| w.0).collect();
+            let gaps = vec![PORT_SPACING; wanted.len()];
             let placed = spread_by(&at, lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0, &gaps);
-            for ((_, _, members), v) in wanted.iter().zip(placed) {
+            for ((_, (_, _, members)), v) in wanted.iter().zip(placed) {
                 for (li, end) in members {
                     out.insert((*li, *end), v);
                 }
@@ -603,88 +622,81 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         }
         out
     };
-    let first_wish: BTreeMap<(usize, End), f32> = ends
-        .iter()
-        .filter_map(|(&(li, end), &(owner, side))| {
-            ideal(li, end, owner, side).map(|v| ((li, end), v))
-        })
-        .collect();
-    let first = place(&first_wish);
-    // Facing ends must agree: the end on the busier side keeps its place, and the
-    // other one takes the same coordinate.
     let busy = |owner: Owner, side: Side| ports.get(&(owner, side)).map_or(0, Vec::len);
-    let second_wish: BTreeMap<(usize, End), f32> = first
-        .iter()
-        .map(|(&(li, end), &v)| {
-            let own = ends.get(&(li, end));
-            let other = ends.get(&(li, end.other()));
-            let follow = match (own, other, first.get(&(li, end.other()))) {
-                (Some(&(o1, s1)), Some(&(o2, s2)), Some(&w))
-                    if s1.is_horizontal() == s2.is_horizontal() && busy(o2, s2) > busy(o1, s1) =>
-                {
-                    Some(w)
+    // Places every port: where it wants to be, then facing ends agree so the line
+    // runs straight: a frame end follows its box, and of two boxes the one on the
+    // busier side keeps its place.
+    let settle = |order: Option<&BTreeMap<(usize, End), OrderKey>>| -> BTreeMap<(usize, End), f32> {
+        let first_wish: BTreeMap<(usize, End), f32> = ends
+            .iter()
+            .filter_map(|(&(li, end), &(owner, side))| {
+                ideal(li, end, owner, side).map(|v| ((li, end), v))
+            })
+            .collect();
+        let first = place(&first_wish, order);
+        let second_wish: BTreeMap<(usize, End), f32> = first
+            .iter()
+            .map(|(&(li, end), &v)| {
+                let own = ends.get(&(li, end));
+                let other = ends.get(&(li, end.other()));
+                let follow = match (own, other, first.get(&(li, end.other()))) {
+                    (Some(&(o1, s1)), Some(&(o2, s2)), Some(&w))
+                        if s1.is_horizontal() == s2.is_horizontal()
+                            && (o1 == Owner::Frame
+                                || (o2 != Owner::Frame && busy(o2, s2) > busy(o1, s1))) =>
+                    {
+                        Some(w)
+                    }
+                    _ => None,
+                };
+                ((li, end), follow.unwrap_or(v))
+            })
+            .collect();
+        place(&second_wish, order)
+    };
+    // The ports as points on their sides, with the channel each line leaves into.
+    let ports_at = |along: &BTreeMap<(usize, End), f32>| -> PortAt {
+        let mut port_at = PortAt::new();
+        for ((owner, side), list) in &ports {
+            let (rect, chan) = match owner {
+                Owner::Block(id) => {
+                    let Some((rect, (c0, c1), (r0, r1))) = rects.get(id) else {
+                        continue;
+                    };
+                    let chan = match side {
+                        Side::Right => Chan::V(c1 + 1),
+                        Side::Left => Chan::V(*c0),
+                        Side::Top => Chan::H(*r0),
+                        Side::Bottom => Chan::H(r1 + 1),
+                    };
+                    (*rect, chan)
                 }
-                _ => None,
+                Owner::Frame => {
+                    let chan = match side {
+                        Side::Left => Chan::V(0),
+                        Side::Right => Chan::V(grid.vx.len() - 1),
+                        Side::Top => Chan::H(0),
+                        Side::Bottom => Chan::H(grid.hy.len() - 1),
+                    };
+                    (bounds, chan)
+                }
             };
-            ((li, end), follow.unwrap_or(v))
-        })
-        .collect();
-    let along = place(&second_wish);
-    let mut port_at: BTreeMap<(usize, End), (Pos, Side, Chan)> = BTreeMap::new();
-    for ((owner, side), list) in &ports {
-        let (rect, chan) = match owner {
-            Owner::Block(id) => {
-                let Some((rect, (c0, c1), (r0, r1))) = rects.get(id) else {
+            for (_, _, li, end) in list {
+                let Some(&v) = along.get(&(*li, *end)) else {
                     continue;
                 };
-                let chan = match side {
-                    Side::Right => Chan::V(c1 + 1),
-                    Side::Left => Chan::V(*c0),
-                    Side::Top => Chan::H(*r0),
-                    Side::Bottom => Chan::H(r1 + 1),
+                let p = match side {
+                    Side::Top => Pos::new(v, rect.min.y),
+                    Side::Bottom => Pos::new(v, rect.max.y),
+                    Side::Left => Pos::new(rect.min.x, v),
+                    Side::Right => Pos::new(rect.max.x, v),
                 };
-                (*rect, chan)
+                port_at.insert((*li, *end), (p, *side, chan));
             }
-            Owner::Frame => {
-                let chan = match side {
-                    Side::Left => Chan::V(0),
-                    Side::Right => Chan::V(grid.vx.len() - 1),
-                    Side::Top => Chan::H(0),
-                    Side::Bottom => Chan::H(grid.hy.len() - 1),
-                };
-                (bounds, chan)
-            }
-        };
-        for (_, _, li, end) in list {
-            let Some(&v) = along.get(&(*li, *end)) else {
-                continue;
-            };
-            let p = match side {
-                Side::Top => Pos::new(v, rect.min.y),
-                Side::Bottom => Pos::new(v, rect.max.y),
-                Side::Left => Pos::new(rect.min.x, v),
-                Side::Right => Pos::new(rect.max.x, v),
-            };
-            port_at.insert((*li, *end), (p, *side, chan));
         }
-    }
-
-    // Route every line that has two ports.
-    // Lines avoid crossing the ones routed before them.
-    let mut routes: BTreeMap<usize, Vec<Chan>> = BTreeMap::new();
-    // Every line starts with only its stems known; then each line is routed against
-    // all the others, twice, so the first lines also see the later ones.
-    let both = |li: usize| Some((*port_at.get(&(li, End::A))?, *port_at.get(&(li, End::B))?));
-    let stem = |(p, _, chan): (Pos, Side, Chan)| match chan {
-        Chan::V(v) => (p, Pos::new(grid.vx[v], p.y)),
-        Chan::H(h) => (p, Pos::new(p.x, grid.hy[h])),
+        port_at
     };
-    let mut segments: Segments = BTreeMap::new();
-    for li in 0..view.lines.len() {
-        if let Some((a, b)) = both(li) {
-            segments.insert(li, vec![stem(a), stem(b)]);
-        }
-    }
+
     // The direction a line leaves an end in: away from a box, into the frame.
     let heading = |li: usize, end: End, side: Side| match ends.get(&(li, end)) {
         Some((Owner::Frame, _)) => side.opposite(),
@@ -696,37 +708,42 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         .filter(|b| b.kind != BlockKind::Group)
         .map(|b| b.rect)
         .collect();
-    for _ in 0..2 {
-        for li in 0..view.lines.len() {
-            let Some((a, b)) = both(li) else { continue };
-            // Ends that face each other across empty cells: one straight line.
-            let facing = (a.0, heading(li, End::A, a.1));
-            let chans = if straight(facing, (b.0, heading(li, End::B, b.1)), &boxes) {
-                Vec::new()
-            } else {
-                let others = obstacles(&grid, &segments, li);
-                route(&grid, (a.0, a.2), (b.0, b.2), &others)
-            };
-            let points = route_points(&grid, &BTreeMap::new(), li, a.0, b.0, &chans);
-            segments.insert(li, points.windows(2).map(|w| (w[0], w[1])).collect());
-            routes.insert(li, chans);
-        }
-    }
+    // Route every line that has two ports, each against all the others. Then the
+    // ports of a side take the order their lines arrive in, so no line crosses
+    // another on its way in, and the lines are routed again from there.
+    let mut port_at = ports_at(&settle(None));
+    let mut routes: BTreeMap<usize, Route> = BTreeMap::new();
+    let mut segments: Segments = BTreeMap::new();
+    let n = view.lines.len();
+    route_lines(
+        &grid,
+        &boxes,
+        &port_at,
+        &heading,
+        n,
+        2,
+        &mut routes,
+        &mut segments,
+    );
     let mut lanes = lane_order(&routes);
-    let ends: BTreeMap<usize, (Pos, Pos)> = routes
-        .keys()
-        .filter_map(|li| {
-            Some((
-                *li,
-                (
-                    port_at.get(&(*li, End::A))?.0,
-                    port_at.get(&(*li, End::B))?.0,
-                ),
-            ))
-        })
-        .collect();
-    untangle(&grid, &routes, &ends, &mut lanes);
-    let offsets = lane_offsets(&lanes);
+    let mut offsets = BTreeMap::new();
+    for _ in 0..2 {
+        let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+        let order = arrival_keys(&drawn, &ends);
+        port_at = ports_at(&settle(Some(&order)));
+        route_lines(
+            &grid,
+            &boxes,
+            &port_at,
+            &heading,
+            n,
+            1,
+            &mut routes,
+            &mut segments,
+        );
+        lanes = lane_order(&routes);
+    }
+    finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
 
     let mut lines = Vec::new();
     let (shown, mut legend_keys) = shown_labels(view, project.label_limit);
@@ -736,8 +753,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
         let pb = port_at.get(&(li, End::B)).copied();
         let geom = match (pa, pb) {
             (Some(a), Some(b)) => {
-                let chans = routes.get(&li).cloned().unwrap_or_default();
-                let mut points = route_points(&grid, &offsets, li, a.0, b.0, &chans);
+                let route = routes.get(&li).cloned().unwrap_or(Route::Straight);
+                let mut points = route_points(&grid, &offsets, li, a.0, b.0, &route);
                 // Round and pointed shapes: the line reaches their outline.
                 let outline = |end: &ViewEnd, port: (Pos, Side, Chan)| match end {
                     ViewEnd::Block { block, .. } => {
@@ -790,6 +807,63 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32]) -> (Layout, Grid)
                 _ => None,
             });
         lines.push(LineGeom { frame_port, ..geom });
+    }
+    // The partner names beside the frame ends on top and bottom: left of the end
+    // when that stays inside the frame, else right of it, wrapped only when even
+    // that is too little; in the first row of names where it overlaps no other.
+    for side in [Side::Top, Side::Bottom] {
+        let mut on_side: Vec<(f32, usize, String)> = lines
+            .iter()
+            .enumerate()
+            .filter_map(|(li, g)| {
+                let (p, s, name) = g.frame_port.as_ref()?;
+                (*s == side).then(|| (p.x, li, name.clone()))
+            })
+            .collect();
+        on_side.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let (lo, hi) = (bounds.min.x + PAD, bounds.max.x - PAD);
+        let mut rows: Vec<Vec<(f32, f32)>> = Vec::new();
+        for (x, li, name) in on_side {
+            let w = text::width(&name, LABEL_SIZE);
+            let (room_left, room_right) = (x - 8.0 - lo, hi - x - 8.0);
+            let (left, width) = if w <= room_left {
+                (true, f32::MAX)
+            } else if w <= room_right {
+                (false, f32::MAX)
+            } else if room_left >= room_right {
+                (true, room_left.max(40.0))
+            } else {
+                (false, room_right.max(40.0))
+            };
+            let shown: Vec<String> = if width == f32::MAX {
+                vec![name]
+            } else {
+                wrap(&name, width, LABEL_SIZE)
+            };
+            let shown_w = shown
+                .iter()
+                .map(|l| text::width(l, LABEL_SIZE))
+                .fold(0.0, f32::max);
+            let extent = if left {
+                (x - 8.0 - shown_w, x - 8.0)
+            } else {
+                (x + 8.0, x + 8.0 + shown_w)
+            };
+            let free = |row: &Vec<(f32, f32)>| {
+                row.iter()
+                    .all(|(a, b)| extent.1 <= *a + 0.5 || extent.0 >= *b - 0.5)
+            };
+            let row = (0..)
+                .find(|k| (*k..*k + shown.len()).all(|r| rows.get(r).is_none_or(free)))
+                .unwrap_or(0);
+            for r in row..row + shown.len() {
+                if rows.len() <= r {
+                    rows.resize_with(r + 1, Vec::new);
+                }
+                rows[r].push(extent);
+            }
+            lines[li].frame_name = (left, row, width);
+        }
     }
 
     let mut cells = Vec::new();
@@ -1046,9 +1120,10 @@ fn step_out(p: Pos, side: Side, len: f32) -> Pos {
     }
 }
 
-/// Places items as close to where they want to be as possible, within [lo, hi],
-/// with at least `gaps[i]` between item `i - 1` and item `i`; when they do not fit,
-/// spreads them evenly.
+/// Places items in their given order as close to where they want to be as possible,
+/// within [lo, hi], with at least `gaps[i]` between item `i - 1` and item `i`. Items
+/// that would overlap are pushed apart evenly around where they wanted to be; when
+/// they do not fit at all, they are spread evenly.
 fn spread_by(wanted: &[f32], lo: f32, hi: f32, gaps: &[f32]) -> Vec<f32> {
     let n = wanted.len();
     if n == 0 {
@@ -1066,18 +1141,35 @@ fn spread_by(wanted: &[f32], lo: f32, hi: f32, gaps: &[f32]) -> Vec<f32> {
         let start = if n > 1 { lo.min(mid) } else { mid };
         return (0..n).map(|i| start + step * i as f32).collect();
     }
-    let mut out: Vec<f32> = Vec::with_capacity(n);
+    // Clusters of items that touch: (first item, count, where the first one goes).
+    // Each item's place relative to its cluster's first item is the sum of the gaps.
+    let rel = |i: usize, first: usize| (first + 1..=i).map(gap).sum::<f32>();
+    let mut clusters: Vec<(usize, usize, f32)> = Vec::new();
     for (i, w) in wanted.iter().enumerate() {
-        let min = if i == 0 { lo } else { out[i - 1] + gap(i) };
-        out.push(w.clamp(lo, hi).max(min));
-    }
-    // Pull back from the far end where the forward pass ran over.
-    let mut max = hi;
-    for (i, v) in out.iter_mut().enumerate().rev() {
-        if *v > max {
-            *v = max;
+        clusters.push((i, 1, w.clamp(lo, hi)));
+        // Merge with the cluster before while they overlap: the merged cluster sits
+        // at the mean of its members' wishes, kept inside the range.
+        while let [.., (f0, n0, start0), (f1, n1, start1)] = clusters[..] {
+            let last0 = start0 + rel(f0 + n0 - 1, f0);
+            if start1 >= last0 + gap(f1) - 0.01 {
+                break;
+            }
+            let count = n0 + n1;
+            let mean = (f0..f0 + count)
+                .map(|j| wanted[j].clamp(lo, hi) - rel(j, f0))
+                .sum::<f32>()
+                / count as f32;
+            let width = rel(f0 + count - 1, f0);
+            let start = mean.clamp(lo, hi - width);
+            clusters.truncate(clusters.len() - 2);
+            clusters.push((f0, count, start));
         }
-        max = *v - gap(i);
+    }
+    let mut out = vec![0.0; n];
+    for (first, count, start) in clusters {
+        for (k, slot) in out[first..first + count].iter_mut().enumerate() {
+            *slot = start + rel(first + k, first);
+        }
     }
     out
 }
@@ -1102,7 +1194,11 @@ fn sort_key(
     }
 }
 
-fn grid(sizes: &BTreeMap<BlockId, (crate::model::Cell, f32, f32)>, vgaps: &[f32]) -> Grid {
+fn grid(
+    sizes: &BTreeMap<BlockId, (crate::model::Cell, f32, f32)>,
+    vgaps: &[f32],
+    hgaps: &[f32],
+) -> Grid {
     let cols: BTreeSet<i32> = sizes.values().map(|(c, _, _)| c.col).collect();
     let rows: BTreeSet<i32> = sizes.values().map(|(c, _, _)| c.row).collect();
     let cols: BTreeMap<i32, usize> = cols.into_iter().enumerate().map(|(i, c)| (c, i)).collect();
@@ -1116,7 +1212,7 @@ fn grid(sizes: &BTreeMap<BlockId, (crate::model::Cell, f32, f32)>, vgaps: &[f32]
         row_h[ri] = row_h[ri].max(*h);
     }
     let (col_x, vspan, width) = axis(&col_w, vgaps, EMPTY_W);
-    let (row_y, hspan, height) = axis(&row_h, &[], EMPTY_H);
+    let (row_y, hspan, height) = axis(&row_h, hgaps, EMPTY_H);
     let center = |(a, b): &(f32, f32)| (a + b) / 2.0;
     Grid {
         cols,
@@ -1124,6 +1220,7 @@ fn grid(sizes: &BTreeMap<BlockId, (crate::model::Cell, f32, f32)>, vgaps: &[f32]
         vx: vspan.iter().map(center).collect(),
         hy: hspan.iter().map(center).collect(),
         vspan,
+        hspan,
         col_x,
         row_y,
         col_w,
@@ -1189,6 +1286,9 @@ type Segments = BTreeMap<usize, Vec<(Pos, Pos)>>;
 struct Obstacles {
     on_v: Vec<Vec<f32>>,
     on_h: Vec<Vec<f32>>,
+    /// The stretches other lines run along each channel: lanes already taken.
+    along_v: Vec<Vec<(f32, f32)>>,
+    along_h: Vec<Vec<(f32, f32)>>,
 }
 
 /// The segments of every line except `skip`, as obstacles per channel.
@@ -1196,8 +1296,11 @@ fn obstacles(grid: &Grid, segments: &Segments, skip: usize) -> Obstacles {
     let mut out = Obstacles {
         on_v: vec![Vec::new(); grid.vx.len()],
         on_h: vec![Vec::new(); grid.hy.len()],
+        along_v: vec![Vec::new(); grid.vx.len()],
+        along_h: vec![Vec::new(); grid.hy.len()],
     };
     let spans = |c: f32, a: f32, b: f32| c > a.min(b) + 0.01 && c < a.max(b) - 0.01;
+    let stretch = |a: f32, b: f32| (a.min(b), a.max(b));
     for (li, list) in segments {
         if *li == skip {
             continue;
@@ -1209,14 +1312,201 @@ fn obstacles(grid: &Grid, segments: &Segments, skip: usize) -> Obstacles {
                         out.on_v[v].push(p.y);
                     }
                 }
+                if let Some(h) = grid.hy.iter().position(|y| (y - p.y).abs() < 0.5) {
+                    out.along_h[h].push(stretch(p.x, q.x));
+                }
             } else if (p.x - q.x).abs() < 0.01 {
                 for (h, y) in grid.hy.iter().enumerate() {
                     if spans(*y, p.y, q.y) {
                         out.on_h[h].push(p.x);
                     }
                 }
+                if let Some(v) = grid.vx.iter().position(|x| (x - p.x).abs() < 0.5) {
+                    out.along_v[v].push(stretch(p.y, q.y));
+                }
             }
         }
+    }
+    out
+}
+
+/// Whether two ends can be joined by one bend: the corner where their headings meet,
+/// when it lies ahead of both and neither leg runs through or close to a box other
+/// than the ones the ends sit on.
+fn elbow(a: (Pos, Side), b: (Pos, Side), boxes: &[Rect]) -> Option<Pos> {
+    let ((pa, ha), (pb, hb)) = (a, b);
+    if ha.is_horizontal() == hb.is_horizontal() {
+        return None;
+    }
+    let corner = if ha.is_horizontal() {
+        Pos::new(pb.x, pa.y)
+    } else {
+        Pos::new(pa.x, pb.y)
+    };
+    let ahead = |p: Pos, h: Side, q: Pos| match h {
+        Side::Right => q.x > p.x + 1.0,
+        Side::Left => q.x < p.x - 1.0,
+        Side::Bottom => q.y > p.y + 1.0,
+        Side::Top => q.y < p.y - 1.0,
+    };
+    if !ahead(pa, ha, corner) || !ahead(pb, hb, corner) {
+        return None;
+    }
+    let on_border = |r: &Rect, p: Pos| {
+        p.x >= r.min.x - 0.5 && p.x <= r.max.x + 0.5 && p.y >= r.min.y - 0.5 && p.y <= r.max.y + 0.5
+    };
+    let clear = |p: Pos, q: Pos| {
+        let lo = Pos::new(p.x.min(q.x), p.y.min(q.y));
+        let hi = Pos::new(p.x.max(q.x), p.y.max(q.y));
+        !boxes.iter().any(|r| {
+            if on_border(r, pa) || on_border(r, pb) {
+                return false;
+            }
+            let r = r.expand(ELBOW_CLEARANCE);
+            lo.x < r.max.x && hi.x > r.min.x && lo.y < r.max.y && hi.y > r.min.y
+        })
+    };
+    (clear(pa, corner) && clear(corner, pb)).then_some(corner)
+}
+
+/// How often `segs` cross the segments of every line but `skip`.
+fn crossings_with(segs: &[(Pos, Pos)], segments: &Segments, skip: usize) -> usize {
+    let mut n = 0;
+    for (li, list) in segments {
+        if *li == skip {
+            continue;
+        }
+        for (p, q) in segs {
+            for (r, s) in list {
+                n += cross_points(&[*p, *q], &[*r, *s]).len()
+                    + cross_points(&[*r, *s], &[*p, *q]).len();
+            }
+        }
+    }
+    n
+}
+
+/// Routes every line with two ports, `passes` times over all of them: a line starts
+/// with only its stems known, so the later passes let every line see the others.
+#[expect(clippy::too_many_arguments, reason = "one pass over the routing state")]
+fn route_lines(
+    grid: &Grid,
+    boxes: &[Rect],
+    port_at: &PortAt,
+    heading: &dyn Fn(usize, End, Side) -> Side,
+    n: usize,
+    passes: usize,
+    routes: &mut BTreeMap<usize, Route>,
+    segments: &mut Segments,
+) {
+    let both = |li: usize| Some((*port_at.get(&(li, End::A))?, *port_at.get(&(li, End::B))?));
+    let stem = |(p, _, chan): (Pos, Side, Chan)| match chan {
+        Chan::V(v) => (p, Pos::new(grid.vx[v], p.y)),
+        Chan::H(h) => (p, Pos::new(p.x, grid.hy[h])),
+    };
+    segments.clear();
+    for li in 0..n {
+        if let Some((a, b)) = both(li) {
+            segments.insert(li, vec![stem(a), stem(b)]);
+        }
+    }
+    let pairs =
+        |points: &[Pos]| -> Vec<(Pos, Pos)> { points.windows(2).map(|w| (w[0], w[1])).collect() };
+    for _ in 0..passes {
+        for li in 0..n {
+            let Some((a, b)) = both(li) else { continue };
+            let fa = (a.0, heading(li, End::A, a.1));
+            let fb = (b.0, heading(li, End::B, b.1));
+            // Ends that face each other across empty cells: one straight line. Ends
+            // around a corner: one bend, unless the channels cross fewer lines.
+            let route = if straight(fa, fb, boxes) {
+                Route::Straight
+            } else {
+                let others = obstacles(grid, segments, li);
+                let chans = Route::Chans(route(grid, (a.0, a.2), (b.0, b.2), &others));
+                match elbow(fa, fb, boxes) {
+                    Some(corner) => {
+                        let bent = crossings_with(&[(a.0, corner), (corner, b.0)], segments, li);
+                        let routed = route_points(grid, &BTreeMap::new(), li, a.0, b.0, &chans);
+                        if bent <= crossings_with(&pairs(&routed), segments, li) {
+                            Route::Elbow(corner)
+                        } else {
+                            chans
+                        }
+                    }
+                    None => chans,
+                }
+            };
+            let points = route_points(grid, &BTreeMap::new(), li, a.0, b.0, &route);
+            segments.insert(li, pairs(&points));
+            routes.insert(li, route);
+        }
+    }
+}
+
+/// Untangles the lanes and spreads them; returns every line as drawn from there.
+fn finish_lanes(
+    grid: &Grid,
+    routes: &BTreeMap<usize, Route>,
+    port_at: &PortAt,
+    lanes: &mut Lanes,
+    offsets: &mut BTreeMap<(usize, Chan), f32>,
+) -> BTreeMap<usize, Vec<Pos>> {
+    let ends: BTreeMap<usize, (Pos, Pos)> = routes
+        .keys()
+        .filter_map(|li| {
+            Some((
+                *li,
+                (
+                    port_at.get(&(*li, End::A))?.0,
+                    port_at.get(&(*li, End::B))?.0,
+                ),
+            ))
+        })
+        .collect();
+    untangle(grid, routes, &ends, lanes);
+    *offsets = lane_offsets(lanes, grid);
+    ends.iter()
+        .filter_map(|(li, (a, b))| {
+            let route = routes.get(li)?;
+            Some((*li, route_points(grid, offsets, *li, *a, *b, route)))
+        })
+        .collect()
+}
+
+/// The order of a port along its side: from which direction its line comes (before
+/// the side, straight, after it), then how near the side the line's lane runs (of
+/// lines from the same direction the nearest lane turns in first), then where it
+/// comes from. Ports in this order never cross on their way in.
+type OrderKey = (i8, i64, i64);
+
+/// The order key of every port, from the lines as drawn.
+fn arrival_keys(
+    drawn: &BTreeMap<usize, Vec<Pos>>,
+    ends: &BTreeMap<(usize, End), (Owner, Side)>,
+) -> BTreeMap<(usize, End), OrderKey> {
+    let mut out = BTreeMap::new();
+    for (&(li, end), &(_, side)) in ends {
+        let Some(points) = drawn.get(&li) else {
+            continue;
+        };
+        let along = |p: &Pos| if side.is_horizontal() { p.y } else { p.x };
+        let across = |p: &Pos| if side.is_horizontal() { p.x } else { p.y };
+        let tenths = |v: f32| (v * 10.0).round() as i64;
+        let seq: Vec<&Pos> = match end {
+            End::A => points.iter().collect(),
+            End::B => points.iter().rev().collect(),
+        };
+        let key = match seq[..] {
+            [port, turn, far, ..] => {
+                let class = (along(far) - along(port)).signum() as i8;
+                let stem = tenths((across(turn) - across(port)).abs());
+                (class, -i64::from(class) * stem, tenths(along(far)))
+            }
+            [_, other] => (0, 0, tenths(along(other))),
+            _ => continue,
+        };
+        out.insert((li, end), key);
     }
     out
 }
@@ -1249,6 +1539,19 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan), others: &Obstacles) -> Vec
         };
         list.iter().filter(met).count() as i64 * CROSS
     };
+    // Other lines already running along `chan` between `from` and `to`.
+    let shared = |chan: Chan, from: f32, to: f32| -> i64 {
+        let list = match chan {
+            Chan::V(v) => &others.along_v[v],
+            Chan::H(h) => &others.along_h[h],
+        };
+        let (lo, hi) = (from.min(to), from.max(to));
+        list.iter()
+            .filter(|(a, b)| *a < hi - 0.5 && *b > lo + 0.5)
+            .count() as i64
+            * SHARE
+    };
+    let penalty = |chan: Chan, from: f32, to: f32| crossed(chan, from, to) + shared(chan, from, to);
 
     // state = node * 2 + axis (0: moved along H, 1: moved along V)
     let mut dist = vec![i64::MAX; node_count * 2];
@@ -1284,47 +1587,47 @@ fn route(grid: &Grid, a: (Pos, Chan), b: (Pos, Chan), others: &Obstacles) -> Vec
                 match a.1 {
                     Chan::V(v) => {
                         for h in 0..nh {
-                            let x = crossed(a.1, along, grid.hy[h]);
+                            let x = penalty(a.1, along, grid.hy[h]);
                             edges.push((v * nh + h, a.1, grid.hy[h] - along, x));
                         }
                     }
                     Chan::H(h) => {
                         for v in 0..nv {
-                            let x = crossed(a.1, along, grid.vx[v]);
+                            let x = penalty(a.1, along, grid.vx[v]);
                             edges.push((v * nh + h, a.1, grid.vx[v] - along, x));
                         }
                     }
                 }
                 if a.1 == b.1 {
                     let to = coord(b.1, b.0);
-                    edges.push((t, a.1, to - along, crossed(a.1, along, to)));
+                    edges.push((t, a.1, to - along, penalty(a.1, along, to)));
                 }
             }
             Some((v, h)) => {
                 let (y, x) = (grid.hy[h], grid.vx[v]);
                 if h + 1 < nh {
-                    let c = crossed(Chan::V(v), y, grid.hy[h + 1]);
+                    let c = penalty(Chan::V(v), y, grid.hy[h + 1]);
                     edges.push((node + 1, Chan::V(v), grid.hy[h + 1] - y, c));
                 }
                 if h > 0 {
-                    let c = crossed(Chan::V(v), y, grid.hy[h - 1]);
+                    let c = penalty(Chan::V(v), y, grid.hy[h - 1]);
                     edges.push((node - 1, Chan::V(v), y - grid.hy[h - 1], c));
                 }
                 if v + 1 < nv {
-                    let c = crossed(Chan::H(h), x, grid.vx[v + 1]);
+                    let c = penalty(Chan::H(h), x, grid.vx[v + 1]);
                     edges.push((node + nh, Chan::H(h), grid.vx[v + 1] - x, c));
                 }
                 if v > 0 {
-                    let c = crossed(Chan::H(h), x, grid.vx[v - 1]);
+                    let c = penalty(Chan::H(h), x, grid.vx[v - 1]);
                     edges.push((node - nh, Chan::H(h), x - grid.vx[v - 1], c));
                 }
                 match b.1 {
                     Chan::V(bv) if bv == v => {
-                        let x = crossed(b.1, grid.hy[h], b.0.y);
+                        let x = penalty(b.1, grid.hy[h], b.0.y);
                         edges.push((t, b.1, b.0.y - grid.hy[h], x));
                     }
                     Chan::H(bh) if bh == h => {
-                        let x = crossed(b.1, grid.vx[v], b.0.x);
+                        let x = penalty(b.1, grid.vx[v], b.0.x);
                         edges.push((t, b.1, b.0.x - grid.vx[v], x));
                     }
                     _ => {}
@@ -1367,9 +1670,10 @@ type Lanes = BTreeMap<Chan, Vec<usize>>;
 /// get slow).
 const UNTANGLE_LIMIT: usize = 60;
 
-fn lane_order(routes: &BTreeMap<usize, Vec<Chan>>) -> Lanes {
+fn lane_order(routes: &BTreeMap<usize, Route>) -> Lanes {
     let mut users: Lanes = BTreeMap::new();
-    for (li, chans) in routes {
+    for (li, route) in routes {
+        let Route::Chans(chans) = route else { continue };
         for chan in chans {
             let list = users.entry(*chan).or_default();
             if !list.contains(li) {
@@ -1384,7 +1688,7 @@ fn lane_order(routes: &BTreeMap<usize, Vec<Chan>>) -> Lanes {
 /// improves.
 fn untangle(
     grid: &Grid,
-    routes: &BTreeMap<usize, Vec<Chan>>,
+    routes: &BTreeMap<usize, Route>,
     ends: &BTreeMap<usize, (Pos, Pos)>,
     lanes: &mut Lanes,
 ) {
@@ -1393,11 +1697,11 @@ fn untangle(
     }
     let draw = |offsets: &BTreeMap<(usize, Chan), f32>, li: usize| -> Vec<Pos> {
         match (ends.get(&li), routes.get(&li)) {
-            (Some((a, b)), Some(chans)) => route_points(grid, offsets, li, *a, *b, chans),
+            (Some((a, b)), Some(route)) => route_points(grid, offsets, li, *a, *b, route),
             _ => Vec::new(),
         }
     };
-    let offsets = lane_offsets(lanes);
+    let offsets = lane_offsets(lanes, grid);
     let mut points: BTreeMap<usize, Vec<Pos>> =
         routes.keys().map(|li| (*li, draw(&offsets, *li))).collect();
     // Lines whose boxes do not overlap cannot cross.
@@ -1443,7 +1747,7 @@ fn untangle(
                 if let Some(list) = lanes.get_mut(chan) {
                     list.swap(k, k + 1);
                 }
-                let offsets = lane_offsets(lanes);
+                let offsets = lane_offsets(lanes, grid);
                 let old: Vec<(usize, Vec<Pos>)> = users
                     .iter()
                     .map(|li| {
@@ -1469,11 +1773,16 @@ fn untangle(
     }
 }
 
-/// Spreads lines that share a channel side by side, in their lane order.
-fn lane_offsets(lanes: &Lanes) -> BTreeMap<(usize, Chan), f32> {
-    let limit = GAP / 2.0 - 12.0;
+/// Spreads lines that share a channel side by side, `LANE` apart, in their lane
+/// order, as far as the gap allows.
+fn lane_offsets(lanes: &Lanes, grid: &Grid) -> BTreeMap<(usize, Chan), f32> {
     let mut out = BTreeMap::new();
     for (chan, list) in lanes {
+        let (lo, hi) = match chan {
+            Chan::V(v) => grid.vspan[*v],
+            Chan::H(h) => grid.hspan[*h],
+        };
+        let limit = ((hi - lo) / 2.0 - LANE / 2.0).max(0.0);
         let n = list.len() as f32;
         for (k, li) in list.iter().copied().enumerate() {
             let off = ((k as f32 - (n - 1.0) / 2.0) * LANE).clamp(-limit, limit);
@@ -1483,18 +1792,41 @@ fn lane_offsets(lanes: &Lanes) -> BTreeMap<(usize, Chan), f32> {
     out
 }
 
+/// Where a line runs between its two ports.
+#[derive(Debug, Clone, PartialEq)]
+enum Route {
+    /// One segment: the ports face each other.
+    Straight,
+    /// One bend at this corner, through free cells.
+    Elbow(Pos),
+    /// Along these gap channels.
+    Chans(Vec<Chan>),
+}
+
+/// The ports of every line: point, side and the channel the line leaves into.
+type PortAt = BTreeMap<(usize, End), (Pos, Side, Chan)>;
+
 fn route_points(
     grid: &Grid,
     offsets: &BTreeMap<(usize, Chan), f32>,
     li: usize,
     pa: Pos,
     pb: Pos,
-    chans: &[Chan],
+    route: &Route,
 ) -> Vec<Pos> {
     let off = |c: Chan| offsets.get(&(li, c)).copied().unwrap_or(0.0);
     let x = |v: usize| grid.vx[v] + off(Chan::V(v));
     let y = |h: usize| grid.hy[h] + off(Chan::H(h));
     let mut pts = vec![pa];
+    let chans = match route {
+        Route::Straight => &Vec::new(),
+        Route::Elbow(corner) => {
+            pts.push(*corner);
+            pts.push(pb);
+            return simplify(pts);
+        }
+        Route::Chans(chans) => chans,
+    };
     let (Some(first), Some(last)) = (chans.first(), chans.last()) else {
         pts.push(pb);
         return pts;
@@ -1558,6 +1890,7 @@ fn build_line(
         tip,
         tip_dir,
         frame_port: None,
+        frame_name: (true, 0, f32::MAX),
         style: line.style,
         full_text: line.text.clone(),
         bundle: line.bundle.clone(),
