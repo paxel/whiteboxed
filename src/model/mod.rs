@@ -17,7 +17,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::look::{LookId, Looks};
+use crate::look::{LineLooks, LookId, Looks, Pictures};
 
 pub use edit::{BlockSpec, Placement};
 pub use restructure::SplitPart;
@@ -451,6 +451,8 @@ pub struct Relation {
     /// Frame sides chosen by hand, per whitebox (the box whose whitebox it enters);
     /// elsewhere the side is chosen automatically.
     pub frame_sides: BTreeMap<BlockId, Side>,
+    /// The line look it wears on every level, from [`Project::line_looks`].
+    pub look: Option<LookId>,
 }
 
 /// Whether a line goes through mouseholes in a diagram: into a numbered hole near one
@@ -676,6 +678,14 @@ pub struct Project {
     pub bundle: bool,
     /// Copies of the custom looks the boxes wear.
     pub looks: Looks,
+    /// Copies of the pictures the line looks and portals use.
+    pub pictures: Pictures,
+    /// Copies of the line looks the relations wear.
+    pub line_looks: LineLooks,
+    /// The pictures drawn as mouseholes: where a line goes in, and where it comes out.
+    /// Without one the hole is an arch.
+    pub portal_in: Option<LookId>,
+    pub portal_out: Option<LookId>,
     pub next_id: u64,
 }
 
@@ -767,6 +777,10 @@ impl Default for Project {
             score_limits: ScoreLimits::default(),
             bundle: true,
             looks: Looks::new(),
+            pictures: Pictures::new(),
+            line_looks: LineLooks::new(),
+            portal_in: None,
+            portal_out: None,
             next_id: 0,
         }
     }

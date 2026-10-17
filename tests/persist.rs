@@ -402,3 +402,74 @@ fn files_without_mousehole_limits_get_the_default_ones() -> TestResult {
     assert_eq!(persist::from_yaml(&old)?.score_limits.mouseholes, (3, 5));
     Ok(())
 }
+
+#[test]
+fn a_project_keeps_the_line_looks_pictures_and_portals_it_uses() -> TestResult {
+    use whiteboxed::look::{LineLook, LineLookSpec, LookId, Picture};
+    use whiteboxed::model::LinePattern;
+    let mut p = sample()?;
+    let svg = r##"<svg viewBox="0 0 10 6"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"##;
+    let plug = LookId("plug".into());
+    let portal = LookId("portal".into());
+    let unused = LookId("unused".into());
+    for id in [&plug, &portal, &unused] {
+        p.pictures.insert(id.clone(), Picture::new(&id.0, svg, 1)?);
+    }
+    let spec = LineLookSpec {
+        width: 3.0,
+        dash: LinePattern::Dashed,
+        head: Some(plug.clone()),
+        tail: None,
+    };
+    let async_ = LookId("async".into());
+    let unworn = LookId("unworn".into());
+    p.line_looks
+        .insert(async_.clone(), LineLook::new("async", spec.clone(), 2)?);
+    p.line_looks.insert(
+        unworn.clone(),
+        LineLook::new("unworn", LineLookSpec::default(), 0)?,
+    );
+    let rel = *p.relations.keys().next().ok_or("relation")?;
+    p.relations.get_mut(&rel).ok_or("relation")?.look = Some(async_.clone());
+    p.portal_in = Some(portal.clone());
+    let text = persist::to_yaml(&p)?;
+    assert!(text.contains("look: async"), "{text}");
+    let back = persist::from_yaml(&text)?;
+    // Only the line look worn and the pictures it or a portal needs are kept.
+    assert_eq!(back.line_looks.keys().collect::<Vec<_>>(), vec![&async_]);
+    assert_eq!(back.line_looks.get(&async_).map(LineLook::spec), Some(spec));
+    assert_eq!(
+        back.pictures.keys().collect::<Vec<_>>(),
+        vec![&plug, &portal]
+    );
+    assert_eq!(back.pictures.get(&plug), p.pictures.get(&plug));
+    assert_eq!(
+        back.relations.get(&rel).and_then(|r| r.look.clone()),
+        Some(async_)
+    );
+    assert_eq!(back.portal_in, Some(portal));
+    assert_eq!(back.portal_out, None);
+
+    // Broken references are refused.
+    for (from, to) in [
+        ("look: async", "look: nope"),
+        ("portal_in: portal", "portal_in: nope"),
+        ("head: plug", "head: nope"),
+    ] {
+        assert!(text.contains(from), "{from}");
+        assert!(
+            matches!(
+                persist::from_yaml(&text.replace(from, to)),
+                Err(PersistError::Invalid(_))
+            ),
+            "{to}"
+        );
+    }
+    // A picture is checked like a look.
+    let evil = text.replace("<path", "<script");
+    assert!(matches!(
+        persist::from_yaml(&evil),
+        Err(PersistError::Invalid(_))
+    ));
+    Ok(())
+}

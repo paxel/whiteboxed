@@ -1,4 +1,6 @@
-//! Custom looks: SVG pictures a box can wear instead of (or above) its own shape.
+//! Custom looks: SVG pictures a box can wear instead of (or above) its own shape,
+//! pictures for the ends of lines and for mouseholes, and line looks (width, dash and
+//! end pictures a relation wears).
 //!
 //! Looks come from the AI, from imported files and from project files pulled from
 //! anywhere, and they end up in SVG, PNG and HTML exports. So every look is checked
@@ -16,6 +18,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::geom::Rect;
+use crate::model::LinePattern;
 
 /// Largest SVG accepted, in bytes.
 pub const MAX_SVG_BYTES: usize = 512 * 1024;
@@ -23,6 +26,9 @@ pub const MAX_SVG_BYTES: usize = 512 * 1024;
 pub const MAX_ELEMENTS: usize = 5000;
 /// Longest look name, in characters.
 pub const MAX_NAME: usize = 60;
+/// Thinnest and thickest stroke a line look may have.
+pub const MIN_WIDTH: f32 = 0.5;
+pub const MAX_WIDTH: f32 = 8.0;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
@@ -130,6 +136,8 @@ pub enum LookError {
     NoName,
     #[error("a look name has at most {MAX_NAME} characters")]
     NameTooLong,
+    #[error("a line is between {MIN_WIDTH} and {MAX_WIDTH} wide")]
+    Width,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +229,165 @@ impl Look {
         self.revision += 1;
         Ok(())
     }
+}
+
+/// A picture: an SVG without a mode, drawn at the ends of lines and as a portal (the
+/// picture of a mousehole). Not worn by a box. On a line it points right with its tip
+/// at the right edge of its viewBox; its `currentColor` parts take the line's colour.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picture {
+    name: String,
+    svg: Arc<str>,
+    revision: u64,
+    size: (f32, f32),
+}
+
+impl Eq for Picture {}
+
+impl Picture {
+    pub fn new(name: &str, svg: &str, revision: u64) -> Result<Self, LookError> {
+        let name = check_name(name)?;
+        let (svg, size) = sanitize(svg)?;
+        Ok(Picture {
+            name,
+            svg: svg.into(),
+            revision,
+            size,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn svg(&self) -> &Arc<str> {
+        &self.svg
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn size(&self) -> (f32, f32) {
+        self.size
+    }
+
+    pub fn rename(&mut self, name: &str) -> Result<(), LookError> {
+        self.name = check_name(name)?;
+        self.revision += 1;
+        Ok(())
+    }
+}
+
+/// How a line is drawn: its stroke width, its dash, and the pictures at its ends. The
+/// line's direction decides which ends get the head; the others get the tail. Without
+/// a head picture the ends with an arrow get the plain arrowhead.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineLook {
+    name: String,
+    width: f32,
+    dash: LinePattern,
+    head: Option<LookId>,
+    tail: Option<LookId>,
+    revision: u64,
+}
+
+impl Eq for LineLook {}
+
+/// The settable part of a line look.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineLookSpec {
+    pub width: f32,
+    pub dash: LinePattern,
+    pub head: Option<LookId>,
+    pub tail: Option<LookId>,
+}
+
+impl Default for LineLookSpec {
+    fn default() -> Self {
+        LineLookSpec {
+            width: 1.5,
+            dash: LinePattern::Solid,
+            head: None,
+            tail: None,
+        }
+    }
+}
+
+impl LineLook {
+    pub fn new(name: &str, spec: LineLookSpec, revision: u64) -> Result<Self, LookError> {
+        let name = check_name(name)?;
+        check_width(spec.width)?;
+        Ok(LineLook {
+            name,
+            width: spec.width,
+            dash: spec.dash,
+            head: spec.head,
+            tail: spec.tail,
+            revision,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn dash(&self) -> LinePattern {
+        self.dash
+    }
+
+    pub fn head(&self) -> Option<&LookId> {
+        self.head.as_ref()
+    }
+
+    pub fn tail(&self) -> Option<&LookId> {
+        self.tail.as_ref()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn spec(&self) -> LineLookSpec {
+        LineLookSpec {
+            width: self.width,
+            dash: self.dash,
+            head: self.head.clone(),
+            tail: self.tail.clone(),
+        }
+    }
+
+    /// The pictures it needs, head first.
+    pub fn pictures(&self) -> impl Iterator<Item = &LookId> {
+        self.head.iter().chain(self.tail.iter())
+    }
+
+    pub fn rename(&mut self, name: &str) -> Result<(), LookError> {
+        self.name = check_name(name)?;
+        self.revision += 1;
+        Ok(())
+    }
+
+    pub fn set(&mut self, spec: LineLookSpec) -> Result<(), LookError> {
+        check_width(spec.width)?;
+        self.width = spec.width;
+        self.dash = spec.dash;
+        self.head = spec.head;
+        self.tail = spec.tail;
+        self.revision += 1;
+        Ok(())
+    }
+}
+
+fn check_width(width: f32) -> Result<(), LookError> {
+    if !(MIN_WIDTH..=MAX_WIDTH).contains(&width) {
+        return Err(LookError::Width);
+    }
+    Ok(())
 }
 
 fn check_name(name: &str) -> Result<String, LookError> {
@@ -497,8 +664,108 @@ pub(crate) struct LookDto {
     svg: String,
 }
 
+/// A picture as written into the library file and into project files.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PictureDto {
+    id: LookId,
+    name: String,
+    revision: u64,
+    svg: String,
+}
+
+/// A line look as written into the library file and into project files.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct LineLookDto {
+    id: LookId,
+    name: String,
+    revision: u64,
+    width: f32,
+    #[serde(default)]
+    dash: LinePattern,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    head: Option<LookId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tail: Option<LookId>,
+}
+
 /// Looks keyed by id, as stored in the library or in a project file.
 pub type Looks = BTreeMap<LookId, Look>;
+/// Pictures keyed by id.
+pub type Pictures = BTreeMap<LookId, Picture>;
+/// Line looks keyed by id.
+pub type LineLooks = BTreeMap<LookId, LineLook>;
+
+pub(crate) fn pictures_to_dto(pictures: &Pictures) -> Vec<PictureDto> {
+    pictures
+        .iter()
+        .map(|(id, p)| PictureDto {
+            id: id.clone(),
+            name: p.name.clone(),
+            revision: p.revision,
+            svg: p.svg.to_string(),
+        })
+        .collect()
+}
+
+pub(crate) fn pictures_from_dto(list: Vec<PictureDto>) -> Result<Pictures, String> {
+    list.into_iter()
+        .map(|d| {
+            let picture = Picture::new(&d.name, &d.svg, d.revision)
+                .map_err(|e| format!("picture {}: {e}", d.name))?;
+            Ok((d.id, picture))
+        })
+        .collect()
+}
+
+pub(crate) fn line_looks_to_dto(looks: &LineLooks) -> Vec<LineLookDto> {
+    looks
+        .iter()
+        .map(|(id, l)| LineLookDto {
+            id: id.clone(),
+            name: l.name.clone(),
+            revision: l.revision,
+            width: l.width,
+            dash: l.dash,
+            head: l.head.clone(),
+            tail: l.tail.clone(),
+        })
+        .collect()
+}
+
+pub(crate) fn line_looks_from_dto(list: Vec<LineLookDto>) -> Result<LineLooks, String> {
+    list.into_iter()
+        .map(|d| {
+            let spec = LineLookSpec {
+                width: d.width,
+                dash: d.dash,
+                head: d.head,
+                tail: d.tail,
+            };
+            let look = LineLook::new(&d.name, spec, d.revision)
+                .map_err(|e| format!("line look {}: {e}", d.name))?;
+            Ok((d.id, look))
+        })
+        .collect()
+}
+
+/// The library file: looks, pictures and line looks.
+#[derive(Serialize, Deserialize)]
+struct LibraryDto {
+    #[serde(default)]
+    looks: Vec<LookDto>,
+    #[serde(default)]
+    pictures: Vec<PictureDto>,
+    #[serde(default)]
+    line_looks: Vec<LineLookDto>,
+}
+
+/// The library file as written before pictures and line looks: looks only.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LibraryFile {
+    Current(LibraryDto),
+    Legacy(Vec<LookDto>),
+}
 
 pub(crate) fn to_dto(looks: &Looks) -> Vec<LookDto> {
     looks
@@ -513,29 +780,73 @@ pub(crate) fn to_dto(looks: &Looks) -> Vec<LookDto> {
         .collect()
 }
 
-/// The library: every look the user has, usable in every project.
+/// The library: every look, picture and line look the user has, usable in every
+/// project.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Library {
     pub looks: Looks,
+    pub pictures: Pictures,
+    pub line_looks: LineLooks,
 }
 
 impl Library {
-    /// The stored library. A broken file gives an empty library; a look that does not
-    /// pass the check is left out.
+    /// The stored library. A broken file gives an empty library; an entry that does
+    /// not pass the check is left out.
     pub fn load(dir: &Path) -> Self {
-        let looks = fs::read_to_string(dir.join(FILE))
+        let dto = match fs::read_to_string(dir.join(FILE))
             .ok()
-            .and_then(|t| serde_yaml_ng::from_str::<Vec<LookDto>>(&t).ok())
-            .unwrap_or_default()
+            .and_then(|t| serde_yaml_ng::from_str::<LibraryFile>(&t).ok())
+        {
+            Some(LibraryFile::Current(dto)) => dto,
+            Some(LibraryFile::Legacy(looks)) => LibraryDto {
+                looks,
+                pictures: Vec::new(),
+                line_looks: Vec::new(),
+            },
+            None => LibraryDto {
+                looks: Vec::new(),
+                pictures: Vec::new(),
+                line_looks: Vec::new(),
+            },
+        };
+        let looks = dto
+            .looks
             .into_iter()
             .filter_map(|d| Some((d.id, Look::new(&d.name, d.mode, &d.svg, d.revision).ok()?)))
             .collect();
-        Library { looks }
+        let pictures = dto
+            .pictures
+            .into_iter()
+            .filter_map(|d| Some((d.id, Picture::new(&d.name, &d.svg, d.revision).ok()?)))
+            .collect();
+        let line_looks = dto
+            .line_looks
+            .into_iter()
+            .filter_map(|d| {
+                let spec = LineLookSpec {
+                    width: d.width,
+                    dash: d.dash,
+                    head: d.head,
+                    tail: d.tail,
+                };
+                Some((d.id, LineLook::new(&d.name, spec, d.revision).ok()?))
+            })
+            .collect();
+        Library {
+            looks,
+            pictures,
+            line_looks,
+        }
     }
 
     pub fn save(&self, dir: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
-        let text = serde_yaml_ng::to_string(&to_dto(&self.looks)).map_err(io::Error::other)?;
+        let dto = LibraryDto {
+            looks: to_dto(&self.looks),
+            pictures: pictures_to_dto(&self.pictures),
+            line_looks: line_looks_to_dto(&self.line_looks),
+        };
+        let text = serde_yaml_ng::to_string(&dto).map_err(io::Error::other)?;
         fs::write(dir.join(FILE), text)
     }
 
@@ -546,6 +857,20 @@ impl Library {
         id
     }
 
+    /// Adds a new picture and returns its id.
+    pub fn add_picture(&mut self, picture: Picture) -> LookId {
+        let id = LookId::fresh();
+        self.pictures.insert(id.clone(), picture);
+        id
+    }
+
+    /// Adds a new line look and returns its id.
+    pub fn add_line_look(&mut self, look: LineLook) -> LookId {
+        let id = LookId::fresh();
+        self.line_looks.insert(id.clone(), look);
+        id
+    }
+
     /// The look with this name, ignoring case.
     pub fn find(&self, name: &str) -> Option<&LookId> {
         self.looks
@@ -553,6 +878,30 @@ impl Library {
             .find(|(_, l)| l.name.eq_ignore_ascii_case(name.trim()))
             .map(|(id, _)| id)
     }
+
+    /// The picture with this name, ignoring case.
+    pub fn find_picture(&self, name: &str) -> Option<&LookId> {
+        self.pictures
+            .iter()
+            .find(|(_, p)| p.name.eq_ignore_ascii_case(name.trim()))
+            .map(|(id, _)| id)
+    }
+
+    /// The line look with this name, ignoring case.
+    pub fn find_line_look(&self, name: &str) -> Option<&LookId> {
+        self.line_looks
+            .iter()
+            .find(|(_, l)| l.name.eq_ignore_ascii_case(name.trim()))
+            .map(|(id, _)| id)
+    }
+}
+
+/// A line look with the pictures it needs, as copied into a project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineLookCopy {
+    pub id: LookId,
+    pub look: LineLook,
+    pub pictures: Vec<(LookId, Picture)>,
 }
 
 /// Parses looks as written by [`to_dto`]; every one is checked again.
@@ -569,9 +918,27 @@ pub(crate) fn from_dto(list: Vec<LookDto>) -> Result<Looks, String> {
 /// A project's copies of looks take the library's version when it is newer.
 /// Returns whether anything changed.
 pub fn sync(project: &mut Looks, library: &Library) -> bool {
+    take_newer(project, &library.looks, Look::revision)
+}
+
+/// The same for a project's pictures.
+pub fn sync_pictures(project: &mut Pictures, library: &Library) -> bool {
+    take_newer(project, &library.pictures, Picture::revision)
+}
+
+/// The same for a project's line looks.
+pub fn sync_line_looks(project: &mut LineLooks, library: &Library) -> bool {
+    take_newer(project, &library.line_looks, LineLook::revision)
+}
+
+fn take_newer<T: Clone>(
+    project: &mut BTreeMap<LookId, T>,
+    library: &BTreeMap<LookId, T>,
+    revision: fn(&T) -> u64,
+) -> bool {
     let mut changed = false;
     for (id, copy) in project.iter_mut() {
-        if let Some(newer) = library.looks.get(id).filter(|l| l.revision > copy.revision) {
+        if let Some(newer) = library.get(id).filter(|l| revision(l) > revision(copy)) {
             *copy = newer.clone();
             changed = true;
         }
@@ -761,6 +1128,70 @@ mod tests {
         let text = fs::read_to_string(dir.path().join(FILE))?.replace("<text", "<script");
         fs::write(dir.path().join(FILE), text)?;
         assert!(Library::load(dir.path()).looks.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn pictures_and_line_looks_live_in_the_library_too() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let mut lib = Library::default();
+        lib.add(Look::new("Kafka", LookMode::Below, KAFKA, 0)?);
+        let plug = lib.add_picture(Picture::new(
+            "Plug",
+            r#"<svg viewBox="0 0 10 6"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"#,
+            0,
+        )?);
+        let spec = LineLookSpec {
+            width: 3.0,
+            dash: LinePattern::Dashed,
+            head: Some(plug.clone()),
+            tail: None,
+        };
+        let async_ = lib.add_line_look(LineLook::new("async", spec.clone(), 0)?);
+        lib.save(dir.path())?;
+        let loaded = Library::load(dir.path());
+        assert_eq!(loaded, lib);
+        assert_eq!(loaded.find_picture("plug"), Some(&plug));
+        assert_eq!(loaded.find_line_look("ASYNC"), Some(&async_));
+        assert_eq!(
+            loaded.line_looks.get(&async_).map(LineLook::spec),
+            Some(spec)
+        );
+
+        // The width is checked.
+        let thin = LineLookSpec {
+            width: 0.1,
+            ..LineLookSpec::default()
+        };
+        assert_eq!(LineLook::new("x", thin, 0), Err(LookError::Width));
+
+        // A project's copies take newer versions.
+        let mut pictures = lib.pictures.clone();
+        let mut line_looks = lib.line_looks.clone();
+        assert!(!sync_pictures(&mut pictures, &lib));
+        assert!(!sync_line_looks(&mut line_looks, &lib));
+        if let Some(p) = lib.pictures.get_mut(&plug) {
+            p.rename("Socket")?;
+        }
+        if let Some(l) = lib.line_looks.get_mut(&async_) {
+            l.set(LineLookSpec {
+                width: 4.0,
+                ..l.spec()
+            })?;
+        }
+        assert!(sync_pictures(&mut pictures, &lib));
+        assert!(sync_line_looks(&mut line_looks, &lib));
+        assert_eq!(pictures.get(&plug).map(Picture::name), Some("Socket"));
+        assert_eq!(line_looks.get(&async_).map(LineLook::width), Some(4.0));
+
+        // A library file from before pictures and line looks still loads.
+        let old = Library {
+            looks: lib.looks.clone(),
+            ..Library::default()
+        };
+        let legacy = serde_yaml_ng::to_string(&to_dto(&old.looks))?;
+        fs::write(dir.path().join(FILE), legacy)?;
+        assert_eq!(Library::load(dir.path()), old);
         Ok(())
     }
 }

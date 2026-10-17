@@ -913,3 +913,95 @@ fn the_relation_dialog_sets_mouseholes_for_the_diagram_shown() -> TestResult {
     );
     Ok(())
 }
+
+const PLUG: &str =
+    r##"<svg viewBox="0 0 10 6"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"##;
+
+#[test]
+fn a_line_wears_a_line_look_and_the_project_copies_it_with_its_pictures() -> TestResult {
+    use whiteboxed::look::{Library, LineLookSpec};
+    use whiteboxed::model::LinePattern;
+    let dir = tempfile::tempdir()?;
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), Some(dir.path().to_path_buf()));
+    let plug = e.add_picture("Plug", PLUG)?;
+    // The same name again replaces the picture and keeps the id.
+    assert_eq!(e.add_picture("plug", PLUG)?, plug);
+    let spec = LineLookSpec {
+        width: 3.0,
+        dash: LinePattern::Dashed,
+        head: Some(plug.clone()),
+        tail: None,
+    };
+    let async_ = e.add_line_look("async", spec.clone())?;
+    assert_eq!(Library::load(dir.path()), e.library);
+    // A line look needs pictures that exist.
+    let bad = LineLookSpec {
+        head: Some(whiteboxed::look::LookId("nope".into())),
+        ..LineLookSpec::default()
+    };
+    assert!(e.add_line_look("bad", bad).is_err());
+    assert_eq!(
+        e.line_looks_offered(),
+        vec![(async_.clone(), "async".to_owned())]
+    );
+    assert_eq!(
+        e.pictures_offered(),
+        vec![(plug.clone(), "plug".to_owned())]
+    );
+
+    let shop = add_first(&mut e, "Shop")?;
+    connect_new(&mut e, shop, Side::Right, "Orders", BlockKind::Component)?;
+    let rel = *e.project.relations.keys().next().ok_or("relation")?;
+    e.set_line_look(rel, Some(async_.clone()));
+    assert_eq!(
+        e.project.relations.get(&rel).and_then(|r| r.look.clone()),
+        Some(async_.clone())
+    );
+    assert_eq!(
+        e.project.line_looks.get(&async_).map(|l| l.spec()),
+        Some(spec)
+    );
+    assert!(e.project.pictures.contains_key(&plug));
+    e.undo();
+    assert_eq!(
+        e.project.relations.get(&rel).and_then(|r| r.look.clone()),
+        None
+    );
+    e.redo();
+
+    // A change in the library reaches the project's copy; a deleted entry stays.
+    e.edit_line_look(
+        &async_,
+        LineLookSpec {
+            width: 4.0,
+            ..e.project.line_looks.get(&async_).ok_or("copy")?.spec()
+        },
+    )?;
+    assert_eq!(
+        e.project.line_looks.get(&async_).map(|l| l.width()),
+        Some(4.0)
+    );
+    e.rename_picture(&plug, "Socket")?;
+    assert_eq!(
+        e.project.pictures.get(&plug).map(|p| p.name().to_owned()),
+        Some("Socket".into())
+    );
+    e.delete_line_look(&async_)?;
+    e.delete_picture(&plug)?;
+    assert!(e.library.line_looks.is_empty() && e.library.pictures.is_empty());
+    assert_eq!(
+        e.line_looks_offered(),
+        vec![(async_.clone(), "async".to_owned())]
+    );
+    assert!(e.line_look_copy(&async_).is_some());
+
+    // Portals are pictures too, kept in the project.
+    let portal = e.add_picture("Portal", PLUG)?;
+    e.set_portals(Some(portal.clone()), None);
+    assert_eq!(e.project.portal_in, Some(portal.clone()));
+    assert!(e.project.pictures.contains_key(&portal));
+    e.undo();
+    assert_eq!(e.project.portal_in, None);
+    Ok(())
+}

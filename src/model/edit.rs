@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::look::{Look, LookId};
+use crate::look::{LineLookCopy, Look, LookId, Picture};
 
 use super::{
     Anchor, Block, BlockId, BlockKind, Cell, DiagramId, Direction, End, Endpoint, LineStyle,
@@ -169,6 +169,63 @@ impl Project {
         Ok(())
     }
 
+    /// Dresses a relation in a line look, keeping copies of it and its pictures in the
+    /// project, or takes its look off. A copy already kept is replaced only by a newer
+    /// one.
+    pub fn wear_line_look(
+        &mut self,
+        rel: RelationId,
+        look: Option<LineLookCopy>,
+    ) -> ModelResult<()> {
+        self.relation(rel)?;
+        let worn = look.map(|copy| {
+            for (pid, picture) in copy.pictures {
+                self.keep_picture(pid, picture);
+            }
+            let newer = self
+                .line_looks
+                .get(&copy.id)
+                .is_none_or(|kept| kept.revision() < copy.look.revision());
+            if newer {
+                self.line_looks.insert(copy.id.clone(), copy.look);
+            }
+            copy.id
+        });
+        self.relations
+            .get_mut(&rel)
+            .ok_or(ModelError::UnknownRelation)?
+            .look = worn;
+        Ok(())
+    }
+
+    /// Sets the pictures drawn as mouseholes, keeping copies in the project; `None`
+    /// goes back to the arch.
+    pub fn set_portals(
+        &mut self,
+        portal_in: Option<(LookId, Picture)>,
+        portal_out: Option<(LookId, Picture)>,
+    ) -> ModelResult<()> {
+        self.portal_in = portal_in.map(|(id, p)| {
+            self.keep_picture(id.clone(), p);
+            id
+        });
+        self.portal_out = portal_out.map(|(id, p)| {
+            self.keep_picture(id.clone(), p);
+            id
+        });
+        Ok(())
+    }
+
+    fn keep_picture(&mut self, id: LookId, picture: Picture) {
+        let newer = self
+            .pictures
+            .get(&id)
+            .is_none_or(|kept| kept.revision() < picture.revision());
+        if newer {
+            self.pictures.insert(id, picture);
+        }
+    }
+
     /// Moves a box to another grid cell; a box already there takes the old cell.
     /// Lines of the moved boxes then leave them on the sides that face their partners,
     /// replacing sides set by hand.
@@ -314,6 +371,7 @@ impl Project {
             color: None,
             mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
+            look: None,
         });
         Ok((new, rel))
     }
@@ -382,6 +440,7 @@ impl Project {
             color: None,
             mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
+            look: None,
         }))
     }
 
@@ -419,6 +478,7 @@ impl Project {
             color: None,
             mouseholes: BTreeMap::new(),
             frame_sides: BTreeMap::new(),
+            look: None,
         }))
     }
 

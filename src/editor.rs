@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::doc::{self, DocFormat};
 use crate::export::{self, ExportError};
 use crate::layout::{self, Layout};
-use crate::look::{Library, Look, LookId, LookMode};
+use crate::look::{Library, LineLook, LineLookCopy, LineLookSpec, Look, LookId, LookMode, Picture};
 use crate::model::{
     BlockId, BlockKind, BlockSpec, Cell, DiagramId, Direction, End, ExportChoice, LineStyle,
     ModelError, Placement, Project, RelationId, Rgb, Side, TagId,
@@ -1354,6 +1354,219 @@ impl Editor {
     /// project: nothing to undo, nothing unsaved.
     fn sync_looks(&mut self) {
         crate::look::sync(&mut self.project.looks, &self.library);
+        crate::look::sync_pictures(&mut self.project.pictures, &self.library);
+        crate::look::sync_line_looks(&mut self.project.line_looks, &self.library);
+    }
+
+    /// A picture by id, from the library or else the project's copy.
+    pub fn picture_copy(&self, id: &LookId) -> Option<(LookId, Picture)> {
+        self.library
+            .pictures
+            .get(id)
+            .or_else(|| self.project.pictures.get(id))
+            .map(|p| (id.clone(), p.clone()))
+    }
+
+    /// A line look by id with the pictures it needs, from the library or else the
+    /// project's copies. A picture found nowhere is left out: the end is then plain.
+    pub fn line_look_copy(&self, id: &LookId) -> Option<LineLookCopy> {
+        let look = self
+            .library
+            .line_looks
+            .get(id)
+            .or_else(|| self.project.line_looks.get(id))?
+            .clone();
+        let pictures = look
+            .pictures()
+            .filter_map(|p| self.picture_copy(p))
+            .collect();
+        Some(LineLookCopy {
+            id: id.clone(),
+            look,
+            pictures,
+        })
+    }
+
+    /// Every picture a line end or a portal can be: the library's and the project's
+    /// own, by name.
+    pub fn pictures_offered(&self) -> Vec<(LookId, String)> {
+        let mut all: Vec<(LookId, String)> = self
+            .library
+            .pictures
+            .iter()
+            .chain(
+                self.project
+                    .pictures
+                    .iter()
+                    .filter(|(id, _)| !self.library.pictures.contains_key(*id)),
+            )
+            .map(|(id, p)| (id.clone(), p.name().to_owned()))
+            .collect();
+        all.sort_by_key(|(_, name)| name.to_lowercase());
+        all
+    }
+
+    /// Every line look a line can wear: the library's and the project's own, by name.
+    pub fn line_looks_offered(&self) -> Vec<(LookId, String)> {
+        let mut all: Vec<(LookId, String)> = self
+            .library
+            .line_looks
+            .iter()
+            .chain(
+                self.project
+                    .line_looks
+                    .iter()
+                    .filter(|(id, _)| !self.library.line_looks.contains_key(*id)),
+            )
+            .map(|(id, l)| (id.clone(), l.name().to_owned()))
+            .collect();
+        all.sort_by_key(|(_, name)| name.to_lowercase());
+        all
+    }
+
+    /// Adds a picture to the library; one with the same name is replaced and keeps
+    /// its id.
+    pub fn add_picture(&mut self, name: &str, svg: &str) -> Result<LookId, String> {
+        let existing = self.library.find_picture(name).cloned();
+        let revision = existing
+            .as_ref()
+            .and_then(|id| self.library.pictures.get(id))
+            .map_or(0, |p| p.revision() + 1);
+        let picture = Picture::new(name, svg, revision).map_err(|e| e.to_string())?;
+        let id = match existing {
+            Some(id) => {
+                self.library.pictures.insert(id.clone(), picture);
+                id
+            }
+            None => self.library.add_picture(picture),
+        };
+        self.save_library()?;
+        self.sync_looks();
+        Ok(id)
+    }
+
+    /// Imports an `.svg` file as a picture, named after the file.
+    pub fn import_picture(&mut self, path: &Path) -> Result<LookId, String> {
+        let svg = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.add_picture(&name, &svg)
+    }
+
+    pub fn rename_picture(&mut self, id: &LookId, name: &str) -> Result<(), String> {
+        if self
+            .library
+            .find_picture(name)
+            .is_some_and(|other| other != id)
+        {
+            return Err(format!(
+                "a picture named \"{}\" exists already",
+                name.trim()
+            ));
+        }
+        let picture = self.library.pictures.get_mut(id).ok_or("no such picture")?;
+        picture.rename(name).map_err(|e| e.to_string())?;
+        self.save_library()?;
+        self.sync_looks();
+        Ok(())
+    }
+
+    /// Removes a picture from the library; projects keep their copies.
+    pub fn delete_picture(&mut self, id: &LookId) -> Result<(), String> {
+        self.library.pictures.remove(id);
+        self.save_library()
+    }
+
+    /// Adds a line look to the library; one with the same name is replaced and keeps
+    /// its id.
+    pub fn add_line_look(&mut self, name: &str, spec: LineLookSpec) -> Result<LookId, String> {
+        self.check_pictures(&spec)?;
+        let existing = self.library.find_line_look(name).cloned();
+        let revision = existing
+            .as_ref()
+            .and_then(|id| self.library.line_looks.get(id))
+            .map_or(0, |l| l.revision() + 1);
+        let look = LineLook::new(name, spec, revision).map_err(|e| e.to_string())?;
+        let id = match existing {
+            Some(id) => {
+                self.library.line_looks.insert(id.clone(), look);
+                id
+            }
+            None => self.library.add_line_look(look),
+        };
+        self.save_library()?;
+        self.sync_looks();
+        Ok(id)
+    }
+
+    /// Changes the width, dash or pictures of a line look in the library.
+    pub fn edit_line_look(&mut self, id: &LookId, spec: LineLookSpec) -> Result<(), String> {
+        self.check_pictures(&spec)?;
+        let look = self
+            .library
+            .line_looks
+            .get_mut(id)
+            .ok_or("no such line look")?;
+        look.set(spec).map_err(|e| e.to_string())?;
+        self.save_library()?;
+        self.sync_looks();
+        Ok(())
+    }
+
+    fn check_pictures(&self, spec: &LineLookSpec) -> Result<(), String> {
+        for p in spec.head.iter().chain(spec.tail.iter()) {
+            if self.picture_copy(p).is_none() {
+                return Err("no such picture".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn rename_line_look(&mut self, id: &LookId, name: &str) -> Result<(), String> {
+        if self
+            .library
+            .find_line_look(name)
+            .is_some_and(|other| other != id)
+        {
+            return Err(format!(
+                "a line look named \"{}\" exists already",
+                name.trim()
+            ));
+        }
+        let look = self
+            .library
+            .line_looks
+            .get_mut(id)
+            .ok_or("no such line look")?;
+        look.rename(name).map_err(|e| e.to_string())?;
+        self.save_library()?;
+        self.sync_looks();
+        Ok(())
+    }
+
+    /// Removes a line look from the library; projects keep their copies.
+    pub fn delete_line_look(&mut self, id: &LookId) -> Result<(), String> {
+        self.library.line_looks.remove(id);
+        self.save_library()
+    }
+
+    /// Dresses a relation in a line look (or undresses it), as one undo step.
+    pub fn set_line_look(&mut self, rel: RelationId, look: Option<LookId>) {
+        let copy = look.as_ref().and_then(|l| self.line_look_copy(l));
+        if look.is_some() && copy.is_none() {
+            self.message = Some("No such line look.".into());
+            return;
+        }
+        self.apply(|p| p.wear_line_look(rel, copy));
+    }
+
+    /// Sets the pictures drawn as mouseholes, as one undo step.
+    pub fn set_portals(&mut self, portal_in: Option<LookId>, portal_out: Option<LookId>) {
+        let portal_in = portal_in.and_then(|p| self.picture_copy(&p));
+        let portal_out = portal_out.and_then(|p| self.picture_copy(&p));
+        self.apply(|p| p.set_portals(portal_in, portal_out));
     }
 
     /// A look by id, from the library or else the project's copy.

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::look::{self, LookDto, LookId};
+use crate::look::{self, LineLookDto, LookDto, LookId, PictureDto};
 
 use crate::model::{
     Anchor, Block, BlockId, BlockKind, Cell, DEFAULT_LABEL_LIMIT, Direction, Endpoint,
@@ -64,6 +64,17 @@ struct FileDto {
     /// Copies of the custom looks the boxes wear.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     looks: Vec<LookDto>,
+    /// Copies of the pictures the line looks and portals use.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pictures: Vec<PictureDto>,
+    /// Copies of the line looks the relations wear.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    line_looks: Vec<LineLookDto>,
+    /// The pictures drawn as mouseholes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    portal_in: Option<LookId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    portal_out: Option<LookId>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -171,6 +182,9 @@ struct RelationDto {
     /// Frame sides chosen by hand: whitebox box id to side.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     frame_sides: BTreeMap<BlockId, Side>,
+    /// A line look from `line_looks`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    look: Option<LookId>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -224,6 +238,24 @@ fn is_arc42(kind: &ProjectKind) -> bool {
 }
 
 pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
+    // Only the line looks still worn, and the pictures they or the portals use.
+    let line_looks_worn: look::LineLooks = project
+        .line_looks
+        .iter()
+        .filter(|(id, _)| {
+            project
+                .relations
+                .values()
+                .any(|r| r.look.as_ref() == Some(id))
+        })
+        .map(|(id, l)| (id.clone(), l.clone()))
+        .collect();
+    let pictures_used: BTreeSet<&LookId> = line_looks_worn
+        .values()
+        .flat_map(|l| l.pictures())
+        .chain(project.portal_in.iter())
+        .chain(project.portal_out.iter())
+        .collect();
     let dto = FileDto {
         format: FORMAT,
         kind: project.kind,
@@ -298,6 +330,7 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                     })
                     .collect(),
                 frame_sides: r.frame_sides.clone(),
+                look: r.look.clone(),
             })
             .collect(),
         // Only the looks still worn.
@@ -309,6 +342,17 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
                 .map(|(id, l)| (id.clone(), l.clone()))
                 .collect(),
         ),
+        pictures: look::pictures_to_dto(
+            &project
+                .pictures
+                .iter()
+                .filter(|(id, _)| pictures_used.contains(*id))
+                .map(|(id, p)| (id.clone(), p.clone()))
+                .collect(),
+        ),
+        line_looks: look::line_looks_to_dto(&line_looks_worn),
+        portal_in: project.portal_in.clone(),
+        portal_out: project.portal_out.clone(),
     };
     Ok(serde_yaml_ng::to_string(&dto)?)
 }
@@ -335,6 +379,11 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     project.bundle = dto.bundle.unwrap_or(true);
     // Looks come from anywhere a project file comes from: check them all again.
     project.looks = look::from_dto(dto.looks).map_err(PersistError::Invalid)?;
+    project.pictures = look::pictures_from_dto(dto.pictures).map_err(PersistError::Invalid)?;
+    project.line_looks =
+        look::line_looks_from_dto(dto.line_looks).map_err(PersistError::Invalid)?;
+    project.portal_in = dto.portal_in;
+    project.portal_out = dto.portal_out;
     project.export = dto.export.map(|e| ExportChoice {
         all: e.all,
         svg: e.svg,
@@ -405,6 +454,7 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
                 color: r.color,
                 mouseholes: r.mouseholes.iter().map(|m| (m.diagram, m.mode)).collect(),
                 frame_sides: r.frame_sides,
+                look: r.look,
             },
         );
     }
@@ -435,6 +485,26 @@ fn check(project: &Project) -> Result<(), PersistError> {
         }
         if project.path(b.parent).contains(id) {
             return invalid(format!("box {} is nested inside itself", id.0));
+        }
+    }
+    for (id, r) in &project.relations {
+        if let Some(look) = &r.look
+            && !project.line_looks.contains_key(look)
+        {
+            return invalid(format!("line {} has an unknown look", id.0));
+        }
+    }
+    for (id, l) in &project.line_looks {
+        if l.pictures().any(|p| !project.pictures.contains_key(p)) {
+            return invalid(format!("line look {} uses an unknown picture", id.0));
+        }
+    }
+    for portal in [&project.portal_in, &project.portal_out]
+        .into_iter()
+        .flatten()
+    {
+        if !project.pictures.contains_key(portal) {
+            return invalid("a portal is an unknown picture".to_owned());
         }
     }
     let mut per_diagram: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
