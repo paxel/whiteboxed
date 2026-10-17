@@ -92,15 +92,17 @@ pub enum Shape {
         fill: Option<Rgb>,
         stroke: Option<Stroke>,
     },
-    /// A custom look, scaled into `rect` without stretching, then turned by `angle`
-    /// (radians, clockwise) about the rect's centre. `key` is unique per picture
-    /// drawn, so ids inside never clash with another look in the same document.
+    /// A custom look, scaled into `rect` without stretching (or stretched to fill it,
+    /// for a slice of a frame), then turned by `angle` (radians, clockwise) about the
+    /// rect's centre. `key` is unique per picture drawn, so ids inside never clash
+    /// with another look in the same document.
     Look {
         rect: Rect,
         svg: Arc<str>,
         size: (f32, f32),
         key: u64,
         angle: f32,
+        stretch: bool,
     },
     /// Single-line text, vertically centred on `pos`.
     Text {
@@ -120,24 +122,15 @@ pub struct Scene {
 
 const OUTLINE: Stroke = Stroke::solid(1.5, INK);
 
+/// Height of the icon next to a whitebox's title.
+pub const FRAME_ICON_H: f32 = 20.0;
+/// Keys of the slices of a frame drawn from a look.
+const FRAME_KEYS: u64 = 3 << 32;
+
 pub fn scene(layout: &Layout) -> Scene {
     let mut shapes = Vec::new();
     if let Some(frame) = layout.frame {
-        shapes.push(Shape::Rect {
-            rect: frame.expand(-4.0),
-            radius: 4.0,
-            fill: None,
-            stroke: Some(Stroke::dashed(1.5, FRAME)),
-        });
-        if let Some(title) = &layout.title {
-            shapes.push(Shape::Text {
-                pos: Pos::new(frame.min.x + 16.0, frame.min.y + 20.0),
-                text: format!("{title} (whitebox)"),
-                size: NAME_SIZE,
-                color: FRAME,
-                align: Align::Left,
-            });
-        }
+        frame_shapes(&mut shapes, layout, frame);
     }
     for block in &layout.blocks {
         if block.kind == BlockKind::Group {
@@ -168,6 +161,7 @@ pub fn scene(layout: &Layout) -> Scene {
                 size: look.size(),
                 key: block.id.0,
                 angle: 0.0,
+                stretch: false,
             });
         }
         if layout.captions {
@@ -263,6 +257,103 @@ pub fn scene(layout: &Layout) -> Scene {
         None => layout.bounds,
     };
     Scene { bounds, shapes }
+}
+
+/// The whitebox frame: the dashed rectangle with the title inside, or the box's own
+/// look stretched as a nine-slice (corners keep their size), with the title inside
+/// or, for a look with the name below, in the caption under the frame. An icon look
+/// leaves the frame plain and sits next to the title.
+fn frame_shapes(shapes: &mut Vec<Shape>, layout: &Layout, frame: Rect) {
+    let title = layout
+        .title
+        .as_ref()
+        .map(|t| format!("{t} (whitebox)"))
+        .unwrap_or_default();
+    let mut title_at = Pos::new(frame.min.x + 16.0, frame.min.y + 20.0);
+    match &layout.frame_look {
+        Some(fl) if fl.look.mode() != LookMode::Icon => {
+            let (cw, ch) = fl.corner;
+            let (cw, ch) = (cw.min(frame.width() / 2.0), ch.min(frame.height() / 2.0));
+            let xs = [frame.min.x, frame.min.x + cw, frame.max.x - cw, frame.max.x];
+            let ys = [frame.min.y, frame.min.y + ch, frame.max.y - ch, frame.max.y];
+            let parts = [0.0, 0.25, 0.75, 1.0];
+            for row in 0..3 {
+                for col in 0..3 {
+                    let rect = Rect {
+                        min: Pos::new(xs[col], ys[row]),
+                        max: Pos::new(xs[col + 1], ys[row + 1]),
+                    };
+                    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+                        continue;
+                    }
+                    let part = (
+                        parts[col],
+                        parts[row],
+                        parts[col + 1] - parts[col],
+                        parts[row + 1] - parts[row],
+                    );
+                    shapes.push(Shape::Look {
+                        rect,
+                        svg: crate::look::slice(fl.look.svg(), part).into(),
+                        size: (rect.width(), rect.height()),
+                        key: FRAME_KEYS + (row * 3 + col) as u64,
+                        angle: 0.0,
+                        stretch: true,
+                    });
+                }
+            }
+            if let Some(caption) = layout.frame_caption {
+                shapes.push(Shape::Rect {
+                    rect: caption,
+                    radius: 4.0,
+                    fill: Some(PAPER),
+                    stroke: Some(Stroke::solid(1.5, FRAME)),
+                });
+                shapes.push(Shape::Text {
+                    pos: caption.center(),
+                    text: title,
+                    size: NAME_SIZE,
+                    color: FRAME,
+                    align: Align::Center,
+                });
+                return;
+            }
+        }
+        other => {
+            shapes.push(Shape::Rect {
+                rect: frame.expand(-4.0),
+                radius: 4.0,
+                fill: None,
+                stroke: Some(Stroke::dashed(1.5, FRAME)),
+            });
+            if let Some(fl) = other {
+                let (w, h) = fl.look.size();
+                let icon = Rect::from_min_size(
+                    Pos::new(frame.min.x + 16.0, frame.min.y + 10.0),
+                    FRAME_ICON_H * w / h,
+                    FRAME_ICON_H,
+                );
+                shapes.push(Shape::Look {
+                    rect: icon,
+                    svg: fl.look.svg().clone(),
+                    size: (w, h),
+                    key: FRAME_KEYS,
+                    angle: 0.0,
+                    stretch: false,
+                });
+                title_at.x = icon.max.x + 8.0;
+            }
+        }
+    }
+    if layout.title.is_some() {
+        shapes.push(Shape::Text {
+            pos: title_at,
+            text: title,
+            size: NAME_SIZE,
+            color: FRAME,
+            align: Align::Left,
+        });
+    }
 }
 
 /// Where a box's look goes, and the centre of its text.
@@ -631,6 +722,7 @@ fn end_shapes(
                     size: picture.size,
                     key: key + u64::from(!at_start),
                     angle: uy.atan2(ux),
+                    stretch: false,
                 });
             }
             None if arrow => shapes.push(arrow_head(from, tip, color)),
@@ -775,6 +867,7 @@ fn hole_shapes(
                 size: p.size,
                 key,
                 angle: theta,
+                stretch: false,
             });
             (width / 2.0).max(HOLE_R)
         }

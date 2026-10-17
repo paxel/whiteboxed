@@ -549,8 +549,9 @@ fn element(out: &mut String, node: roxmltree::Node, how: &Writing) -> Result<(),
 }
 
 /// The look as an `<svg>` element placed on `rect` of a bigger picture, scaled without
-/// stretching. Its ids get `prefix`, so several looks in one document never share one.
-pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str) -> String {
+/// stretching (or stretched to fill it, for a slice of a frame). Its ids get `prefix`,
+/// so several looks in one document never share one.
+pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str, stretch: bool) -> String {
     let Ok(doc) = roxmltree::Document::parse(svg) else {
         return String::new();
     };
@@ -559,12 +560,13 @@ pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str) -> String {
         .attribute("viewBox")
         .map_or_else(|| format!("0 0 {} {}", size.0, size.1), str::to_owned);
     let placed = format!(
-        r#"x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" viewBox="{}" preserveAspectRatio="xMidYMid meet""#,
+        r#"x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" viewBox="{}" preserveAspectRatio="{}""#,
         rect.min.x,
         rect.min.y,
         rect.width(),
         rect.height(),
-        escape(&view_box)
+        escape(&view_box),
+        if stretch { "none" } else { "xMidYMid meet" }
     );
     let how = Writing {
         prefix,
@@ -590,6 +592,37 @@ pub fn tinted(svg: &str, color: crate::model::Rgb) -> String {
     let placed = format!(
         r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}" color="{color}""#,
         vb.0, vb.1, vb.2, vb.3
+    );
+    let mut out = String::new();
+    match element(
+        &mut out,
+        root,
+        &Writing {
+            prefix: "",
+            placed: Some(&placed),
+        },
+    ) {
+        Ok(()) => out,
+        Err(_) => svg.to_owned(),
+    }
+}
+
+/// The part of the picture inside `part` (a fraction of its viewBox: left, top, width,
+/// height in 0..=1), as a picture of its own: one slice of a frame drawn from a look.
+pub fn slice(svg: &str, part: (f32, f32, f32, f32)) -> String {
+    let Ok(doc) = roxmltree::Document::parse(svg) else {
+        return svg.to_owned();
+    };
+    let root = doc.root_element();
+    let Some(vb) = view_box(root) else {
+        return svg.to_owned();
+    };
+    let placed = format!(
+        r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}""#,
+        vb.0 + vb.2 * part.0,
+        vb.1 + vb.3 * part.1,
+        vb.2 * part.2,
+        vb.3 * part.3
     );
     let mut out = String::new();
     match element(
@@ -1007,7 +1040,7 @@ mod tests {
     fn an_embedded_look_is_placed_and_its_ids_prefixed() -> Result<(), LookError> {
         let (svg, size) = sanitize(KAFKA)?;
         let rect = Rect::from_min_size(crate::geom::Pos::new(10.0, 20.0), 80.0, 40.0);
-        let out = embed(&svg, size, rect, "b7-");
+        let out = embed(&svg, size, rect, "b7-", false);
         assert!(out.starts_with(
             r#"<svg x="10.0" y="20.0" width="80.0" height="40.0" viewBox="1 1 38 18" preserveAspectRatio="xMidYMid meet">"#
         ));

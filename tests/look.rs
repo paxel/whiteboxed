@@ -532,3 +532,114 @@ fn the_legend_shows_a_sample_of_every_line_look_in_use() -> TestResult {
     assert!(s.bounds.max.y >= name.y + 8.0);
     Ok(())
 }
+
+/// The pair with a box inside `a`, so `a` has a whitebox; `a` wears the red look.
+fn whitebox(mode: LookMode) -> Result<(Project, BlockId), Box<dyn std::error::Error>> {
+    let (mut p, a, _) = pair(mode)?;
+    p.add_block(Some(a), &BlockSpec::new("Inner", BlockKind::Component))?;
+    Ok((p, a))
+}
+
+fn frame_rect(s: &scene::Scene) -> bool {
+    s.shapes.iter().any(|s| {
+        matches!(s, scene::Shape::Rect { stroke: Some(st), fill: None, .. } if st.dash.is_some() && st.color == scene::FRAME)
+    })
+}
+
+fn stretched(s: &scene::Scene) -> Vec<whiteboxed::geom::Rect> {
+    s.shapes
+        .iter()
+        .filter_map(|s| match s {
+            scene::Shape::Look {
+                rect,
+                stretch: true,
+                ..
+            } => Some(*rect),
+            _ => None,
+        })
+        .collect()
+}
+
+fn title_at(s: &scene::Scene) -> Option<(whiteboxed::geom::Pos, scene::Align)> {
+    s.shapes.iter().find_map(|s| match s {
+        scene::Shape::Text {
+            text, pos, align, ..
+        } if text == "Kafka (whitebox)" => Some((*pos, *align)),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_whitebox_frame_is_its_look_stretched_as_a_nine_slice() -> TestResult {
+    let (p, a) = whitebox(LookMode::Inside)?;
+    let l = render(&p, Some(a));
+    let frame = l.frame.ok_or("frame")?;
+    let fl = l.frame_look.as_ref().ok_or("frame look")?;
+    // The corners: a quarter of the picture drawn at the plain box height.
+    let (cw, ch) = fl.corner;
+    assert!((ch - layout::MIN_H / 4.0).abs() < 0.01 && (cw - 2.0 * ch).abs() < 0.01);
+    let s = scene::scene(&l);
+    assert!(!frame_rect(&s), "the dashed frame is gone");
+    let slices = stretched(&s);
+    assert_eq!(slices.len(), 9);
+    // Together they cover the frame exactly; the corner slices keep their size.
+    let area: f32 = slices.iter().map(|r| r.width() * r.height()).sum();
+    assert!((area - frame.width() * frame.height()).abs() < 1.0);
+    assert!(
+        slices
+            .iter()
+            .all(|r| frame.contains(r.min) && frame.contains(r.max))
+    );
+    let corner = slices
+        .iter()
+        .find(|r| r.min == frame.min)
+        .ok_or("top left corner")?;
+    assert!((corner.width() - cw).abs() < 0.01 && (corner.height() - ch).abs() < 0.01);
+    // The title stays inside, top left.
+    let (pos, align) = title_at(&s).ok_or("title")?;
+    assert!(pos.y < frame.min.y + 30.0 && align == scene::Align::Left);
+    assert!(l.frame_caption.is_none());
+    // Exports stretch the slices; the PNG renders; ids stay unique.
+    let svg = export::to_svg(&s);
+    assert_eq!(svg.matches(r#"preserveAspectRatio="none""#).count(), 9);
+    assert!(duplicate_ids(&svg).is_empty(), "{:?}", duplicate_ids(&svg));
+    export::to_png(&s, 1.0)?;
+
+    // With the name below, the title sits in a caption under the frame.
+    let (p, a) = whitebox(LookMode::Below)?;
+    let l = render(&p, Some(a));
+    let frame = l.frame.ok_or("frame")?;
+    let caption = l.frame_caption.ok_or("caption")?;
+    assert!(caption.min.y > frame.max.y);
+    assert!(l.bounds.max.y >= caption.max.y);
+    assert!((caption.center().x - frame.center().x).abs() < 0.01);
+    let s = scene::scene(&l);
+    assert_eq!(stretched(&s).len(), 9);
+    let (pos, align) = title_at(&s).ok_or("title")?;
+    assert!(caption.contains(pos) && align == scene::Align::Center);
+
+    // An icon leaves the frame plain and sits next to the title.
+    let (p, a) = whitebox(LookMode::Icon)?;
+    let l = render(&p, Some(a));
+    let frame = l.frame.ok_or("frame")?;
+    let s = scene::scene(&l);
+    assert!(frame_rect(&s));
+    assert!(stretched(&s).is_empty());
+    let icon = s
+        .shapes
+        .iter()
+        .find_map(|s| match s {
+            scene::Shape::Look { rect, .. } if rect.min.y < frame.min.y + 30.0 => Some(*rect),
+            _ => None,
+        })
+        .ok_or("icon")?;
+    assert!((icon.height() - scene::FRAME_ICON_H).abs() < 0.01);
+    let (pos, _) = title_at(&s).ok_or("title")?;
+    assert!(pos.x > icon.max.x);
+    assert!(l.frame_caption.is_none());
+
+    // The context view has no frame and no frame look.
+    let l = render(&p, None);
+    assert!(l.frame_look.is_none() && l.frame_caption.is_none());
+    Ok(())
+}

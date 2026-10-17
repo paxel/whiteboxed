@@ -126,6 +126,7 @@ fn shape_svg(out: &mut String, shape: &Shape) {
             size,
             key,
             angle,
+            stretch,
         } => {
             let turned = angle.abs() > 1e-4;
             if turned {
@@ -143,6 +144,7 @@ fn shape_svg(out: &mut String, shape: &Shape) {
                 *size,
                 *rect,
                 &format!("look{key}-"),
+                *stretch,
             ));
             if turned {
                 out.push_str("</g>");

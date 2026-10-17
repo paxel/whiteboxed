@@ -244,6 +244,11 @@ pub struct Layout {
     pub lines: Vec<LineGeom>,
     pub frame: Option<Rect>,
     pub title: Option<String>,
+    /// The look the whitebox's own box wears, drawn as the frame.
+    pub frame_look: Option<FrameLook>,
+    /// With a look whose name sits below the picture: the frame around the title
+    /// under the frame.
+    pub frame_caption: Option<Rect>,
     pub bounds: Rect,
     /// The grid: cell -> rect, for drag-and-drop targets.
     pub cells: Vec<(crate::model::Cell, Rect)>,
@@ -263,6 +268,17 @@ pub struct LegendEntry {
     pub key: String,
     pub lines: Vec<String>,
 }
+
+/// A look drawn as a whitebox frame: stretched as a nine-slice whose corners keep
+/// `corner` (their size when the picture is drawn at a box's height).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameLook {
+    pub look: Look,
+    pub corner: (f32, f32),
+}
+
+/// Height of the caption under a frame drawn from a look with the name below.
+pub const FRAME_CAPTION_H: f32 = NAME_SIZE + 2.0 * 6.0;
 
 /// A line look used on the diagram, shown in the legend as a sample with its name.
 #[derive(Debug, Clone, PartialEq)]
@@ -695,6 +711,37 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         .diagram
         .filter(|_| !project.is_doodle())
         .map(|_| bounds);
+    // The whitebox's own look is its frame; its corners keep the size they have on
+    // the box drawn at the plain box height.
+    let own = view.diagram.and_then(|d| project.blocks.get(&d));
+    let frame_look = frame.and_then(|_| {
+        let look = project.looks.get(own?.look.as_ref()?)?.clone();
+        let (pw, ph) = look.size();
+        let scale = MIN_H / ph;
+        Some(FrameLook {
+            corner: (pw * scale / 4.0, ph * scale / 4.0),
+            look,
+        })
+    });
+    // With the name below the picture, the title goes into a caption under the
+    // frame, and the picture grows by it.
+    let caption_h = frame_look
+        .as_ref()
+        .filter(|fl| fl.look.mode() == LookMode::Below)
+        .map(|_| FRAME_CAPTION_H + GAP / 4.0);
+    let frame_caption = caption_h.zip(frame).map(|(_, f)| {
+        let title = format!("{} (whitebox)", own.map_or("", |b| &b.name));
+        let w = text::width(&title, NAME_SIZE) + 2.0 * PAD;
+        Rect::from_min_size(
+            Pos::new(f.center().x - w / 2.0, f.max.y + GAP / 8.0),
+            w,
+            FRAME_CAPTION_H,
+        )
+    });
+    let bounds = match caption_h {
+        Some(h) => Rect::from_min_size(bounds.min, bounds.width(), bounds.height() + h),
+        None => bounds,
+    };
 
     // Port positions: (line index, end) -> (point, channel entry). A port sits where
     // its partner is, so facing boxes get straight lines; ports on one side then keep
@@ -1166,6 +1213,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         legend,
         legend_looks,
         legend_at,
+        frame_look,
+        frame_caption,
     };
     (layout, grid)
 }
