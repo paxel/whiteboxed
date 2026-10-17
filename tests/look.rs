@@ -387,3 +387,86 @@ fn lines_bundle_only_with_the_same_look() -> TestResult {
     assert_eq!(view.lines.len(), 1);
     Ok(())
 }
+
+/// A portal: a blue ring, as high as wide.
+const PORTAL_IN: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+<circle cx="5" cy="5" r="4" fill="none" stroke="#0000ff" stroke-width="2"/></svg>"##;
+/// The other portal: an orange ring.
+const PORTAL_OUT: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+<circle cx="5" cy="5" r="4" fill="none" stroke="#ff8800" stroke-width="2"/></svg>"##;
+
+#[test]
+fn portals_replace_the_arches_in_at_the_tail_and_out_at_the_head() -> TestResult {
+    use whiteboxed::look::Picture;
+    use whiteboxed::model::{Cell, MouseholeMode, Placement};
+    let mut p = Project::new();
+    let a = p.add_block(None, &BlockSpec::new("A", BlockKind::Component))?;
+    let b = p.add_block(None, &BlockSpec::new("B", BlockKind::Component))?;
+    p.move_block(b, Cell::new(4, 0))?;
+    for col in 1..=3 {
+        let f = p.add_block(
+            None,
+            &BlockSpec::new(&format!("F{col}"), BlockKind::Component),
+        )?;
+        p.move_block(f, Cell::new(col, 0))?;
+    }
+    let rel = p.connect_existing(a, Side::Right, b, Direction::Out, "", Placement::Keep)?;
+    p.set_mousehole(rel, None, MouseholeMode::Always)?;
+    let (into, out) = (LookId("in".into()), LookId("out".into()));
+    p.pictures
+        .insert(into.clone(), Picture::new("In", PORTAL_IN, 0)?);
+    p.pictures
+        .insert(out.clone(), Picture::new("Out", PORTAL_OUT, 0)?);
+    // Without portals: two arches, no pictures.
+    let l = render(&p, None);
+    assert!(end_pictures(&scene::scene(&l)).is_empty());
+    p.set_portals(
+        Some((into.clone(), p.pictures.get(&into).ok_or("in")?.clone())),
+        Some((out.clone(), p.pictures.get(&out).ok_or("out")?.clone())),
+    )?;
+    let l = render(&p, None);
+    let m = l.lines[0].mousehole.as_ref().ok_or("holes")?.clone();
+    let s = scene::scene(&l);
+    let holes = end_pictures(&s);
+    assert_eq!(holes.len(), 2);
+    // Both as high as the arch was, centred on the holes, each turned away from its
+    // port like the arch's round side.
+    for (rect, angle, _) in &holes {
+        assert!((rect.height() - 2.0 * scene::HOLE_R).abs() < 0.01);
+        let away = if rect.center().dist(m.a) < 0.01 {
+            0.0
+        } else {
+            std::f32::consts::PI
+        };
+        assert!((angle - away).abs() < 1e-3, "{angle}");
+    }
+    let at = |c: whiteboxed::geom::Pos| {
+        holes
+            .iter()
+            .find(|(r, _, _)| r.center().dist(c) < 0.01)
+            .map(|(_, _, svg)| svg.clone())
+    };
+    // The arrow points at B: in at A's hole, out at B's.
+    assert!(at(m.a).ok_or("hole a")?.contains("#0000ff"));
+    assert!(at(m.b).ok_or("hole b")?.contains("#ff8800"));
+    // No arches left.
+    assert!(
+        !s.shapes
+            .iter()
+            .any(|s| matches!(s, scene::Shape::Polygon { points, .. } if points.len() > 3))
+    );
+    // The arrow the other way swaps them.
+    p.relations.get_mut(&rel).ok_or("rel")?.direction = Direction::In;
+    let l = render(&p, None);
+    let m = l.lines[0].mousehole.as_ref().ok_or("holes")?.clone();
+    let holes = end_pictures(&scene::scene(&l));
+    let at = |c: whiteboxed::geom::Pos| {
+        holes
+            .iter()
+            .find(|(r, _, _)| r.center().dist(c) < 0.01)
+            .map(|(_, _, svg)| svg.clone())
+    };
+    assert!(at(m.a).ok_or("hole a")?.contains("#ff8800"));
+    assert!(at(m.b).ok_or("hole b")?.contains("#0000ff"));
+    Ok(())
+}

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::geom::{Pos, Rect};
 use crate::layout::{
-    BlockGeom, CAPTIONED_H, ICON_H, KIND_SIZE, LABEL_SIZE, LEGEND_LINE, LOOK_GAP, Layout,
-    LegendEntry, LineGeom, LineKind, NAME_SIZE, PAD, kind_caption,
+    BlockGeom, CAPTIONED_H, EndPicture, ICON_H, KIND_SIZE, LABEL_SIZE, LEGEND_LINE, LOOK_GAP,
+    Layout, LegendEntry, LineGeom, LineKind, NAME_SIZE, PAD, kind_caption,
 };
 use crate::look::LookMode;
 use crate::model::{BlockKind, LineStyle, Rgb, Side};
@@ -666,8 +666,24 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
         let n = m.piece_a.len();
         let before_a = m.piece_a.get(n.wrapping_sub(2)).copied().unwrap_or(m.a);
         let before_b = m.piece_b.get(1).copied().unwrap_or(m.b);
-        hole_shapes(shapes, m.a, before_a, &label, color);
-        hole_shapes(shapes, m.b, before_b, &label, color);
+        hole_shapes(
+            shapes,
+            m.a,
+            before_a,
+            &label,
+            color,
+            m.portal_a.as_ref(),
+            key,
+        );
+        hole_shapes(
+            shapes,
+            m.b,
+            before_b,
+            &label,
+            color,
+            m.portal_b.as_ref(),
+            key + 1,
+        );
     } else {
         let mut points = line.points.clone();
         let n = points.len();
@@ -727,27 +743,58 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
 }
 
 /// A mousehole at `c` for a line coming from `from`: a filled arch, its round side
-/// ahead, and the label past it.
-fn hole_shapes(shapes: &mut Vec<Shape>, c: Pos, from: Pos, label: &str, color: Rgb) {
+/// ahead, or the project's portal picture turned the same way; and the label past it.
+fn hole_shapes(
+    shapes: &mut Vec<Shape>,
+    c: Pos,
+    from: Pos,
+    label: &str,
+    color: Rgb,
+    portal: Option<&EndPicture>,
+    key: u64,
+) {
     let (dx, dy) = (c.x - from.x, c.y - from.y);
     let len = (dx * dx + dy * dy).sqrt().max(0.001);
     let (ux, uy) = (dx / len, dy / len);
-    let theta = uy.atan2(ux).to_degrees();
-    shapes.push(Shape::Polygon {
-        points: arc(c, HOLE_R, HOLE_R, theta - 90.0, theta + 90.0),
-        fill: Some(color),
-        stroke: None,
-    });
+    let theta = uy.atan2(ux);
+    // How far the hole reaches ahead of `c`, where the label starts.
+    let reach = match portal {
+        Some(p) => {
+            let width = 2.0 * HOLE_R * p.size.0 / p.size.1;
+            shapes.push(Shape::Look {
+                rect: Rect::from_center(c, width, 2.0 * HOLE_R),
+                svg: p.svg.clone(),
+                size: p.size,
+                key,
+                angle: theta,
+            });
+            (width / 2.0).max(HOLE_R)
+        }
+        None => {
+            shapes.push(Shape::Polygon {
+                points: arc(
+                    c,
+                    HOLE_R,
+                    HOLE_R,
+                    theta.to_degrees() - 90.0,
+                    theta.to_degrees() + 90.0,
+                ),
+                fill: Some(color),
+                stroke: None,
+            });
+            HOLE_R
+        }
+    };
     let (pos, align) = if ux.abs() > uy.abs() {
         if ux > 0.0 {
-            (Pos::new(c.x + HOLE_R + 5.0, c.y), Align::Left)
+            (Pos::new(c.x + reach + 5.0, c.y), Align::Left)
         } else {
-            (Pos::new(c.x - HOLE_R - 5.0, c.y), Align::Right)
+            (Pos::new(c.x - reach - 5.0, c.y), Align::Right)
         }
     } else if uy > 0.0 {
-        (Pos::new(c.x, c.y + HOLE_R + 10.0), Align::Center)
+        (Pos::new(c.x, c.y + reach + 10.0), Align::Center)
     } else {
-        (Pos::new(c.x, c.y - HOLE_R - 9.0), Align::Center)
+        (Pos::new(c.x, c.y - reach - 9.0), Align::Center)
     };
     shapes.push(Shape::Text {
         pos,

@@ -146,6 +146,22 @@ pub struct EndPicture {
     pub size: (f32, f32),
 }
 
+/// The project's portals for `line`, at hole a and hole b: the line goes in near its
+/// tail and comes out near its head; without a head it goes in at end A.
+fn portals(project: &Project, line: &ViewLine) -> (Option<EndPicture>, Option<EndPicture>) {
+    let color = line.color.unwrap_or(crate::scene::LINE);
+    let picture = |p: &Option<LookId>| {
+        let picture = project.pictures.get(p.as_ref()?)?;
+        Some(EndPicture {
+            svg: crate::look::tinted(picture.svg(), color).into(),
+            size: picture.size(),
+        })
+    };
+    let (into, out) = (picture(&project.portal_in), picture(&project.portal_out));
+    let heads_to_a = line.direction.arrow_at_a() && !line.direction.arrow_at_b();
+    if heads_to_a { (out, into) } else { (into, out) }
+}
+
 /// The line look of `line` as the project keeps it, tinted in the line's colour.
 fn drawn_look(project: &Project, line: &ViewLine) -> Option<DrawnLook> {
     let id = line.look.as_ref()?;
@@ -177,6 +193,10 @@ pub struct Mousehole {
     pub piece_b: Vec<Pos>,
     /// `2`, or `2,5` for a bundle.
     pub label: String,
+    /// The portals drawn instead of the arches, where the project has them: at hole
+    /// `a` and at hole `b`, already in the line's colour.
+    pub portal_a: Option<EndPicture>,
+    pub portal_b: Option<EndPicture>,
 }
 
 impl LineGeom {
@@ -935,7 +955,9 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                 }
                 let mut geom = build_line(line, LineKind::Routed, points, None, None, look);
                 if hidden.contains(&li) {
-                    geom.mousehole = Some(mousehole_of(&geom.points, hole_labels[li].clone()));
+                    let mut hole = mousehole_of(&geom.points, hole_labels[li].clone());
+                    (hole.portal_a, hole.portal_b) = portals(project, line);
+                    geom.mousehole = Some(hole);
                     geom.label_at = geom.mousehole.as_ref().map_or(geom.label_at, |m| m.a);
                 }
                 geom
@@ -1250,6 +1272,8 @@ fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
         piece_a,
         piece_b,
         label,
+        portal_a: None,
+        portal_b: None,
     }
 }
 
