@@ -986,9 +986,13 @@ impl Editor {
         match form.mode {
             ConnectMode::New => {
                 let spec = form.block.spec();
+                let look = form.block.look.as_ref().and_then(|l| self.look_copy(l));
                 if let Some((id, _)) = self.apply(|p| {
                     let (id, rel) = p.connect_new(from, side, &spec, direction, text)?;
                     p.set_relation_short(rel, short)?;
+                    if look.is_some() {
+                        p.wear_look(id, look)?;
+                    }
                     Ok((id, rel))
                 }) {
                     self.selected = Some(id);

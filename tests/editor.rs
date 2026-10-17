@@ -785,6 +785,29 @@ fn looks_live_in_the_library_and_boxes_wear_copies() -> TestResult {
 }
 
 #[test]
+fn a_box_connected_from_a_line_wears_the_chosen_look() -> TestResult {
+    use whiteboxed::look::{Library, LookMode};
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let kafka = e.add_look("Kafka", LookMode::Icon, ORANGE)?;
+    let shop = add_first(&mut e, "Shop")?;
+    e.start_connect(shop, Side::Right);
+    if let Some(Popup::Connect(form)) = &mut e.popup {
+        form.block.name = "Events".into();
+        form.block.look = Some(kafka.clone());
+    }
+    e.confirm();
+    assert!(e.popup.is_none());
+    let events = e.selected.ok_or("nothing selected")?;
+    assert_eq!(
+        e.project.blocks.get(&events).and_then(|b| b.look.clone()),
+        Some(kafka.clone())
+    );
+    assert!(e.project.looks.contains_key(&kafka));
+    Ok(())
+}
+
+#[test]
 fn an_opened_project_takes_the_newer_library_version() -> TestResult {
     use whiteboxed::look::{Library, LookMode};
     let dir = tempfile::tempdir()?;
