@@ -47,6 +47,11 @@ impl Settings {
         let mut limit = editor.project.label_limit;
         let mut score = editor.project.score_limits;
         let mut bundle = editor.project.bundle;
+        let mut portals = (
+            editor.project.portal_in.clone(),
+            editor.project.portal_out.clone(),
+        );
+        let pictures = editor.pictures_offered();
         let mut make_default = false;
         if !self.naming {
             self.name = editor.project.name.clone();
@@ -110,6 +115,38 @@ impl Settings {
                         "Draw them as one line with all their texts; inside the whiteboxes they \
                          stay apart",
                     );
+                if !pictures.is_empty() || portals.0.is_some() || portals.1.is_some() {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new("Mouseholes").strong());
+                    ui.label(
+                        RichText::new(
+                            "Pictures from the library instead of the arches: one where a \
+                             line goes in, one where it comes out.",
+                        )
+                        .weak(),
+                    );
+                    egui::Grid::new("portals").num_columns(2).show(ui, |ui| {
+                        for (label, portal, salt) in [
+                            ("Line goes in", &mut portals.0, "portal-in"),
+                            ("Line comes out", &mut portals.1, "portal-out"),
+                        ] {
+                            ui.label(label);
+                            let shown = portal
+                                .as_ref()
+                                .and_then(|p| pictures.iter().find(|(id, _)| id == p))
+                                .map_or_else(|| "arch".to_owned(), |(_, name)| name.clone());
+                            egui::ComboBox::from_id_salt(salt)
+                                .selected_text(shown)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(portal, None, "arch");
+                                    for (id, name) in &pictures {
+                                        ui.selectable_value(portal, Some(id.clone()), name);
+                                    }
+                                });
+                            ui.end_row();
+                        }
+                    });
+                }
                 let boxes_label = if editor.project.is_doodle() {
                     "Shapes"
                 } else {
@@ -169,6 +206,14 @@ impl Settings {
         }
         if bundle != editor.project.bundle {
             editor.set_bundle(bundle);
+        }
+        if portals
+            != (
+                editor.project.portal_in.clone(),
+                editor.project.portal_out.clone(),
+            )
+        {
+            editor.set_portals(portals.0, portals.1);
         }
         if make_default {
             self.prefs.line_style = editor.project.line_style;

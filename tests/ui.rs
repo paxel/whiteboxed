@@ -1754,3 +1754,64 @@ fn doodle_settings_offer_readability_limits_for_shapes() {
     assert!(h.query_by_label("Shapes").is_some());
     assert!(h.query_by_label("Boxes").is_none());
 }
+
+const PLUG: &str =
+    r##"<svg viewBox="0 0 10 6"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"##;
+
+#[test]
+fn the_looks_dialog_adds_line_looks_and_lists_pictures() -> TestResult {
+    use whiteboxed::look::Library;
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    e.add_picture("Plug", PLUG)?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Looks\u{2026}").click();
+    h.run();
+    assert!(h.query_by_label("Pictures").is_some());
+    assert!(h.query_by_label("Line looks").is_some());
+    h.get_by_label("Add line look").click();
+    h.run();
+    let looks = &h.state().editor.library.line_looks;
+    assert_eq!(looks.len(), 1);
+    assert_eq!(looks.values().next().map(|l| l.name()), Some("line look 1"));
+    // Its head combo offers the picture.
+    assert!(h.query_by_label("head").is_some());
+    // Deleting the picture (its Delete comes first) leaves the line look.
+    h.get_all_by_role_and_label(egui::accesskit::Role::Button, "Delete")
+        .next()
+        .ok_or("delete")?
+        .click();
+    h.run();
+    assert!(h.state().editor.library.pictures.is_empty());
+    assert_eq!(h.state().editor.library.line_looks.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn project_settings_pick_the_portals() -> TestResult {
+    use whiteboxed::look::Library;
+    let (mut e, _) = one_box()?;
+    e.set_library(Library::default(), None);
+    let portal = e.add_picture("Portal", PLUG)?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Project settings\u{2026}").click();
+    h.run();
+    assert!(h.query_by_label("Line goes in").is_some());
+    // The first combo of the dialog is the in-portal.
+    h.get_all_by_role(egui::accesskit::Role::ComboBox)
+        .next()
+        .ok_or("combo")?
+        .click();
+    h.run();
+    h.get_by_label("Portal").click();
+    h.run();
+    assert_eq!(h.state().editor.project.portal_in, Some(portal));
+    assert_eq!(h.state().editor.project.portal_out, None);
+    Ok(())
+}

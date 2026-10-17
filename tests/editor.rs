@@ -1005,3 +1005,63 @@ fn a_line_wears_a_line_look_and_the_project_copies_it_with_its_pictures() -> Tes
     assert_eq!(e.project.portal_in, None);
     Ok(())
 }
+
+#[test]
+fn the_line_dialogs_set_the_line_look() -> TestResult {
+    use whiteboxed::look::{Library, LineLookSpec};
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let async_ = e.add_line_look("async", LineLookSpec::default())?;
+    let shop = add_first(&mut e, "Shop")?;
+    // A new box from a line, with the look.
+    e.start_connect(shop, Side::Right);
+    if let Some(Popup::Connect(form)) = &mut e.popup {
+        form.block.name = "Orders".into();
+        form.look = Some(async_.clone());
+    }
+    e.confirm();
+    let orders = e.selected.ok_or("orders")?;
+    let rel = *e.project.relations.keys().next().ok_or("relation")?;
+    assert_eq!(
+        e.project.relations.get(&rel).and_then(|r| r.look.clone()),
+        Some(async_.clone())
+    );
+    // An existing box, with the look.
+    let bank = add_first(&mut e, "Bank")?;
+    e.start_connect(orders, Side::Right);
+    if let Some(Popup::Connect(form)) = &mut e.popup {
+        form.mode = ConnectMode::Existing;
+        form.target = Some(Target::Block(bank));
+        form.look = Some(async_.clone());
+    }
+    e.confirm();
+    assert!(e.popup.is_none(), "{:?}", e.popup);
+    let to_bank = e
+        .project
+        .relations
+        .iter()
+        .find(|(_, r)| r.b.anchors.iter().any(|a| a.block == bank))
+        .map(|(id, _)| *id)
+        .ok_or("line to bank")?;
+    assert_eq!(
+        e.project
+            .relations
+            .get(&to_bank)
+            .and_then(|r| r.look.clone()),
+        Some(async_.clone())
+    );
+    // The edit dialog takes it off again.
+    e.start_edit_relation(rel);
+    assert!(
+        matches!(&e.popup, Some(Popup::EditRelation { look, .. }) if look.as_ref() == Some(&async_))
+    );
+    if let Some(Popup::EditRelation { look, .. }) = &mut e.popup {
+        *look = None;
+    }
+    e.confirm();
+    assert_eq!(
+        e.project.relations.get(&rel).and_then(|r| r.look.clone()),
+        None
+    );
+    Ok(())
+}

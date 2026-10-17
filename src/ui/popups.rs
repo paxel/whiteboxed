@@ -154,6 +154,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 direction_row(ui, &mut form.direction);
                 text_row(ui, &mut form.text, false);
                 short_row(ui, &mut form.short);
+                line_look_row(ui, editor, &mut form.look);
             }
             if pick {
                 return Some(Action::Pick);
@@ -168,6 +169,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             pattern,
             color,
             mousehole,
+            look,
             frame,
             sides,
             ..
@@ -175,6 +177,7 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
             direction_row(ui, direction);
             text_row(ui, text, std::mem::take(focus));
             short_row(ui, short);
+            line_look_row(ui, editor, look);
             style_row(ui, style, editor.project.line_style);
             if let Some((_, side)) = frame {
                 ui.horizontal(|ui| {
@@ -571,6 +574,30 @@ fn line_color_row(ui: &mut Ui, color: &mut Option<crate::model::Rgb>) {
         if ui.color_edit_button_srgb(&mut rgb).changed() {
             *color = Some(crate::model::Rgb(rgb[0], rgb[1], rgb[2]));
         }
+    });
+}
+
+/// The line look a line wears: plain, or one of the library's and the project's.
+/// Shown only when there is one to choose.
+fn line_look_row(ui: &mut Ui, editor: &Editor, look: &mut Option<crate::look::LookId>) {
+    let looks = editor.line_looks_offered();
+    if looks.is_empty() && look.is_none() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label("Look");
+        let shown = look
+            .as_ref()
+            .and_then(|l| looks.iter().find(|(id, _)| id == l))
+            .map_or_else(|| "plain".to_owned(), |(_, name)| name.clone());
+        egui::ComboBox::from_id_salt("line-look")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(look, None, "plain");
+                for (id, name) in &looks {
+                    ui.selectable_value(look, Some(id.clone()), name);
+                }
+            });
     });
 }
 

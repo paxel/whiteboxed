@@ -107,6 +107,8 @@ pub struct ConnectForm {
     pub text: String,
     /// Optional short label shown on the line instead of `text`.
     pub short: String,
+    /// The line look the new line wears.
+    pub look: Option<LookId>,
 }
 
 /// An open end that was clicked and is waiting for a box.
@@ -125,6 +127,7 @@ pub enum Pending {
         direction: Direction,
         text: String,
         short: String,
+        look: Option<LookId>,
     },
     Stub {
         rel: RelationId,
@@ -150,6 +153,8 @@ pub enum Popup {
         color: Option<crate::model::Rgb>,
         /// Whether the line goes through mouseholes in the diagram shown.
         mousehole: crate::model::MouseholeMode,
+        /// The line look it wears (`None`: plain).
+        look: Option<LookId>,
         /// The whitebox shown and the frame side chosen there (`None`: automatic),
         /// when the relation enters it from outside.
         frame: Option<(BlockId, Option<Side>)>,
@@ -644,6 +649,7 @@ impl Editor {
             direction: Direction::Out,
             text: String::new(),
             short: String::new(),
+            look: None,
         }));
     }
 
@@ -698,6 +704,7 @@ impl Editor {
                 pattern: r.pattern,
                 color: r.color,
                 mousehole: r.mousehole_in(self.diagram),
+                look: r.look.clone(),
                 frame: self
                     .diagram
                     .filter(|d| {
@@ -885,10 +892,12 @@ impl Editor {
                 pattern,
                 color,
                 mousehole,
+                look,
                 frame,
                 sides,
             } => {
                 let diagram = self.diagram;
+                let look = look.as_ref().and_then(|l| self.line_look_copy(l));
                 if self
                     .apply(|p| {
                         p.edit_relation(rel, direction, &text)?;
@@ -896,6 +905,7 @@ impl Editor {
                         p.set_relation_pattern(rel, pattern)?;
                         p.set_relation_color(rel, color)?;
                         p.set_mousehole(rel, diagram, mousehole)?;
+                        p.wear_line_look(rel, look)?;
                         if let Some((outer, side)) = frame {
                             p.set_frame_side(rel, outer, side)?;
                         }
@@ -983,6 +993,7 @@ impl Editor {
             ref short,
             ..
         } = form;
+        let line_look = form.look.as_ref().and_then(|l| self.line_look_copy(l));
         match form.mode {
             ConnectMode::New => {
                 let spec = form.block.spec();
@@ -990,6 +1001,7 @@ impl Editor {
                 if let Some((id, _)) = self.apply(|p| {
                     let (id, rel) = p.connect_new(from, side, &spec, direction, text)?;
                     p.set_relation_short(rel, short)?;
+                    p.wear_line_look(rel, line_look)?;
                     if look.is_some() {
                         p.wear_look(id, look)?;
                     }
@@ -1003,7 +1015,8 @@ impl Editor {
                 if self
                     .apply(|p| {
                         let rel = p.add_stub(from, side, direction, text)?;
-                        p.set_relation_short(rel, short)
+                        p.set_relation_short(rel, short)?;
+                        p.wear_line_look(rel, line_look)
                     })
                     .is_some()
                 {
@@ -1019,6 +1032,7 @@ impl Editor {
                     direction,
                     text: text.clone(),
                     short: short.clone(),
+                    look: form.look.clone(),
                 }),
                 Some(Target::Dangling(rel, end)) => {
                     let Some(owner) = self.diagram else { return };
@@ -1100,13 +1114,17 @@ impl Editor {
                 direction,
                 text,
                 short,
-            } => self
-                .apply(|p| {
+                look,
+            } => {
+                let look = look.as_ref().and_then(|l| self.line_look_copy(l));
+                self.apply(|p| {
                     let rel =
                         p.connect_existing(from, side, target, direction, &text, placement)?;
-                    p.set_relation_short(rel, &short)
+                    p.set_relation_short(rel, &short)?;
+                    p.wear_line_look(rel, look)
                 })
-                .is_some(),
+                .is_some()
+            }
             Pending::Stub { rel, target } => self
                 .apply(|p| p.connect_stub(rel, diagram, target, None, placement))
                 .is_some(),
