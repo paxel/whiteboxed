@@ -98,6 +98,11 @@ picture grows. In a project the look goes on top of the box type: choose it unde
 **Look** in the box's dialog; the type and its rules stay. In a doodle the looks
 appear at the end of the **Shape** list.
 
+Inside a whitebox, the **frame** is the box's own look, stretched: the corners keep
+the size they have on the box, the edges and the middle stretch (a nine-slice). With
+the name below, the title sits in a small frame under the picture, as outside; an icon
+look leaves the frame plain and puts the icon next to the title.
+
 **File > Looks…** shows the library: rename a look by editing its name, delete it, or
 **Import .svg…** a picture (named after the file, shown the way chosen next to the
 button). The AI can add looks too (`add_look`).
@@ -107,7 +112,27 @@ button). The AI can add looks too (`add_look`).
 A project keeps a **copy** of every look its boxes wear, so it shows the same on
 another computer. When a project is opened, it takes the library's version of a look
 if that is newer (renamed or replaced); a look deleted from the library stays in the
-projects that use it, and is offered again in their dialogs.
+projects that use it, and is offered again in their dialogs. Pictures and line looks
+(below) are kept and taken over the same way.
+
+#### Pictures and line looks
+
+The library also holds **pictures**: SVGs without a mode, for the ends of lines and
+for [mouseholes](#mouseholes). A picture is never worn by a box. On a line it is drawn
+pointing right with its tip at the right edge of its viewBox, scaled to the height of
+an arrowhead, and turned along the line; whatever it draws in `currentColor` takes the
+line's colour, other colours stay. Import one with **Import picture .svg…** in the
+Looks dialog, or let the AI draw it (`add_picture`).
+
+A **line look** is a kind of line: a name such as *async* or *data flow*, a stroke
+width, a dash (solid, dashed or dotted) and a **head** and a **tail** picture. A line
+wears it on every level: pick it under **Look** in the line's **Edit…** dialog or in
+the Connect dialog. The line's direction says which ends get the head (without a head
+picture they get the plain arrowhead) and which the tail, which is usually nothing;
+colour, direction and text stay on the line. Lines bundle only when they share look,
+pattern and colour. The legend shows a sample of every line look on the diagram with
+its name, and the kinds of line in use count for [readability](#readability). Add
+and edit line looks in the Looks dialog (**Add line look**), or with `add_line_look`.
 
 Only a safe part of SVG is accepted: `svg`, `g`, `defs`, `path`, `rect`, `circle`,
 `ellipse`, `line`, `polyline`, `polygon`, `text`, `tspan`, `linearGradient`,
@@ -196,6 +221,13 @@ In the app, hovering a hole highlights both holes and shows the route between th
 faintly; clicking one selects the line. **Mouseholes** in the line's **Edit…** dialog
 sets it for the diagram shown: **automatic**, **always** or **never**. Lines through
 mouseholes count for [readability](#readability).
+
+The holes are arches in the line's colour, or **portals**: two pictures from the
+library, chosen under **Mouseholes** in [Project settings](#project-settings), one
+where a line goes in (near its tail) and one where it comes out (near its head). A
+line without a head goes in at its first end. Portals keep their own colours, like the
+blue and the orange one of a certain game; the number next to them is written in the
+line's colour.
 
 ### Stubs
 
@@ -291,8 +323,9 @@ selected, the details panel lists each cause with what helps.
 | Lines that cross         | 1           | 3        | Rearrange so partners face each other, or group      |
 | Lines on the busiest box | 6           | 9        | Split the box, or move its partners into its whitebox |
 | Lines through mouseholes | 3           | 5        | Move partners closer, or set lines to never go under  |
+| Line looks in use        | 3           | 5        | Fewer kinds of line; say the difference in the texts   |
 
-The worst of the four gives the colour. The limits are a rule of thumb, not part of
+The worst of the five gives the colour. The limits are a rule of thumb, not part of
 arc42: arc42 asks for a level 1 with the major parts of the system and lets you refine
 only the boxes that need it. Change them under [Project settings](#project-settings).
 Concerns that every part uses, such as logging or security, are often better a
@@ -457,7 +490,8 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
   never follow symbolic links out of an allowed folder.
 - **What the AI may not do:** save, open or start a project, read files, or run
   anything. That stays with you. The one thing it writes outside the project is your
-  library of looks (`add_look`), and only pictures that pass the SVG check.
+  library of looks (`add_look`, `add_picture`, `add_line_look`), and only pictures
+  that pass the SVG check.
 
 | Tool                 | Does                                                              |
 |----------------------|-------------------------------------------------------------------|
@@ -465,13 +499,13 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `get_diagram`        | One diagram: boxes, lines, open ends, problems, readability score |
 | `render_diagram`     | One diagram as PNG, as you see it                                 |
 | `add_box`            | A box without relation, or with `band: true` a cross-cutting band |
-| `connect_new`        | A new box on one side of a box, connected                         |
-| `connect_existing`   | Two boxes of a diagram; `placement` move (default) or keep        |
+| `connect_new`        | A new box on one side of a box, connected; `look` for the line    |
+| `connect_existing`   | Two boxes of a diagram; `placement` move (default) or keep; `look` |
 | `add_stub`           | A relation that leaves the level                                  |
 | `connect_open_end`   | A stub's open end to a box                                        |
 | `attach`             | A relation from the level above to a box inside; again: fans out  |
 | `edit_box`           | Name, type, tag, look                                             |
-| `edit_relation`      | Direction, text, short label, style, colour, mouseholes, sides    |
+| `edit_relation`      | Direction, text, short label, style, colour, mouseholes, sides, look |
 | `set_responsibility` | A box's responsibility                                            |
 | `set_motivation`     | A diagram's motivation                                            |
 | `move_box`           | A box to another grid cell                                        |
@@ -484,11 +518,15 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 | `delete_relation`    | A relation; with `detach_in` (and `landing`) only inside there    |
 | `export_docs`        | Images, arc42 texts, index (and HTML) into a folder you allowed   |
 | `batch`              | Several editing calls as one undo step, all or nothing            |
-| `list_looks`         | The looks of the library and the project                          |
+| `list_looks`         | The looks, pictures, line looks and portals of the library and the project |
 | `add_look`           | A look (name, SVG, mode) into your library; same name: replaced   |
+| `add_picture`        | A picture (name, SVG) for line ends and portals; same name: replaced |
+| `add_line_look`      | A line look (name, width, dash, head, tail) into your library     |
+| `set_portals`        | The pictures drawn as mouseholes (`in`, `out`; "" is the arch)    |
 
-`list_looks` and `add_look` also work with a doodle open. `add_look` changes your
-library, which undo does not reach, so it cannot run in a `batch`.
+The look tools also work with a doodle open. `add_look`, `add_picture` and
+`add_line_look` change your library, which undo does not reach, so they cannot run in
+a `batch`.
 
 With a **doodle** open, the AI works with the `doodle_` tools instead, and the tools
 above refuse (and the other way round). Doodle tools address pages, shapes, groups
@@ -503,8 +541,8 @@ and lines by id, since texts may repeat:
 | `doodle_edit_shape`   | Text, shape type, look or colour of a shape or group    |
 | `doodle_move_shape`   | A shape to another cell                                 |
 | `doodle_delete_shape` | A shape or group                                        |
-| `doodle_add_line`     | A line between two shapes or groups, pattern and colour |
-| `doodle_edit_line`    | Text, direction, pattern, colour, mouseholes            |
+| `doodle_add_line`     | A line between two shapes or groups, pattern, colour, look |
+| `doodle_edit_line`    | Text, direction, pattern, colour, mouseholes, look      |
 | `doodle_delete_line`  | A line                                                  |
 | `doodle_group`        | A group framed around shapes; `doodle_widen_group`      |
 

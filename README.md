@@ -32,8 +32,10 @@ levels cannot drift apart.
   whiteboard shapes, multi-line texts, colours, nested groups, dashed and dotted lines,
   same automatic layout, no arc42 rules.
 - **Custom looks.** Your own SVG pictures for special boxes (Kafka, a company system, a
-  device), from a file or drawn by the AI, in a library every file can
-  use.
+  device), from a file or drawn by the AI, in a library every file can use; inside, a
+  box's look becomes its whitebox frame. Line looks give lines a kind of their own
+  (width, dash, pictures at the ends), shown in the legend, and portals replace the
+  mousehole arches.
 - **Restructure without redrawing.** Group boxes into a new box, dissolve a whitebox,
   move a box up a level or into another box, split a coarse relation into precise
   ones; the relations follow on every level.

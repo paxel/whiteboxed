@@ -92,8 +92,6 @@ _Avoid_: Box type, kind
 
 ### Appearance
 
-Library, picture, line look and portal, and the frame drawn from a look, are decided (2026-10-17) and not built yet.
-
 **Look**:
 A named picture from the library that a box or a shape can wear; on a box it changes only the drawing, never the box type's rules. The picture is the SVG inside a look.
 _Avoid_: Custom look

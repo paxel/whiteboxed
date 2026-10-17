@@ -4,24 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.5.0]
+## [0.6.0]
 
 ### Added
 
-- Doodle pages get a readability colour, shown as a dot on the page tab that explains on hover what helps; the limits are in File > Project settings… and the AI sees it in doodle_get.
-- Lines can have a colour of their own, picked in the line's Edit… dialog or set by the AI; a relation keeps it on every level.
-- Mouseholes: a line that would run straight over more than two boxes goes into a numbered hole near each end instead, with its text in the legend; hovering a hole shows both holes and the route. Mouseholes in the line's Edit… dialog (and the AI) set it per line and diagram to automatic, always or never, and lines through mouseholes are a readability measure with limits of their own.
-
-### Changed
-
-- Lines leave a box in the middle of its side, join a diagonal partner with one bend through free cells, enter a box in the order they arrive so none crosses another on its way in, and keep 40 px apart in gaps that widen for them; a crossing is worth a detour of about one cell, no more.
-- A relation from outside enters a whitebox in line with the box that takes it; the partner names along the frame's top and bottom go to a further row instead of pushing the ends apart.
-- An interface no box handles yet is "not attached" in the status bar and the export, whose column is now "Attached to".
-- The plain doodle shapes are called rectangle and rounded rectangle.
-
-### Fixed
-
-- Lines reach the drawing of a look, not the empty margin of its viewBox, which AI-drawn pictures often have. With the name below, the picture is the box: the name sits in a frame of its own under it, a line from below lands on that frame, and the picture grows as a whole when a side needs room for more lines.
+- Line looks: a named kind of line with its own width, dash and pictures at the ends (the head where the arrow points, the tail elsewhere), kept in the library next to the looks and worn by a line on every level. Pick one under Look in the line's Edit… or Connect dialog; the legend shows a sample of every line look on the diagram with its name, and the kinds of line in use are a readability measure with limits of their own.
+- Pictures: SVGs in the library for the ends of lines and for mouseholes, imported in File > Looks… or drawn by the AI (add_picture); their currentColor parts take the line's colour.
+- Portals: two pictures that replace the mousehole arches, one where a line goes in and one where it comes out, chosen under Mouseholes in File > Project settings… or with set_portals.
+- Inside a whitebox, the frame is the box's own look stretched as a nine-slice; with the name below, the title sits in a frame under it, and an icon look sits next to the title.
+- The AI adds line looks (add_line_look), puts them on lines (connect_new, connect_existing, edit_relation and the doodle line tools) and sees them in list_looks.
 
 ---
 
