@@ -164,9 +164,16 @@ fn portals(project: &Project, line: &ViewLine) -> (Option<EndPicture>, Option<En
 
 /// The line look of `line` as the project keeps it, tinted in the line's colour.
 fn drawn_look(project: &Project, line: &ViewLine) -> Option<DrawnLook> {
-    let id = line.look.as_ref()?;
+    look_in_color(
+        project,
+        line.look.as_ref()?,
+        line.color.unwrap_or(crate::scene::LINE),
+    )
+}
+
+/// A line look as the project keeps it, its pictures tinted in `color`.
+fn look_in_color(project: &Project, id: &LookId, color: Rgb) -> Option<DrawnLook> {
     let look = project.line_looks.get(id)?;
-    let color = line.color.unwrap_or(crate::scene::LINE);
     let picture = |p: Option<&LookId>| {
         let picture = project.pictures.get(p?)?;
         Some(EndPicture {
@@ -243,6 +250,8 @@ pub struct Layout {
     /// Shortened relation texts: key on the line (`[2]` or a short label) and the
     /// full text, already wrapped into lines.
     pub legend: Vec<LegendEntry>,
+    /// The line looks used, by name, below the legend's entries.
+    pub legend_looks: Vec<LookSample>,
     /// Where the legend is drawn (below the diagram), if there is one.
     pub legend_at: Option<Pos>,
     /// Whether boxes show their type («component») under the name.
@@ -253,6 +262,13 @@ pub struct Layout {
 pub struct LegendEntry {
     pub key: String,
     pub lines: Vec<String>,
+}
+
+/// A line look used on the diagram, shown in the legend as a sample with its name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LookSample {
+    pub name: String,
+    pub look: DrawnLook,
 }
 
 pub const LEGEND_LINE: f32 = 17.0;
@@ -1103,10 +1119,26 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             }
         })
         .collect();
-    let (bounds, legend_at) = if legend.is_empty() {
+    // Every line look in use, once, by name, drawn in the plain line colour.
+    let mut legend_looks: Vec<LookSample> = Vec::new();
+    for line in &lines {
+        if let Some(look) = &line.look
+            && !legend_looks.iter().any(|s| s.look.id == look.id)
+            && let Some(kept) = project.line_looks.get(&look.id)
+        {
+            legend_looks.push(LookSample {
+                name: kept.name().to_owned(),
+                look: look_in_color(project, &look.id, crate::scene::LINE)
+                    .unwrap_or_else(|| look.clone()),
+            });
+        }
+    }
+    legend_looks.sort_by_key(|s| s.name.to_lowercase());
+    let (bounds, legend_at) = if legend.is_empty() && legend_looks.is_empty() {
         (bounds, None)
     } else {
-        let rows: usize = legend.iter().map(|e| e.lines.len().max(1)).sum();
+        let rows: usize =
+            legend.iter().map(|e| e.lines.len().max(1)).sum::<usize>() + legend_looks.len();
         let at = Pos::new(PAD, bounds.max.y + LEGEND_GAP);
         let height = LEGEND_GAP + LEGEND_LINE * (rows as f32 + 1.0) + LEGEND_GAP;
         (
@@ -1132,6 +1164,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         bounds,
         cells,
         legend,
+        legend_looks,
         legend_at,
     };
     (layout, grid)

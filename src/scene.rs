@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::geom::{Pos, Rect};
 use crate::layout::{
-    BlockGeom, CAPTIONED_H, EndPicture, ICON_H, KIND_SIZE, LABEL_SIZE, LEGEND_LINE, LOOK_GAP,
-    Layout, LegendEntry, LineGeom, LineKind, NAME_SIZE, PAD, kind_caption,
+    BlockGeom, CAPTIONED_H, DrawnLook, EndPicture, ICON_H, KIND_SIZE, LABEL_SIZE, LEGEND_LINE,
+    LOOK_GAP, Layout, LegendEntry, LineGeom, LineKind, LookSample, NAME_SIZE, PAD, kind_caption,
 };
 use crate::look::LookMode;
 use crate::model::{BlockKind, LineStyle, Rgb, Side};
@@ -246,7 +246,7 @@ pub fn scene(layout: &Layout) -> Scene {
         label_shapes(&mut shapes, line, label_area);
     }
     if let Some(at) = layout.legend_at {
-        legend_shapes(&mut shapes, at, &layout.legend);
+        legend_shapes(&mut shapes, at, &layout.legend, &layout.legend_looks);
     }
     // Safety net: the picture grows around any text that still sticks out.
     let bounds = match text_bounds(&shapes) {
@@ -558,13 +558,13 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
 }
 
 /// The stroke along a line: its look's width and dash, or the plain ones.
-fn along(line: &LineGeom, color: Rgb) -> Stroke {
+fn along(look: Option<&DrawnLook>, pattern: crate::model::LinePattern, color: Rgb) -> Stroke {
     use crate::model::LinePattern;
-    let (pattern, width) = match &line.look {
+    let (pattern, width) = match look {
         Some(look) => (look.dash, look.width),
         None => (
-            line.pattern,
-            if line.pattern == LinePattern::Dotted {
+            pattern,
+            if pattern == LinePattern::Dotted {
                 1.8
             } else {
                 1.5
@@ -587,7 +587,7 @@ fn end_shapes(
     points: &mut [Pos],
     arrows: (bool, bool),
     ends: (bool, bool),
-    line: &LineGeom,
+    look: Option<&DrawnLook>,
     color: Rgb,
     key: u64,
 ) {
@@ -598,7 +598,7 @@ fn end_shapes(
         if !drawn {
             continue;
         }
-        let picture = line.look.as_ref().and_then(|l| {
+        let picture = look.and_then(|l| {
             if arrow {
                 l.head.as_ref()
             } else {
@@ -641,7 +641,7 @@ fn end_shapes(
 
 fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos], key: u64) {
     let color = line.color.unwrap_or(LINE);
-    let along = along(line, color);
+    let along = along(line.look.as_ref(), line.pattern, color);
     // A dangling end shows a warning marker instead of an arrowhead.
     let marked = |p: Pos| line.kind == LineKind::Dangling && line.tip == Some(p);
     if let Some(m) = &line.mousehole {
@@ -652,7 +652,15 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             (&m.piece_b, (false, line.arrow_end), (false, true)),
         ] {
             let mut points = piece.clone();
-            end_shapes(shapes, &mut points, arrows, ends, line, color, key);
+            end_shapes(
+                shapes,
+                &mut points,
+                arrows,
+                ends,
+                line.look.as_ref(),
+                color,
+                key,
+            );
             shapes.push(Shape::Polyline {
                 points: with_jumps(shaped_around(&points, line.style, crossed), jumps),
                 stroke: along,
@@ -696,7 +704,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             &mut points,
             (line.arrow_start, line.arrow_end),
             ends,
-            line,
+            line.look.as_ref(),
             color,
             key,
         );
@@ -1147,7 +1155,10 @@ pub fn with_jumps(points: Vec<Pos>, jumps: &[Pos]) -> Vec<Pos> {
 }
 
 /// The legend below the diagram: "Legend", then one entry per shortened text.
-fn legend_shapes(shapes: &mut Vec<Shape>, at: Pos, entries: &[LegendEntry]) {
+/// Length of a line look's sample in the legend.
+pub const SAMPLE_W: f32 = 48.0;
+
+fn legend_shapes(shapes: &mut Vec<Shape>, at: Pos, entries: &[LegendEntry], looks: &[LookSample]) {
     shapes.push(Shape::Text {
         pos: Pos::new(at.x, at.y + LEGEND_LINE / 2.0),
         text: "Legend".into(),
@@ -1182,5 +1193,31 @@ fn legend_shapes(shapes: &mut Vec<Shape>, at: Pos, entries: &[LegendEntry]) {
         if entry.lines.is_empty() {
             y += LEGEND_LINE;
         }
+    }
+    // A sample of every line look in use, pointing right, with its name.
+    for (i, sample) in looks.iter().enumerate() {
+        let mid = y + LEGEND_LINE / 2.0;
+        let mut points = vec![Pos::new(at.x, mid), Pos::new(at.x + SAMPLE_W, mid)];
+        end_shapes(
+            shapes,
+            &mut points,
+            (false, true),
+            (true, true),
+            Some(&sample.look),
+            LINE,
+            LINE_KEYS / 2 + 2 * i as u64,
+        );
+        shapes.push(Shape::Polyline {
+            points,
+            stroke: along(Some(&sample.look), Default::default(), LINE),
+        });
+        shapes.push(Shape::Text {
+            pos: Pos::new(at.x + SAMPLE_W + 12.0, mid),
+            text: sample.name.clone(),
+            size: LABEL_SIZE,
+            color: INK,
+            align: Align::Left,
+        });
+        y += LEGEND_LINE;
     }
 }

@@ -164,3 +164,38 @@ fn lines_through_mouseholes_are_a_measure_of_their_own() -> TestResult {
     assert_eq!(score::of(&p, None).level(), Level::Green);
     Ok(())
 }
+
+#[test]
+fn kinds_of_line_are_a_measure_of_their_own() -> TestResult {
+    use whiteboxed::look::{LineLook, LineLookSpec, LookId};
+    let mut p = Project::new();
+    let a = p.add_block(None, &component("A"))?;
+    let b = p.add_block(None, &component("B"))?;
+    p.set_bundle(false);
+    for name in ["async", "sync", "data"] {
+        let id = LookId(name.into());
+        p.line_looks
+            .insert(id.clone(), LineLook::new(name, LineLookSpec::default(), 0)?);
+        let rel = p.connect_existing(a, Side::Right, b, Direction::Out, name, Placement::Keep)?;
+        p.relations.get_mut(&rel).ok_or("rel")?.look = Some(id);
+    }
+    let s = score::of(&p, None);
+    assert_eq!((s.line_looks, s.line_looks_level), (3, Level::Yellow));
+    assert_eq!(s.level(), Level::Yellow);
+    let causes = s.causes();
+    assert_eq!(causes.len(), 1);
+    assert_eq!(causes[0].what, "3 kinds of line");
+    // Two lines of the same kind count once.
+    let same = *p.relations.keys().next().ok_or("first")?;
+    let look = p.relations.get(&same).and_then(|r| r.look.clone());
+    for r in p.relations.values_mut() {
+        r.look = look.clone();
+    }
+    assert_eq!(score::of(&p, None).line_looks, 1);
+    p.set_score_limits(ScoreLimits {
+        line_looks: (1, 2),
+        ..ScoreLimits::default()
+    });
+    assert_eq!(score::of(&p, None).level(), Level::Yellow);
+    Ok(())
+}

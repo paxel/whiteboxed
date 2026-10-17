@@ -307,11 +307,19 @@ fn a_line_look_sets_the_stroke_and_puts_its_picture_at_the_head() -> TestResult 
     let tip = *line.points.last().ok_or("tip")?;
     let start = line.points[0];
     // The stroke is the look's.
+    // (The legend below the diagram shows a sample of the look too: left out here.)
+    let in_diagram = |r: &whiteboxed::geom::Rect| r.max.y <= l.legend_at.map_or(f32::MAX, |a| a.y);
     let strokes: Vec<_> = s
         .shapes
         .iter()
         .filter_map(|s| match s {
-            scene::Shape::Polyline { stroke, points } => Some((*stroke, points.clone())),
+            scene::Shape::Polyline { stroke, points }
+                if points
+                    .iter()
+                    .all(|q| q.y <= l.legend_at.map_or(f32::MAX, |a| a.y)) =>
+            {
+                Some((*stroke, points.clone()))
+            }
             _ => None,
         })
         .collect();
@@ -321,7 +329,10 @@ fn a_line_look_sets_the_stroke_and_puts_its_picture_at_the_head() -> TestResult 
     assert!(stroke.dash.is_some());
     // The head picture: END_H high, twice as wide, its right edge at the tip, pointing
     // right along the horizontal line; the line stops where the picture begins.
-    let ends = end_pictures(&s);
+    let ends: Vec<_> = end_pictures(&s)
+        .into_iter()
+        .filter(|(r, _, _)| in_diagram(r))
+        .collect();
     assert_eq!(ends.len(), 1);
     let (rect, angle, svg) = &ends[0];
     assert!((rect.height() - scene::END_H).abs() < 0.01);
@@ -346,14 +357,22 @@ fn a_line_look_sets_the_stroke_and_puts_its_picture_at_the_head() -> TestResult 
     let (p, _, _) = looked_pair(Direction::In)?;
     let l = render(&p, None);
     let s = scene::scene(&l);
-    let ends = end_pictures(&s);
+    let ends: Vec<_> = end_pictures(&s)
+        .into_iter()
+        .filter(|(r, _, _)| r.max.y <= l.legend_at.map_or(f32::MAX, |a| a.y))
+        .collect();
     assert_eq!(ends.len(), 1);
     let (rect, angle, _) = &ends[0];
     assert!((rect.min.x - l.lines[0].points[0].x).abs() < 0.01);
     assert!((angle.abs() - std::f32::consts::PI).abs() < 1e-3, "{angle}");
     // Without an arrow, the end gets the tail picture, which this look lacks.
     let (p, _, _) = looked_pair(Direction::Undirected)?;
-    assert!(end_pictures(&scene::scene(&render(&p, None))).is_empty());
+    let l = render(&p, None);
+    assert!(
+        end_pictures(&scene::scene(&l))
+            .iter()
+            .all(|(r, _, _)| r.max.y > l.legend_at.map_or(f32::MAX, |a| a.y))
+    );
 
     // Exports turn the picture and keep the tint; the PNG renders.
     let svg = export::to_svg(&s);
@@ -468,5 +487,48 @@ fn portals_replace_the_arches_in_at_the_tail_and_out_at_the_head() -> TestResult
     };
     assert!(at(m.a).ok_or("hole a")?.contains("#ff8800"));
     assert!(at(m.b).ok_or("hole b")?.contains("#0000ff"));
+    Ok(())
+}
+
+#[test]
+fn the_legend_shows_a_sample_of_every_line_look_in_use() -> TestResult {
+    let (p, _, _) = looked_pair(Direction::Out)?;
+    let l = render(&p, None);
+    assert_eq!(l.legend.len(), 0);
+    assert_eq!(
+        l.legend_looks
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["async"]
+    );
+    let at = l.legend_at.ok_or("legend position")?;
+    let s = scene::scene(&l);
+    // The sample: a dashed stroke 3 wide pointing right, its plug at the right end,
+    // then the name; all of it inside the picture.
+    let sample_y = at.y + layout::LEGEND_LINE * 2.0;
+    let ends: Vec<_> = end_pictures(&s)
+        .into_iter()
+        .filter(|(r, _, _)| r.center().y > at.y)
+        .collect();
+    assert_eq!(ends.len(), 1);
+    let (rect, angle, _) = &ends[0];
+    assert!(angle.abs() < 1e-4);
+    assert!((rect.max.x - (at.x + scene::SAMPLE_W)).abs() < 0.01);
+    assert!(
+        (rect.center().y - sample_y).abs() < 0.01,
+        "{}",
+        rect.center().y
+    );
+    let name = s
+        .shapes
+        .iter()
+        .find_map(|s| match s {
+            scene::Shape::Text { text, pos, .. } if text == "async" => Some(*pos),
+            _ => None,
+        })
+        .ok_or("name")?;
+    assert!(name.x > rect.max.x && (name.y - sample_y).abs() < 0.01);
+    assert!(s.bounds.max.y >= name.y + 8.0);
     Ok(())
 }

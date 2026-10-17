@@ -1,7 +1,7 @@
 //! How readable a diagram is: the number of boxes (on a doodle page: shapes), the
-//! lines that cross, the busiest box, and the lines through mouseholes, each judged
-//! against limits the file can change. The worst of the four gives the diagram's
-//! colour.
+//! lines that cross, the busiest box, the lines through mouseholes, and the line
+//! looks in use, each judged against limits the file can change. The worst of the
+//! five gives the diagram's colour.
 
 use std::collections::BTreeMap;
 
@@ -38,17 +38,21 @@ pub struct Score {
     /// Lines through mouseholes: pairs of holes to match up.
     pub mouseholes: usize,
     pub mouseholes_level: Level,
+    /// Line looks in use: kinds of line to tell apart.
+    pub line_looks: usize,
+    pub line_looks_level: Level,
     /// A doodle page: shapes instead of boxes, and help without arc42.
     pub doodle: bool,
 }
 
 impl Score {
-    /// The worst of the four measures.
+    /// The worst of the five measures.
     pub fn level(&self) -> Level {
         self.boxes_level
             .max(self.crossings_level)
             .max(self.lines_level)
             .max(self.mouseholes_level)
+            .max(self.line_looks_level)
     }
 
     /// What is not green, each with what helps.
@@ -119,6 +123,15 @@ impl Score {
                      elsewhere.",
                     self.things()
                 ),
+            });
+        }
+        if self.line_looks_level > Level::Green {
+            out.push(Cause {
+                level: self.line_looks_level,
+                what: format!("{} kinds of line", self.line_looks),
+                help: "Many kinds of line are hard to tell apart, legend or not. Use fewer \
+                       line looks here, or say the difference in the lines' texts."
+                    .into(),
             });
         }
         out
@@ -194,6 +207,12 @@ pub fn score(project: &Project, l: &Layout) -> Score {
         .count();
     let crossings = layout::crossings(l).len();
     let mouseholes = l.lines.iter().filter(|g| g.mousehole.is_some()).count();
+    let line_looks = l
+        .lines
+        .iter()
+        .filter_map(|g| g.look.as_ref().map(|k| &k.id))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     let v = view::diagram_view(project, l.diagram);
     let mut per_box: BTreeMap<BlockId, usize> = BTreeMap::new();
     for line in &v.lines {
@@ -221,6 +240,8 @@ pub fn score(project: &Project, l: &Layout) -> Score {
         lines_level: judge(busiest.as_ref().map_or(0, |b| b.2), limits.lines),
         mouseholes,
         mouseholes_level: judge(mouseholes, limits.mouseholes),
+        line_looks,
+        line_looks_level: judge(line_looks, limits.line_looks),
         busiest,
         doodle: project.is_doodle(),
     }

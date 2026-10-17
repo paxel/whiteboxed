@@ -710,9 +710,16 @@ pub struct ScoreLimits {
     /// Pairs of mouseholes.
     #[serde(default = "mousehole_limits")]
     pub mouseholes: (u32, u32),
+    /// Line looks in use.
+    #[serde(default = "line_look_limits")]
+    pub line_looks: (u32, u32),
 }
 
 fn mousehole_limits() -> (u32, u32) {
+    (3, 5)
+}
+
+fn line_look_limits() -> (u32, u32) {
     (3, 5)
 }
 
@@ -723,6 +730,7 @@ impl Default for ScoreLimits {
             crossings: (1, 3),
             lines: (6, 9),
             mouseholes: mousehole_limits(),
+            line_looks: line_look_limits(),
         }
     }
 }

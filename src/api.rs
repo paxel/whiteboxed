@@ -1543,6 +1543,7 @@ fn score_json(s: &crate::score::Score) -> Value {
         "boxes": s.boxes,
         "crossings": s.crossings,
         "mouseholes": s.mouseholes,
+        "line_looks": s.line_looks,
         "busiest_box": s.busiest.as_ref().map(|(id, name, n)| json!({"id": id.0, "name": name, "lines": n})),
         "causes": s.causes().iter().map(|c| json!({
             "level": level_name(c.level),
