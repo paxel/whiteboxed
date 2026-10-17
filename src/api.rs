@@ -306,6 +306,9 @@ pub struct ConnectNewArgs {
     /// Shown on the line instead of a long text; the full text goes to the legend.
     #[serde(default)]
     pub short_label: Option<String>,
+    /// A line look by name (see list_looks).
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -326,6 +329,9 @@ pub struct ConnectExistingArgs {
     /// What to do when moving `to` breaks the side of its other relations.
     #[serde(default)]
     pub placement: Option<ApiPlacement>,
+    /// A line look by name (see list_looks).
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -424,6 +430,9 @@ pub struct EditRelationArgs {
     /// the relation's own diagram.
     #[serde(default)]
     pub in_diagram: Option<BoxRef>,
+    /// A line look by name (see list_looks), worn on every level; "" takes it off.
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -607,7 +616,9 @@ id, use diamonds for decisions, circles for start and end, groups for zones, and
 dashed or dotted lines for asynchronous or optional flows. \
 Special boxes (Kafka, a company system, a device) can wear a custom look: list_looks \
 shows the user's library, add_look adds an SVG picture to it, and edit_box (or \
-doodle_add_shape and doodle_edit_shape) puts it on a box by name.";
+doodle_add_shape and doodle_edit_shape) puts it on a box by name. Lines can wear a line \
+look (a named kind of line: width, dash, pictures at the ends; add_line_look, pictures \
+from add_picture), shown in the legend; set_portals picks the pictures drawn as mouseholes.";
 
 pub fn tools() -> Vec<ToolInfo> {
     let mut all = arc42_tools();
@@ -730,7 +741,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "batch",
-            description: "Run several editing calls as one: all of them or none, and one undo step for the user. If a step fails, nothing is changed and the error names the step. Not for export_docs, render_diagram, add_look or batch itself.",
+            description: "Run several editing calls as one: all of them or none, and one undo step for the user. If a step fails, nothing is changed and the error names the step. Not for export_docs, render_diagram, add_look, add_picture, add_line_look or batch itself.",
             schema: schema::<BatchArgs>(),
         },
     ]
@@ -931,10 +942,14 @@ fn connect_new(editor: &mut Editor, a: ConnectNewArgs) -> ApiResult<Output> {
     let from = resolve(&editor.project, &a.from)?;
     let s = spec(&a.name, a.kind, &a.tag);
     let text = a.text.unwrap_or_default();
+    let look = line_look_arg(editor, &a.look)?;
     let (id, rel) = editor.apply_ai(|p| {
         let (id, rel) = p.connect_new(from, a.side.into(), &s, direction(a.direction), &text)?;
         if let Some(short) = &a.short_label {
             p.set_relation_short(rel, short)?;
+        }
+        if look.is_some() {
+            p.wear_line_look(rel, look)?;
         }
         if let Some(r) = &a.responsibility {
             p.set_responsibility(id, r)?;
@@ -956,6 +971,7 @@ fn connect_existing(editor: &mut Editor, a: ConnectExistingArgs) -> ApiResult<Ou
     let from = resolve(&editor.project, &a.from)?;
     let to = resolve(&editor.project, &a.to)?;
     let text = a.text.unwrap_or_default();
+    let look = line_look_arg(editor, &a.look)?;
     let rel = editor.apply_ai(|p| {
         let rel = p.connect_existing(
             from,
@@ -967,6 +983,9 @@ fn connect_existing(editor: &mut Editor, a: ConnectExistingArgs) -> ApiResult<Ou
         )?;
         if let Some(short) = &a.short_label {
             p.set_relation_short(rel, short)?;
+        }
+        if look.is_some() {
+            p.wear_line_look(rel, look)?;
         }
         Ok(rel)
     })?;
@@ -1075,6 +1094,10 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
         Some(text) => line_color(text)?,
         None => r.color,
     };
+    let look = match a.look.as_deref() {
+        Some(name) => Some(look::line_look_by_name(editor, name)?),
+        None => None,
+    };
     let mousehole = match a.mousehole {
         Some(mode) => {
             let diagram = match &a.in_diagram {
@@ -1107,6 +1130,9 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
         p.edit_relation(rel, d, &text)?;
         p.set_relation_short(rel, &short)?;
         p.set_relation_color(rel, color)?;
+        if let Some(look) = look {
+            p.wear_line_look(rel, look)?;
+        }
         if let Some((diagram, mode)) = mousehole {
             p.set_mousehole(rel, diagram, mode)?;
         }
@@ -1123,6 +1149,17 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
 }
 
 /// A line colour from the AI: #rrggbb, or empty for the default.
+/// The line look named in a creating call: omitted or "" is none.
+fn line_look_arg(
+    editor: &Editor,
+    name: &Option<String>,
+) -> ApiResult<Option<crate::look::LineLookCopy>> {
+    match name.as_deref() {
+        Some(n) => look::line_look_by_name(editor, n),
+        None => Ok(None),
+    }
+}
+
 fn line_color(text: &str) -> ApiResult<Option<crate::model::Rgb>> {
     match text.trim() {
         "" => Ok(None),
@@ -1236,7 +1273,13 @@ fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
         matches!(
             s.tool.as_str(),
             // add_look changes the user's library, which no undo reaches.
-            "batch" | "export_docs" | "render_diagram" | "doodle_render" | "add_look"
+            "batch"
+                | "export_docs"
+                | "render_diagram"
+                | "doodle_render"
+                | "add_look"
+                | "add_picture"
+                | "add_line_look"
         )
     }) {
         return rejected(format!("step {} ({}) cannot run in a batch", i + 1, s.tool));
@@ -1480,6 +1523,7 @@ fn relation_json(project: &Project, rel: RelationId) -> Value {
         "line_style": r.style.map(|s| format!("{s:?}").to_lowercase()),
         "short_label": r.short,
         "color": r.color.map(|c| c.to_string()),
+        "look": r.look.as_ref().and_then(|l| project.line_looks.get(l)).map(|l| l.name()),
     })
 }
 

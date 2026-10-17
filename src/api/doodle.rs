@@ -157,6 +157,9 @@ pub struct AddLineArgs {
     /// The line's colour as #rrggbb; left out: the default.
     #[serde(default)]
     pub color: Option<String>,
+    /// A line look by name (see list_looks).
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -176,6 +179,9 @@ pub struct EditLineArgs {
     /// shapes), always, or never.
     #[serde(default)]
     pub mousehole: Option<super::ApiMousehole>,
+    /// A line look by name (see list_looks); "" takes it off.
+    #[serde(default)]
+    pub look: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -416,10 +422,17 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
             let direction = super::direction(a.direction);
             let pattern = a.pattern.map(LinePattern::from).unwrap_or_default();
             let line_color = color(a.color.as_deref())?;
+            let look = match a.look.as_deref() {
+                Some(n) => super::look::line_look_by_name(editor, n)?,
+                None => None,
+            };
             let rel = editor.apply_ai(|p| {
                 let rel = p.connect_existing(from, side, to, direction, &text, Placement::Keep)?;
                 p.set_relation_pattern(rel, pattern)?;
                 p.set_relation_color(rel, line_color)?;
+                if look.is_some() {
+                    p.wear_line_look(rel, look)?;
+                }
                 Ok(rel)
             })?;
             let page = editor.project.block(from)?.parent;
@@ -439,10 +452,17 @@ fn run(editor: &mut Editor, tool: &str, arguments: Value) -> ApiResult<Output> {
             };
             let page = r.owner;
             let mousehole = a.mousehole.map(crate::model::MouseholeMode::from);
+            let look = match a.look.as_deref() {
+                Some(n) => Some(super::look::line_look_by_name(editor, n)?),
+                None => None,
+            };
             editor.apply_ai(|p| {
                 p.edit_relation(rel, direction, &text)?;
                 p.set_relation_pattern(rel, pattern)?;
                 p.set_relation_color(rel, line_color)?;
+                if let Some(look) = look {
+                    p.wear_line_look(rel, look)?;
+                }
                 match mousehole {
                     Some(mode) => p.set_mousehole(rel, page, mode),
                     None => Ok(()),
@@ -574,6 +594,7 @@ fn line_json(project: &Project, rel: RelationId) -> Value {
         "pattern": r.pattern.label(),
         "color": r.color.map(|c| c.to_string()),
         "mousehole": r.mousehole_in(r.owner).label(),
+        "look": r.look.as_ref().and_then(|l| project.line_looks.get(l)).map(|l| l.name()),
     })
 }
 

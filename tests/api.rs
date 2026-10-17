@@ -41,7 +41,7 @@ fn shop(e: &mut Editor) -> Result<u64, Box<dyn std::error::Error>> {
 #[test]
 fn every_tool_has_an_object_schema_and_a_description() {
     let tools = api::tools();
-    assert_eq!(tools.len(), 39);
+    assert_eq!(tools.len(), 42);
     for t in tools {
         assert_eq!(t.schema.get("type"), Some(&json!("object")), "{}", t.name);
         assert!(!t.description.is_empty());
@@ -1195,5 +1195,149 @@ fn the_mousehole_setting_is_per_line_and_diagram() -> TestResult {
         d.project.relation(id)?.mousehole_in(Some(page_id)),
         MouseholeMode::Always
     );
+    Ok(())
+}
+
+const PLUG: &str =
+    r##"<svg viewBox="0 0 10 6"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"##;
+
+#[test]
+fn the_ai_adds_pictures_and_line_looks_and_puts_them_on_lines() -> TestResult {
+    use whiteboxed::look::Library;
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let shop_id = shop(&mut e)?;
+    let added = call(&mut e, "add_picture", json!({"name": "Plug", "svg": PLUG}))?;
+    assert_eq!(added["replaced"], json!(false));
+    // A line look needs pictures that exist, and a sensible width.
+    assert!(
+        call(
+            &mut e,
+            "add_line_look",
+            json!({"name": "async", "head": "Nope"})
+        )
+        .is_err()
+    );
+    assert!(
+        call(
+            &mut e,
+            "add_line_look",
+            json!({"name": "async", "width": 20})
+        )
+        .is_err()
+    );
+    let look = call(
+        &mut e,
+        "add_line_look",
+        json!({"name": "async", "width": 3, "dash": "dashed", "head": "plug"}),
+    )?;
+    assert_eq!(look["line_look"], json!("async"));
+    let listed = call(&mut e, "list_looks", json!({}))?;
+    assert_eq!(listed["pictures"][0]["name"], json!("Plug"));
+    assert_eq!(listed["line_looks"][0]["name"], json!("async"));
+    assert_eq!(listed["line_looks"][0]["head"], json!("Plug"));
+    assert_eq!(listed["line_looks"][0]["dash"], json!("dashed"));
+    assert_eq!(listed["portals"]["in"], Value::Null);
+
+    // A new line wears it; the edit takes it off.
+    let bank = call(
+        &mut e,
+        "connect_new",
+        json!({"from": shop_id, "side": "right", "name": "Bank", "kind": "external_system", "look": "async"}),
+    )?;
+    let rel = bank["relation"].clone();
+    let relation = e
+        .project
+        .relations
+        .get(&whiteboxed::model::RelationId(rel.as_u64().ok_or("rel")?))
+        .ok_or("relation")?;
+    assert_eq!(
+        relation
+            .look
+            .as_ref()
+            .and_then(|l| e.project.line_looks.get(l))
+            .map(|l| l.name()),
+        Some("async")
+    );
+    assert!(
+        call(
+            &mut e,
+            "edit_relation",
+            json!({"relation": rel, "look": "nope"})
+        )
+        .is_err()
+    );
+    let plain = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "look": ""}),
+    )?;
+    assert_eq!(plain["look"], Value::Null);
+    let again = call(
+        &mut e,
+        "edit_relation",
+        json!({"relation": rel, "look": "ASYNC"}),
+    )?;
+    assert_eq!(again["look"], json!("async"));
+    let worn = e
+        .project
+        .relations
+        .values()
+        .filter(|r| r.look.is_some())
+        .count();
+    assert_eq!(worn, 1);
+    assert_eq!(e.project.line_looks.len(), 1);
+    assert_eq!(e.project.pictures.len(), 1);
+
+    // Portals: an undo step of the project.
+    let portals = call(&mut e, "set_portals", json!({"in": "plug"}))?;
+    assert_eq!(portals["in"], json!("Plug"));
+    assert_eq!(portals["out"], Value::Null);
+    assert!(e.project.portal_in.is_some());
+    let portals = call(&mut e, "set_portals", json!({"out": "plug"}))?;
+    assert_eq!(portals["in"], json!("Plug"));
+    assert_eq!(portals["out"], json!("Plug"));
+    e.undo();
+    assert!(e.project.portal_in.is_some() && e.project.portal_out.is_none());
+    assert!(call(&mut e, "set_portals", json!({"in": "nope"})).is_err());
+    // The library is the user's: no batch adds to it.
+    for tool in ["add_picture", "add_line_look"] {
+        let step = json!({"tool": tool, "args": {"name": "X", "svg": PLUG}});
+        assert!(call(&mut e, "batch", json!({"steps": [step]})).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn doodle_lines_wear_line_looks_from_the_ai() -> TestResult {
+    use whiteboxed::look::Library;
+    let mut d = Editor::new_doodle(None);
+    d.set_library(Library::default(), None);
+    call(&mut d, "add_line_look", json!({"name": "data"}))?;
+    let page = call(&mut d, "doodle_get", json!({}))?["pages"][0]["id"].clone();
+    let a = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "A"}),
+    )?["id"]
+        .clone();
+    let b = call(
+        &mut d,
+        "doodle_add_shape",
+        json!({"page": page, "text": "B", "col": 1, "row": 0}),
+    )?["id"]
+        .clone();
+    let line = call(
+        &mut d,
+        "doodle_add_line",
+        json!({"from": a, "to": b, "look": "data"}),
+    )?;
+    assert_eq!(line["look"], "data");
+    let line = call(
+        &mut d,
+        "doodle_edit_line",
+        json!({"line": line["id"], "look": ""}),
+    )?;
+    assert_eq!(line["look"], Value::Null);
     Ok(())
 }
