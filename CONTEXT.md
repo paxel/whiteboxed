@@ -40,7 +40,7 @@ The diagram that shows the inside of one box.
 A box seen from outside, in the diagram it sits in, described by its responsibility; the counterpart of its whitebox.
 
 **Frame**:
-The border of a whitebox, labelled with its box's name; interfaces enter through it. Not used for the outline of a group.
+The border of a whitebox, labelled with its box's name; interfaces enter through it. When the box wears an Inside or Below look, the frame is that picture stretched as a nine-slice (the outer quarter of the picture on each side is a corner that keeps its size); with a Below look the name sits in its small frame under it. An Icon look leaves the frame plain and puts the icon next to the name. Not used for the outline of a group.
 
 **Context view**:
 The diagram at level 0, the only one that is not a whitebox.
@@ -92,18 +92,34 @@ _Avoid_: Box type, kind
 
 ### Appearance
 
+Library, picture, line look and portal, and the frame drawn from a look, are decided (2026-10-17) and not built yet.
+
 **Look**:
 A named picture from the library that a box or a shape can wear; on a box it changes only the drawing, never the box type's rules. The picture is the SVG inside a look.
 _Avoid_: Custom look
+
+**Library**:
+The user's store of looks, pictures and line looks, shared by every file on the computer; a file keeps a copy of every entry it uses, and takes the library's newer version when opened.
+
+**Picture**:
+A library entry that is only an SVG, without a mode: the head or tail of a line look, or a portal. Not worn by a box. Where it is drawn on a line it points right with its tip at the right edge of its viewBox, is scaled to the arrowhead height, and is turned along the line. The parts drawn in currentColor take the line's colour.
+_Avoid_: Icon, marker
+
+**Line look**:
+A named library entry a relation (or a doodle line) wears on every level: a stroke width, a dash pattern, a head picture and a tail picture. The line's direction decides which ends get the head; the others get the tail, which is usually nothing. Colour, direction and text stay on the line. Lines bundle only when they share look, pattern and colour. A line look is a kind of line, so the legend shows a sample of each one with its name.
+_Avoid_: Line style (that is the corner rounding), line type
+
+**Portal**:
+A picture that replaces the arch of a mousehole, set per file: one for the hole a line goes in, one for the hole it comes out of. In is near the line's tail, out near its head; a line without a head goes in at end A and out at end B. Portals keep their own colours; the label next to them is drawn in the line's colour.
 
 **Tag**:
 A named category of boxes across all levels of a project, shown by its colour; a box has at most one. Doodles have no tags.
 
 **Legend**:
-The numbered list below a diagram that holds the texts of lines too long to write on them, and of every line that goes through mouseholes.
+The numbered list below a diagram that holds the texts of lines too long to write on them, and of every line that goes through mouseholes; below it, a sample of every line look used on the diagram with its name.
 
 **Mousehole**:
-A labelled hole at a box, a shape or a frame where a line goes under the diagram; the line comes out at a mousehole with the same label at its other end, and nothing is drawn between them. The label is the line's legend number. In projects and doodles alike.
+A labelled hole at a box, a shape or a frame where a line goes under the diagram; the line comes out at a mousehole with the same label at its other end, and nothing is drawn between them. The label is the line's legend number. Drawn as an arch, or as the file's portals. In projects and doodles alike.
 _Avoid_: Jump (a line hopping over a crossing line)
 
 ### Readability
@@ -113,7 +129,7 @@ How easy a diagram is to read, pages included: green, yellow or red, set by its 
 _Avoid_: Score, traffic light
 
 **Measure**:
-One count that feeds a diagram's readability: boxes (or shapes) in the diagram, lines that cross, lines on the busiest box (or shape), or pairs of mouseholes (a bundle's pair counts once, each branch of a fan-out once). A line through mouseholes crosses nothing but still counts for its boxes.
+One count that feeds a diagram's readability: boxes (or shapes) in the diagram, lines that cross, lines on the busiest box (or shape), pairs of mouseholes (a bundle's pair counts once, each branch of a fan-out once), or line looks in use. A line through mouseholes crosses nothing but still counts for its boxes.
 
 **Limit**:
 The count from which a measure turns a diagram yellow, or red; set per file.
