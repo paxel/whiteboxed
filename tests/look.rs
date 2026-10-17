@@ -255,3 +255,135 @@ fn lines_reach_the_picture_and_the_framed_name_below() -> TestResult {
     );
     Ok(())
 }
+
+/// A plug twice as wide as high, a stencil: it takes the line's colour.
+const PLUG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">
+<path d="M0 0h20v10H0z" fill="currentColor"/></svg>"##;
+
+/// The pair, with the relation wearing a dashed line look 3 wide with a plug head.
+fn looked_pair(
+    direction: Direction,
+) -> Result<(Project, BlockId, BlockId), Box<dyn std::error::Error>> {
+    use whiteboxed::look::{LineLook, LineLookSpec, Picture};
+    use whiteboxed::model::LinePattern;
+    let (mut p, a, b) = pair(LookMode::Inside)?;
+    let plug = LookId("plug".into());
+    p.pictures
+        .insert(plug.clone(), Picture::new("Plug", PLUG, 0)?);
+    let spec = LineLookSpec {
+        width: 3.0,
+        dash: LinePattern::Dashed,
+        head: Some(plug),
+        tail: None,
+    };
+    let async_ = LookId("async".into());
+    p.line_looks
+        .insert(async_.clone(), LineLook::new("async", spec, 0)?);
+    for r in p.relations.values_mut() {
+        r.look = Some(async_.clone());
+        r.direction = direction;
+    }
+    Ok((p, a, b))
+}
+
+fn end_pictures(s: &scene::Scene) -> Vec<(whiteboxed::geom::Rect, f32, String)> {
+    s.shapes
+        .iter()
+        .filter_map(|s| match s {
+            scene::Shape::Look {
+                rect, angle, svg, ..
+            } if rect.height() < 20.0 => Some((*rect, *angle, svg.to_string())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_line_look_sets_the_stroke_and_puts_its_picture_at_the_head() -> TestResult {
+    let (p, a, b) = looked_pair(Direction::Out)?;
+    let l = render(&p, None);
+    let s = scene::scene(&l);
+    let line = l.lines.first().ok_or("line")?;
+    let tip = *line.points.last().ok_or("tip")?;
+    let start = line.points[0];
+    // The stroke is the look's.
+    let strokes: Vec<_> = s
+        .shapes
+        .iter()
+        .filter_map(|s| match s {
+            scene::Shape::Polyline { stroke, points } => Some((*stroke, points.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strokes.len(), 1);
+    let (stroke, points) = &strokes[0];
+    assert_eq!(stroke.width, 3.0);
+    assert!(stroke.dash.is_some());
+    // The head picture: END_H high, twice as wide, its right edge at the tip, pointing
+    // right along the horizontal line; the line stops where the picture begins.
+    let ends = end_pictures(&s);
+    assert_eq!(ends.len(), 1);
+    let (rect, angle, svg) = &ends[0];
+    assert!((rect.height() - scene::END_H).abs() < 0.01);
+    assert!((rect.width() - 2.0 * scene::END_H).abs() < 0.01);
+    assert!((rect.max.x - tip.x).abs() < 0.01 && (rect.center().y - tip.y).abs() < 0.01);
+    assert!(angle.abs() < 1e-4);
+    assert!((points.last().ok_or("end")?.x - rect.min.x).abs() < 0.01);
+    assert!((points[0].x - start.x).abs() < 0.01);
+    // The stencil is tinted in the line's colour (the default here).
+    assert!(
+        svg.contains(&format!(r#"color="{}""#, scene::LINE)),
+        "{svg}"
+    );
+    // No plain arrowhead besides it.
+    assert!(
+        !s.shapes
+            .iter()
+            .any(|s| matches!(s, scene::Shape::Polygon { points, .. } if points.len() == 3))
+    );
+
+    // The arrow the other way: the picture sits at end A and points left.
+    let (p, _, _) = looked_pair(Direction::In)?;
+    let l = render(&p, None);
+    let s = scene::scene(&l);
+    let ends = end_pictures(&s);
+    assert_eq!(ends.len(), 1);
+    let (rect, angle, _) = &ends[0];
+    assert!((rect.min.x - l.lines[0].points[0].x).abs() < 0.01);
+    assert!((angle.abs() - std::f32::consts::PI).abs() < 1e-3, "{angle}");
+    // Without an arrow, the end gets the tail picture, which this look lacks.
+    let (p, _, _) = looked_pair(Direction::Undirected)?;
+    assert!(end_pictures(&scene::scene(&render(&p, None))).is_empty());
+
+    // Exports turn the picture and keep the tint; the PNG renders.
+    let svg = export::to_svg(&s);
+    assert!(
+        svg.contains("rotate(180.00") || svg.contains("rotate(-180.00"),
+        "{svg}"
+    );
+    assert!(svg.contains(r##"color="#444b55""##));
+    export::to_png(&s, 1.0)?;
+    let _ = (a, b);
+    Ok(())
+}
+
+#[test]
+fn lines_bundle_only_with_the_same_look() -> TestResult {
+    let (mut p, a, b) = looked_pair(Direction::Out)?;
+    let plain = p.connect_existing(
+        a,
+        Side::Right,
+        b,
+        Direction::Out,
+        "also",
+        whiteboxed::model::Placement::Keep,
+    )?;
+    let view = whiteboxed::view::bundle(&diagram_view(&p, None));
+    assert_eq!(view.lines.len(), 2);
+    let same = *p.relations.keys().next().ok_or("first")?;
+    p.relations.get_mut(&plain).ok_or("plain")?.look =
+        p.relations.get(&same).and_then(|r| r.look.clone());
+    let view = whiteboxed::view::bundle(&diagram_view(&p, None));
+    assert_eq!(view.lines.len(), 1);
+    Ok(())
+}

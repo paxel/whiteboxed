@@ -125,13 +125,28 @@ fn shape_svg(out: &mut String, shape: &Shape) {
             svg,
             size,
             key,
+            angle,
         } => {
+            let turned = angle.abs() > 1e-4;
+            if turned {
+                let c = rect.center();
+                let _ = write!(
+                    out,
+                    r#"<g transform="rotate({:.2} {:.1} {:.1})">"#,
+                    angle.to_degrees(),
+                    c.x,
+                    c.y
+                );
+            }
             out.push_str(&crate::look::embed(
                 svg,
                 *size,
                 *rect,
                 &format!("look{key}-"),
             ));
+            if turned {
+                out.push_str("</g>");
+            }
             out.push('\n');
         }
         Shape::Text {

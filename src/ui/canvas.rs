@@ -74,10 +74,11 @@ impl LookTextures {
         // Widths in steps of 16 pixels: sharp at every zoom without rendering anew
         // on every frame of a zoom.
         let width = ((pixels / 16.0).ceil().max(1.0) as u32 * 16).min(MAX_LOOK_PIXELS);
+        // Tinted end pictures are made anew with every scene: the same text counts.
         if let Some(e) = self
             .entries
             .iter_mut()
-            .find(|e| Arc::ptr_eq(&e.svg, svg) && e.width == width)
+            .find(|e| e.width == width && (Arc::ptr_eq(&e.svg, svg) || e.svg == *svg))
         {
             e.used = true;
             return Some(e.texture.id());
@@ -111,12 +112,21 @@ pub fn paint(painter: &Painter, view: View, scene: &Scene, looks: &mut LookTextu
     let z = view.zoom;
     for shape in &scene.shapes {
         match shape {
-            Shape::Look { rect, svg, .. } => {
+            Shape::Look {
+                rect, svg, angle, ..
+            } => {
                 let r = view.rect(*rect);
                 let pixels = r.width() * painter.ctx().pixels_per_point();
                 if let Some(texture) = looks.get(painter.ctx(), svg, pixels) {
                     let uv = egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                    painter.image(texture, r, uv, Color32::WHITE);
+                    if angle.abs() > 1e-4 {
+                        let mut mesh = egui::Mesh::with_texture(texture);
+                        mesh.add_rect_with_uv(r, uv, Color32::WHITE);
+                        mesh.rotate(egui::emath::Rot2::from_angle(*angle), r.center());
+                        painter.add(egui::Shape::mesh(mesh));
+                    } else {
+                        painter.image(texture, r, uv, Color32::WHITE);
+                    }
                 }
             }
             Shape::Rect {

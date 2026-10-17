@@ -78,6 +78,7 @@ const ATTRIBUTES: &[&str] = &[
     "points",
     "d",
     // Paint.
+    "color",
     "fill",
     "fill-opacity",
     "fill-rule",
@@ -573,6 +574,34 @@ pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str) -> String {
     match element(&mut out, root, &how) {
         Ok(()) => out,
         Err(_) => String::new(),
+    }
+}
+
+/// The picture with `color` as its `currentColor`: a stencil in the line's colour.
+/// Parts drawn in a colour of their own keep it.
+pub fn tinted(svg: &str, color: crate::model::Rgb) -> String {
+    let Ok(doc) = roxmltree::Document::parse(svg) else {
+        return svg.to_owned();
+    };
+    let root = doc.root_element();
+    let Some(vb) = view_box(root) else {
+        return svg.to_owned();
+    };
+    let placed = format!(
+        r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}" color="{color}""#,
+        vb.0, vb.1, vb.2, vb.3
+    );
+    let mut out = String::new();
+    match element(
+        &mut out,
+        root,
+        &Writing {
+            prefix: "",
+            placed: Some(&placed),
+        },
+    ) {
+        Ok(()) => out,
+        Err(_) => svg.to_owned(),
     }
 }
 

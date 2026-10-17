@@ -35,6 +35,8 @@ pub struct ViewLine {
     pub color: Option<crate::model::Rgb>,
     /// Whether the line goes through mouseholes in this diagram.
     pub mousehole: crate::model::MouseholeMode,
+    /// The line look the relation wears.
+    pub look: Option<crate::look::LookId>,
 }
 
 impl ViewLine {
@@ -82,6 +84,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                 pattern: rel.pattern,
                 color: rel.color,
                 mousehole: rel.mousehole_in(diagram),
+                look: rel.look.clone(),
             });
             continue;
         }
@@ -127,6 +130,7 @@ pub fn diagram_view(project: &Project, diagram: DiagramId) -> DiagramView {
                     pattern: rel.pattern,
                     color: rel.color,
                     mousehole: rel.mousehole_in(diagram),
+                    look: rel.look.clone(),
                 });
             }
         }
@@ -153,11 +157,13 @@ pub fn bundle(view: &DiagramView) -> DiagramView {
     for line in &view.lines {
         let (ka, kb) = (key(&line.a), key(&line.b));
         let found = match (&ka, &kb) {
-            // Lines drawn differently (dashed, dotted, another colour) stay apart.
+            // Lines drawn differently (dashed, dotted, another colour, another look)
+            // stay apart.
             (Some(ka), Some(kb)) => lines.iter().position(|l| {
                 let (la, lb) = (key(&l.a), key(&l.b));
                 l.pattern == line.pattern
                     && l.color == line.color
+                    && l.look == line.look
                     && ((la.as_ref() == Some(ka) && lb.as_ref() == Some(kb))
                         || (la.as_ref() == Some(kb) && lb.as_ref() == Some(ka)))
             }),

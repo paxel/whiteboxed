@@ -20,6 +20,10 @@ pub const WARN: Rgb = Rgb(0xe0, 0x8a, 0x00);
 pub const PAPER: Rgb = Rgb(0xff, 0xff, 0xff);
 /// Radius of a mousehole's arch.
 pub const HOLE_R: f32 = 8.0;
+/// Height of a picture at the end of a line; its width follows from the picture.
+pub const END_H: f32 = 12.0;
+/// Keys of the pictures on lines start here, above every box id.
+const LINE_KEYS: u64 = 1 << 32;
 /// Size of the number at a mousehole.
 const HOLE_SIZE: f32 = 11.0;
 
@@ -88,13 +92,15 @@ pub enum Shape {
         fill: Option<Rgb>,
         stroke: Option<Stroke>,
     },
-    /// A custom look, scaled into `rect` without stretching. `key` is unique per box,
-    /// so ids inside never clash with another look in the same document.
+    /// A custom look, scaled into `rect` without stretching, then turned by `angle`
+    /// (radians, clockwise) about the rect's centre. `key` is unique per picture
+    /// drawn, so ids inside never clash with another look in the same document.
     Look {
         rect: Rect,
         svg: Arc<str>,
         size: (f32, f32),
         key: u64,
+        angle: f32,
     },
     /// Single-line text, vertically centred on `pos`.
     Text {
@@ -161,6 +167,7 @@ pub fn scene(layout: &Layout) -> Scene {
                 svg: look.svg().clone(),
                 size: look.size(),
                 key: block.id.0,
+                angle: 0.0,
             });
         }
         if layout.captions {
@@ -225,7 +232,13 @@ pub fn scene(layout: &Layout) -> Scene {
             .filter(|c| c.horizontal == li || c.vertical == li)
             .map(|c| c.at)
             .collect();
-        line_shapes(&mut shapes, line, &jumps, &crossed);
+        line_shapes(
+            &mut shapes,
+            line,
+            &jumps,
+            &crossed,
+            LINE_KEYS + 2 * li as u64,
+        );
     }
     // Labels stay inside the frame of a whitebox, or inside the picture.
     let label_area = label_area(layout);
@@ -544,31 +557,106 @@ fn arc(c: Pos, rx: f32, ry: f32, from: f32, to: f32) -> Vec<Pos> {
         .collect()
 }
 
-fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos]) {
-    let color = line.color.unwrap_or(LINE);
-    let along = match line.pattern {
-        crate::model::LinePattern::Solid => Stroke::solid(1.5, color),
-        crate::model::LinePattern::Dashed => Stroke::dashed(1.5, color),
-        crate::model::LinePattern::Dotted => Stroke::dotted(1.8, color),
+/// The stroke along a line: its look's width and dash, or the plain ones.
+fn along(line: &LineGeom, color: Rgb) -> Stroke {
+    use crate::model::LinePattern;
+    let (pattern, width) = match &line.look {
+        Some(look) => (look.dash, look.width),
+        None => (
+            line.pattern,
+            if line.pattern == LinePattern::Dotted {
+                1.8
+            } else {
+                1.5
+            },
+        ),
     };
+    match pattern {
+        LinePattern::Solid => Stroke::solid(width, color),
+        LinePattern::Dashed => Stroke::dashed(width, color),
+        LinePattern::Dotted => Stroke::dotted(width, color),
+    }
+}
+
+/// The ends of a line (or of a piece of one): the picture of its look, with the line
+/// cut back to where the picture begins, or the plain arrowhead. `arrows` says which
+/// ends point into their box; `ends` which ends are drawn at all (a piece drawn to a
+/// mousehole has no end there). `key` is for the pictures' ids.
+fn end_shapes(
+    shapes: &mut Vec<Shape>,
+    points: &mut [Pos],
+    arrows: (bool, bool),
+    ends: (bool, bool),
+    line: &LineGeom,
+    color: Rgb,
+    key: u64,
+) {
+    if points.len() < 2 {
+        return;
+    }
+    for (at_start, arrow, drawn) in [(true, arrows.0, ends.0), (false, arrows.1, ends.1)] {
+        if !drawn {
+            continue;
+        }
+        let picture = line.look.as_ref().and_then(|l| {
+            if arrow {
+                l.head.as_ref()
+            } else {
+                l.tail.as_ref()
+            }
+        });
+        let n = points.len();
+        let (from, tip) = if at_start {
+            (points[1], points[0])
+        } else {
+            (points[n - 2], points[n - 1])
+        };
+        match picture {
+            Some(picture) => {
+                let (dx, dy) = (tip.x - from.x, tip.y - from.y);
+                let len = (dx * dx + dy * dy).sqrt().max(0.001);
+                let (ux, uy) = (dx / len, dy / len);
+                let width = END_H * picture.size.0 / picture.size.1;
+                let back = width.min(len);
+                let cut = Pos::new(tip.x - ux * back, tip.y - uy * back);
+                if at_start {
+                    points[0] = cut;
+                } else {
+                    points[n - 1] = cut;
+                }
+                let center = Pos::new(tip.x - ux * width / 2.0, tip.y - uy * width / 2.0);
+                shapes.push(Shape::Look {
+                    rect: Rect::from_center(center, width, END_H),
+                    svg: picture.svg.clone(),
+                    size: picture.size,
+                    key: key + u64::from(!at_start),
+                    angle: uy.atan2(ux),
+                });
+            }
+            None if arrow => shapes.push(arrow_head(from, tip, color)),
+            None => {}
+        }
+    }
+}
+
+fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed: &[Pos], key: u64) {
+    let color = line.color.unwrap_or(LINE);
+    let along = along(line, color);
+    // A dangling end shows a warning marker instead of an arrowhead.
+    let marked = |p: Pos| line.kind == LineKind::Dangling && line.tip == Some(p);
     if let Some(m) = &line.mousehole {
-        // Only the pieces from the ports to the holes, each with its arrowhead; the
-        // holes carry the legend number and the short label.
-        for (piece, at_start, at_end) in [
-            (&m.piece_a, line.arrow_start, false),
-            (&m.piece_b, false, line.arrow_end),
+        // Only the pieces from the ports to the holes, each with its end; the holes
+        // carry the legend number and the short label.
+        for (piece, arrows, ends) in [
+            (&m.piece_a, (line.arrow_start, false), (true, false)),
+            (&m.piece_b, (false, line.arrow_end), (false, true)),
         ] {
+            let mut points = piece.clone();
+            end_shapes(shapes, &mut points, arrows, ends, line, color, key);
             shapes.push(Shape::Polyline {
-                points: with_jumps(shaped_around(piece, line.style, crossed), jumps),
+                points: with_jumps(shaped_around(&points, line.style, crossed), jumps),
                 stroke: along,
             });
-            let n = piece.len();
-            if n >= 2 && at_start {
-                shapes.push(arrow_head(piece[1], piece[0], color));
-            }
-            if n >= 2 && at_end {
-                shapes.push(arrow_head(piece[n - 2], piece[n - 1], color));
-            }
         }
         let label = if line.text.is_empty() {
             m.label.clone()
@@ -581,21 +669,25 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
         hole_shapes(shapes, m.a, before_a, &label, color);
         hole_shapes(shapes, m.b, before_b, &label, color);
     } else {
+        let mut points = line.points.clone();
+        let n = points.len();
+        let ends = (
+            n >= 2 && !marked(points[0]),
+            n >= 2 && !marked(points[n - 1]),
+        );
+        end_shapes(
+            shapes,
+            &mut points,
+            (line.arrow_start, line.arrow_end),
+            ends,
+            line,
+            color,
+            key,
+        );
         shapes.push(Shape::Polyline {
-            points: with_jumps(shaped_around(&line.points, line.style, crossed), jumps),
+            points: with_jumps(shaped_around(&points, line.style, crossed), jumps),
             stroke: along,
         });
-    }
-    let n = line.points.len();
-    // A dangling end shows a warning marker instead of an arrowhead.
-    let marked = |p: Pos| line.kind == LineKind::Dangling && line.tip == Some(p);
-    if n >= 2 && line.mousehole.is_none() {
-        if line.arrow_start && !marked(line.points[0]) {
-            shapes.push(arrow_head(line.points[1], line.points[0], color));
-        }
-        if line.arrow_end && !marked(line.points[n - 1]) {
-            shapes.push(arrow_head(line.points[n - 2], line.points[n - 1], color));
-        }
     }
     if let Some((p, _, _)) = &line.frame_port {
         shapes.push(Shape::Rect {

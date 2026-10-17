@@ -4,9 +4,10 @@
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::sync::Arc;
 
 use crate::geom::{Pos, Rect};
-use crate::look::{Look, LookMode};
+use crate::look::{Look, LookId, LookMode};
 use crate::model::{BlockId, BlockKind, DiagramId, End, LineStyle, Project, RelationId, Rgb, Side};
 use crate::text;
 use crate::view::{DiagramView, OPEN_PARTNER, ViewEnd, ViewLine};
@@ -123,6 +124,47 @@ pub struct LineGeom {
     pub pattern: crate::model::LinePattern,
     /// The relation's own colour (`None`: the default).
     pub color: Option<Rgb>,
+    /// The line look the relation wears, resolved and tinted for drawing.
+    pub look: Option<DrawnLook>,
+}
+
+/// A line look as drawn: the project's copy, its end pictures already in the line's
+/// colour. A picture the project lacks is left out, and the end is plain.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawnLook {
+    pub id: LookId,
+    pub width: f32,
+    pub dash: crate::model::LinePattern,
+    pub head: Option<EndPicture>,
+    pub tail: Option<EndPicture>,
+}
+
+/// A picture at the end of a line.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EndPicture {
+    pub svg: Arc<str>,
+    pub size: (f32, f32),
+}
+
+/// The line look of `line` as the project keeps it, tinted in the line's colour.
+fn drawn_look(project: &Project, line: &ViewLine) -> Option<DrawnLook> {
+    let id = line.look.as_ref()?;
+    let look = project.line_looks.get(id)?;
+    let color = line.color.unwrap_or(crate::scene::LINE);
+    let picture = |p: Option<&LookId>| {
+        let picture = project.pictures.get(p?)?;
+        Some(EndPicture {
+            svg: crate::look::tinted(picture.svg(), color).into(),
+            size: picture.size(),
+        })
+    };
+    Some(DrawnLook {
+        id: id.clone(),
+        width: look.width(),
+        dash: look.dash(),
+        head: picture(look.head()),
+        tail: picture(look.tail()),
+    })
 }
 
 /// A line through mouseholes: the hole near each end, the pieces drawn from the
@@ -866,6 +908,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         shown_labels(project, view, project.label_limit, &hidden);
     let partners = short_partners(view, project.label_limit, &mut legend_keys);
     for (li, line) in view.lines.iter().enumerate() {
+        let look = drawn_look(project, line);
         let pa = port_at.get(&(li, End::A)).copied();
         let pb = port_at.get(&(li, End::B)).copied();
         let geom = match (pa, pb) {
@@ -890,7 +933,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                 if let Some(last) = points.last_mut() {
                     *last = outline(&line.b, b);
                 }
-                let mut geom = build_line(line, LineKind::Routed, points, None, None);
+                let mut geom = build_line(line, LineKind::Routed, points, None, None, look);
                 if hidden.contains(&li) {
                     geom.mousehole = Some(mousehole_of(&geom.points, hole_labels[li].clone()));
                     geom.label_at = geom.mousehole.as_ref().map_or(geom.label_at, |m| m.a);
@@ -911,7 +954,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                 } else {
                     vec![tip, a.0]
                 };
-                build_line(line, kind, points, Some(tip), Some(dir))
+                build_line(line, kind, points, Some(tip), Some(dir), look)
             }
             (None, None) => continue,
         };
@@ -2170,9 +2213,11 @@ fn build_line(
     points: Vec<Pos>,
     tip: Option<Pos>,
     tip_dir: Option<Side>,
+    look: Option<DrawnLook>,
 ) -> LineGeom {
     let (label_at, label_horizontal) = label_position(&points);
     LineGeom {
+        look,
         relation: line.relation,
         kind,
         arrow_start: line.direction.arrow_at_a(),
