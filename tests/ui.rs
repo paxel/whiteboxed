@@ -1815,3 +1815,37 @@ fn project_settings_pick_the_portals() -> TestResult {
     assert_eq!(h.state().editor.project.portal_out, None);
     Ok(())
 }
+
+#[test]
+fn the_looks_dialog_takes_a_line_look_changed_elsewhere() -> TestResult {
+    use whiteboxed::look::{Library, LineLookSpec};
+    let mut e = Editor::new(None);
+    e.set_library(Library::default(), None);
+    let id = e.add_line_look("async", LineLookSpec::default())?;
+    let mut h = harness(e);
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Looks\u{2026}").click();
+    h.run();
+    // The dialog shows the look; the AI (or anyone) changes it meanwhile.
+    h.state_mut().editor.add_line_look(
+        "async",
+        LineLookSpec {
+            width: 3.0,
+            ..LineLookSpec::default()
+        },
+    )?;
+    h.run();
+    h.run();
+    assert_eq!(
+        h.state()
+            .editor
+            .library
+            .line_looks
+            .get(&id)
+            .map(|l| l.width()),
+        Some(3.0)
+    );
+    Ok(())
+}

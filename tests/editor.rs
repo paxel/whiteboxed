@@ -987,6 +987,31 @@ fn a_line_wears_a_line_look_and_the_project_copies_it_with_its_pictures() -> Tes
         e.project.pictures.get(&plug).map(|p| p.name().to_owned()),
         Some("Socket".into())
     );
+    // A library edit to a picture the project lacks brings the picture along.
+    let socket = e.add_picture("Tail", PLUG)?;
+    e.edit_line_look(
+        &async_,
+        LineLookSpec {
+            tail: Some(socket.clone()),
+            ..e.library.line_looks.get(&async_).ok_or("look")?.spec()
+        },
+    )?;
+    assert!(e.project.pictures.contains_key(&socket));
+    // Deleting a picture leaves the line looks that used it with plain ends, in the
+    // library and in the project.
+    e.delete_picture(&socket)?;
+    assert_eq!(
+        e.library.line_looks.get(&async_).and_then(|l| l.tail()),
+        None
+    );
+    assert_eq!(
+        e.project.line_looks.get(&async_).and_then(|l| l.tail()),
+        None
+    );
+    assert_eq!(
+        e.project.line_looks.get(&async_).and_then(|l| l.head()),
+        Some(&plug)
+    );
     e.delete_line_look(&async_)?;
     e.delete_picture(&plug)?;
     assert!(e.library.line_looks.is_empty() && e.library.pictures.is_empty());

@@ -275,6 +275,9 @@ pub struct LegendEntry {
 pub struct FrameLook {
     pub look: Look,
     pub corner: (f32, f32),
+    /// The nine slices of the picture, row by row: corners, edges and the middle, cut
+    /// at a quarter of the picture on each side.
+    pub slices: Vec<Arc<str>>,
 }
 
 /// Height of the caption under a frame drawn from a look with the name below.
@@ -718,8 +721,22 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         let look = project.looks.get(own?.look.as_ref()?)?.clone();
         let (pw, ph) = look.size();
         let scale = MIN_H / ph;
+        let parts = [0.0, 0.25, 0.75, 1.0];
+        let slices = (0..3)
+            .flat_map(|row| (0..3).map(move |col| (row, col)))
+            .map(|(row, col)| {
+                let part = (
+                    parts[col],
+                    parts[row],
+                    parts[col + 1] - parts[col],
+                    parts[row + 1] - parts[row],
+                );
+                crate::look::slice(look.svg(), part).into()
+            })
+            .collect();
         Some(FrameLook {
             corner: (pw * scale / 4.0, ph * scale / 4.0),
+            slices,
             look,
         })
     });

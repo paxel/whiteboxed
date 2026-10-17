@@ -1374,6 +1374,19 @@ impl Editor {
         crate::look::sync(&mut self.project.looks, &self.library);
         crate::look::sync_pictures(&mut self.project.pictures, &self.library);
         crate::look::sync_line_looks(&mut self.project.line_looks, &self.library);
+        // A newer line look may name pictures the project has not copied yet.
+        let wanted: Vec<LookId> = self
+            .project
+            .line_looks
+            .values()
+            .flat_map(|l| l.pictures().cloned())
+            .filter(|p| !self.project.pictures.contains_key(p))
+            .collect();
+        for id in wanted {
+            if let Some(picture) = self.library.pictures.get(&id) {
+                self.project.pictures.insert(id, picture.clone());
+            }
+        }
     }
 
     /// A picture by id, from the library or else the project's copy.
@@ -1408,38 +1421,26 @@ impl Editor {
     /// Every picture a line end or a portal can be: the library's and the project's
     /// own, by name.
     pub fn pictures_offered(&self) -> Vec<(LookId, String)> {
-        let mut all: Vec<(LookId, String)> = self
-            .library
-            .pictures
-            .iter()
-            .chain(
-                self.project
-                    .pictures
-                    .iter()
-                    .filter(|(id, _)| !self.library.pictures.contains_key(*id)),
-            )
-            .map(|(id, p)| (id.clone(), p.name().to_owned()))
-            .collect();
-        all.sort_by_key(|(_, name)| name.to_lowercase());
-        all
+        crate::look::offered(
+            &self.library.pictures,
+            &self.project.pictures,
+            Picture::name,
+        )
     }
 
     /// Every line look a line can wear: the library's and the project's own, by name.
     pub fn line_looks_offered(&self) -> Vec<(LookId, String)> {
-        let mut all: Vec<(LookId, String)> = self
-            .library
-            .line_looks
-            .iter()
-            .chain(
-                self.project
-                    .line_looks
-                    .iter()
-                    .filter(|(id, _)| !self.library.line_looks.contains_key(*id)),
-            )
-            .map(|(id, l)| (id.clone(), l.name().to_owned()))
-            .collect();
-        all.sort_by_key(|(_, name)| name.to_lowercase());
-        all
+        crate::look::offered(
+            &self.library.line_looks,
+            &self.project.line_looks,
+            LineLook::name,
+        )
+    }
+
+    /// The name of a picture, from the library or the project.
+    pub fn picture_name(&self, id: Option<&LookId>) -> Option<String> {
+        id.and_then(|id| self.picture_copy(id))
+            .map(|(_, p)| p.name().to_owned())
     }
 
     /// Adds a picture to the library; one with the same name is replaced and keeps
@@ -1491,10 +1492,18 @@ impl Editor {
         Ok(())
     }
 
-    /// Removes a picture from the library; projects keep their copies.
+    /// Removes a picture from the library; projects keep their copies. The library's
+    /// line looks that used it get plain ends there.
     pub fn delete_picture(&mut self, id: &LookId) -> Result<(), String> {
         self.library.pictures.remove(id);
-        self.save_library()
+        for look in self.library.line_looks.values_mut() {
+            if look.drop_missing(|p| p == id) {
+                look.bump();
+            }
+        }
+        self.save_library()?;
+        self.sync_looks();
+        Ok(())
     }
 
     /// Adds a line look to the library; one with the same name is replaced and keeps
@@ -1598,20 +1607,7 @@ impl Editor {
 
     /// Every look a box can wear: the library's and the project's own, by name.
     pub fn looks_offered(&self) -> Vec<(LookId, String)> {
-        let mut all: Vec<(LookId, String)> = self
-            .library
-            .looks
-            .iter()
-            .chain(
-                self.project
-                    .looks
-                    .iter()
-                    .filter(|(id, _)| !self.library.looks.contains_key(*id)),
-            )
-            .map(|(id, l)| (id.clone(), l.name().to_owned()))
-            .collect();
-        all.sort_by_key(|(_, name)| name.to_lowercase());
-        all
+        crate::look::offered(&self.library.looks, &self.project.looks, Look::name)
     }
 
     /// Adds a look to the library; one with the same name is replaced and keeps its id.

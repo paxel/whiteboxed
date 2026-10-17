@@ -23,9 +23,10 @@ pub struct LooksDialog {
     import_mode: LookMode,
     error: Option<String>,
     thumbs: LookTextures,
-    /// Line look settings being edited, by line look; applied when they differ from
-    /// the library's and no drag is under way.
-    specs: BTreeMap<LookId, LineLookSpec>,
+    /// Line look settings being edited, by line look, with the library revision they
+    /// were taken from; applied when they differ from the library's and no drag or
+    /// typing is under way. A newer revision (another edit, the AI) starts them over.
+    specs: BTreeMap<LookId, (u64, LineLookSpec)>,
 }
 
 impl LooksDialog {
@@ -186,8 +187,14 @@ impl LooksDialog {
                                 if field.lost_focus() && name.trim() != line.name() {
                                     rename_line = Some((id.clone(), name.clone()));
                                 }
-                                let spec =
-                                    self.specs.entry(id.clone()).or_insert_with(|| line.spec());
+                                let entry = self
+                                    .specs
+                                    .entry(id.clone())
+                                    .or_insert_with(|| (line.revision(), line.spec()));
+                                if entry.0 != line.revision() {
+                                    *entry = (line.revision(), line.spec());
+                                }
+                                let spec = &mut entry.1;
                                 ui.horizontal(|ui| {
                                     ui.label("width");
                                     let drag = ui.add(
@@ -195,7 +202,7 @@ impl LooksDialog {
                                             .range(look::MIN_WIDTH..=look::MAX_WIDTH)
                                             .speed(0.1),
                                     );
-                                    dragging |= drag.dragged();
+                                    dragging |= drag.dragged() || drag.has_focus();
                                 });
                                 egui::ComboBox::from_id_salt(("dash", id))
                                     .selected_text(spec.dash.label())

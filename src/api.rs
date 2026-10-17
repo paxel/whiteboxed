@@ -1148,7 +1148,6 @@ fn edit_relation(editor: &mut Editor, a: EditRelationArgs) -> ApiResult<Output> 
     Ok(Output::Json(relation_json(&editor.project, rel)))
 }
 
-/// A line colour from the AI: #rrggbb, or empty for the default.
 /// The line look named in a creating call: omitted or "" is none.
 fn line_look_arg(
     editor: &Editor,
@@ -1160,6 +1159,7 @@ fn line_look_arg(
     }
 }
 
+/// A line colour from the AI: #rrggbb, or empty for the default.
 fn line_color(text: &str) -> ApiResult<Option<crate::model::Rgb>> {
     match text.trim() {
         "" => Ok(None),

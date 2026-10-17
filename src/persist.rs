@@ -382,8 +382,16 @@ pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
     project.pictures = look::pictures_from_dto(dto.pictures).map_err(PersistError::Invalid)?;
     project.line_looks =
         look::line_looks_from_dto(dto.line_looks).map_err(PersistError::Invalid)?;
-    project.portal_in = dto.portal_in;
-    project.portal_out = dto.portal_out;
+    // A picture a line look or portal names but the file lacks: that end (or hole)
+    // is plain, as it is drawn.
+    let has = |p: &LookId| project.pictures.contains_key(p);
+    let mut line_looks = project.line_looks;
+    for look in line_looks.values_mut() {
+        look.drop_missing(|p| !has(p));
+    }
+    project.line_looks = line_looks;
+    project.portal_in = dto.portal_in.filter(has);
+    project.portal_out = dto.portal_out.filter(has);
     project.export = dto.export.map(|e| ExportChoice {
         all: e.all,
         svg: e.svg,
@@ -492,19 +500,6 @@ fn check(project: &Project) -> Result<(), PersistError> {
             && !project.line_looks.contains_key(look)
         {
             return invalid(format!("line {} has an unknown look", id.0));
-        }
-    }
-    for (id, l) in &project.line_looks {
-        if l.pictures().any(|p| !project.pictures.contains_key(p)) {
-            return invalid(format!("line look {} uses an unknown picture", id.0));
-        }
-    }
-    for portal in [&project.portal_in, &project.portal_out]
-        .into_iter()
-        .flatten()
-    {
-        if !project.pictures.contains_key(portal) {
-            return invalid("a portal is an unknown picture".to_owned());
         }
     }
     let mut per_diagram: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();

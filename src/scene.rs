@@ -231,7 +231,7 @@ pub fn scene(layout: &Layout) -> Scene {
             line,
             &jumps,
             &crossed,
-            LINE_KEYS + 2 * li as u64,
+            LINE_KEYS + 4 * li as u64,
         );
     }
     // Labels stay inside the frame of a whitebox, or inside the picture.
@@ -276,7 +276,6 @@ fn frame_shapes(shapes: &mut Vec<Shape>, layout: &Layout, frame: Rect) {
             let (cw, ch) = (cw.min(frame.width() / 2.0), ch.min(frame.height() / 2.0));
             let xs = [frame.min.x, frame.min.x + cw, frame.max.x - cw, frame.max.x];
             let ys = [frame.min.y, frame.min.y + ch, frame.max.y - ch, frame.max.y];
-            let parts = [0.0, 0.25, 0.75, 1.0];
             for row in 0..3 {
                 for col in 0..3 {
                     let rect = Rect {
@@ -286,15 +285,9 @@ fn frame_shapes(shapes: &mut Vec<Shape>, layout: &Layout, frame: Rect) {
                     if rect.width() <= 0.0 || rect.height() <= 0.0 {
                         continue;
                     }
-                    let part = (
-                        parts[col],
-                        parts[row],
-                        parts[col + 1] - parts[col],
-                        parts[row + 1] - parts[row],
-                    );
                     shapes.push(Shape::Look {
                         rect,
-                        svg: crate::look::slice(fl.look.svg(), part).into(),
+                        svg: fl.slices[row * 3 + col].clone(),
                         size: (rect.width(), rect.height()),
                         key: FRAME_KEYS + (row * 3 + col) as u64,
                         angle: 0.0,
@@ -773,7 +766,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             &label,
             color,
             m.portal_a.as_ref(),
-            key,
+            key + 2,
         );
         hole_shapes(
             shapes,
@@ -782,7 +775,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             &label,
             color,
             m.portal_b.as_ref(),
-            key + 1,
+            key + 3,
         );
     } else {
         let mut points = line.points.clone();

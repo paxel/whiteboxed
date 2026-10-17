@@ -445,26 +445,21 @@ fn a_project_keeps_the_line_looks_pictures_and_portals_it_uses() -> TestResult {
     assert_eq!(back.pictures.get(&plug), p.pictures.get(&plug));
     assert_eq!(
         back.relations.get(&rel).and_then(|r| r.look.clone()),
-        Some(async_)
+        Some(async_.clone())
     );
     assert_eq!(back.portal_in, Some(portal));
     assert_eq!(back.portal_out, None);
 
-    // Broken references are refused.
-    for (from, to) in [
-        ("look: async", "look: nope"),
-        ("portal_in: portal", "portal_in: nope"),
-        ("head: plug", "head: nope"),
-    ] {
-        assert!(text.contains(from), "{from}");
-        assert!(
-            matches!(
-                persist::from_yaml(&text.replace(from, to)),
-                Err(PersistError::Invalid(_))
-            ),
-            "{to}"
-        );
-    }
+    // A line look the file lacks is refused; a picture it lacks makes the end (or
+    // the hole) plain, as it is drawn.
+    assert!(matches!(
+        persist::from_yaml(&text.replace("look: async", "look: nope")),
+        Err(PersistError::Invalid(_))
+    ));
+    let plain = persist::from_yaml(&text.replace("head: plug", "head: nope"))?;
+    assert_eq!(plain.line_looks.get(&async_).and_then(|l| l.head()), None);
+    let arch = persist::from_yaml(&text.replace("portal_in: portal", "portal_in: nope"))?;
+    assert_eq!(arch.portal_in, None);
     // A picture is checked like a look.
     let evil = text.replace("<path", "<script");
     assert!(matches!(

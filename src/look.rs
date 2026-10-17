@@ -382,6 +382,50 @@ impl LineLook {
         self.revision += 1;
         Ok(())
     }
+
+    /// Marks a change made from outside, so copies take it.
+    pub fn bump(&mut self) {
+        self.revision += 1;
+    }
+
+    /// Forgets the pictures `missing` says are gone; those ends are then plain.
+    /// Returns whether anything changed.
+    pub fn drop_missing(&mut self, missing: impl Fn(&LookId) -> bool) -> bool {
+        let mut changed = false;
+        for end in [&mut self.head, &mut self.tail] {
+            if end.as_ref().is_some_and(&missing) {
+                *end = None;
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
+/// The entry with this name, ignoring case.
+pub fn find_by_name<'a, T>(
+    map: &'a BTreeMap<LookId, T>,
+    name: &str,
+    name_of: fn(&T) -> &str,
+) -> Option<&'a LookId> {
+    map.iter()
+        .find(|(_, e)| name_of(e).eq_ignore_ascii_case(name.trim()))
+        .map(|(id, _)| id)
+}
+
+/// The library's entries and the project's own that the library lacks, by name.
+pub fn offered<T>(
+    library: &BTreeMap<LookId, T>,
+    project: &BTreeMap<LookId, T>,
+    name_of: fn(&T) -> &str,
+) -> Vec<(LookId, String)> {
+    let mut all: Vec<(LookId, String)> = library
+        .iter()
+        .chain(project.iter().filter(|(id, _)| !library.contains_key(*id)))
+        .map(|(id, e)| (id.clone(), name_of(e).to_owned()))
+        .collect();
+    all.sort_by_key(|(_, name)| name.to_lowercase());
+    all
 }
 
 fn check_width(width: f32) -> Result<(), LookError> {
@@ -422,6 +466,7 @@ pub fn sanitize(input: &str) -> Result<(String, (f32, f32)), LookError> {
     let how = Writing {
         prefix: "",
         placed: None,
+        tint: None,
     };
     element(&mut out, root, &how)?;
     // Cropped to what it draws: an AI-drawn picture often sits small in a large
@@ -439,6 +484,7 @@ pub fn sanitize(input: &str) -> Result<(String, (f32, f32)), LookError> {
                 &Writing {
                     prefix: "",
                     placed: Some(&placed),
+                    tint: None,
                 },
             )?;
             Ok((cropped, (tight.2, tight.3)))
@@ -463,6 +509,7 @@ fn drawn_extent(root: roxmltree::Node, vb: (f32, f32, f32, f32)) -> Option<(f32,
         &Writing {
             prefix: "",
             placed: Some(&placed),
+            tint: None,
         },
     )
     .ok()?;
@@ -486,6 +533,9 @@ struct Writing<'a> {
     prefix: &'a str,
     /// Replaces the attributes of the outermost `<svg>` that place and size it.
     placed: Option<&'a str>,
+    /// Written as the outermost `<svg>`'s `color` (its `currentColor`), replacing
+    /// one it has.
+    tint: Option<&'a str>,
 }
 
 /// Attributes of the outermost `<svg>` that [`Writing::placed`] replaces.
@@ -527,12 +577,18 @@ fn element(out: &mut String, node: roxmltree::Node, how: &Writing) -> Result<(),
         if outermost && how.placed.is_some() && PLACEMENT.contains(&key) {
             continue;
         }
+        if outermost && how.tint.is_some() && key == "color" {
+            continue;
+        }
         let value = if key == "id" {
             format!("{}{value}", how.prefix)
         } else {
             value.replace("url(#", &format!("url(#{}", how.prefix))
         };
         let _ = write!(out, r#" {key}="{}""#, escape(&value));
+    }
+    if outermost && let Some(tint) = how.tint {
+        let _ = write!(out, r#" color="{}""#, escape(tint));
     }
     out.push('>');
     let keeps_text = TEXT_ELEMENTS.contains(&name);
@@ -571,6 +627,7 @@ pub fn embed(svg: &str, size: (f32, f32), rect: Rect, prefix: &str, stretch: boo
     let how = Writing {
         prefix,
         placed: Some(&placed),
+        tint: None,
     };
     let mut out = String::new();
     match element(&mut out, root, &how) {
@@ -590,9 +647,10 @@ pub fn tinted(svg: &str, color: crate::model::Rgb) -> String {
         return svg.to_owned();
     };
     let placed = format!(
-        r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}" color="{color}""#,
+        r#"xmlns="{SVG_NS}" viewBox="{} {} {} {}""#,
         vb.0, vb.1, vb.2, vb.3
     );
+    let tint = color.to_string();
     let mut out = String::new();
     match element(
         &mut out,
@@ -600,6 +658,7 @@ pub fn tinted(svg: &str, color: crate::model::Rgb) -> String {
         &Writing {
             prefix: "",
             placed: Some(&placed),
+            tint: Some(&tint),
         },
     ) {
         Ok(()) => out,
@@ -631,6 +690,7 @@ pub fn slice(svg: &str, part: (f32, f32, f32, f32)) -> String {
         &Writing {
             prefix: "",
             placed: Some(&placed),
+            tint: None,
         },
     ) {
         Ok(()) => out,
@@ -935,26 +995,17 @@ impl Library {
 
     /// The look with this name, ignoring case.
     pub fn find(&self, name: &str) -> Option<&LookId> {
-        self.looks
-            .iter()
-            .find(|(_, l)| l.name.eq_ignore_ascii_case(name.trim()))
-            .map(|(id, _)| id)
+        find_by_name(&self.looks, name, Look::name)
     }
 
     /// The picture with this name, ignoring case.
     pub fn find_picture(&self, name: &str) -> Option<&LookId> {
-        self.pictures
-            .iter()
-            .find(|(_, p)| p.name.eq_ignore_ascii_case(name.trim()))
-            .map(|(id, _)| id)
+        find_by_name(&self.pictures, name, Picture::name)
     }
 
     /// The line look with this name, ignoring case.
     pub fn find_line_look(&self, name: &str) -> Option<&LookId> {
-        self.line_looks
-            .iter()
-            .find(|(_, l)| l.name.eq_ignore_ascii_case(name.trim()))
-            .map(|(id, _)| id)
+        find_by_name(&self.line_looks, name, LineLook::name)
     }
 }
 
@@ -1245,6 +1296,14 @@ mod tests {
         assert!(sync_line_looks(&mut line_looks, &lib));
         assert_eq!(pictures.get(&plug).map(Picture::name), Some("Socket"));
         assert_eq!(line_looks.get(&async_).map(LineLook::width), Some(4.0));
+
+        // A stencil takes the colour it is tinted with, replacing a colour of its own.
+        let own = r#"<svg viewBox="0 0 10 6" color="red"><path d="M0 0h10v6H0z" fill="currentColor"/></svg>"#;
+        let (own, _) = sanitize(own)?;
+        let tinted = tinted(&own, crate::model::Rgb(0x10, 0x20, 0x30));
+        assert_eq!(tinted.matches("color=").count(), 1, "{tinted}");
+        assert!(tinted.contains(r##"color="#102030""##));
+        assert!(roxmltree::Document::parse(&tinted).is_ok());
 
         // A library file from before pictures and line looks still loads.
         let old = Library {

@@ -474,6 +474,31 @@ fn portals_replace_the_arches_in_at_the_tail_and_out_at_the_head() -> TestResult
             .iter()
             .any(|s| matches!(s, scene::Shape::Polygon { points, .. } if points.len() > 3))
     );
+    // The exported ids of the portals and of the end pictures stay apart, even when
+    // the pictures define the same id.
+    {
+        use whiteboxed::look::{LineLook, LineLookSpec};
+        let mut q = p.clone();
+        let shaded = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+<defs><linearGradient id="g"><stop offset="0" stop-color="#0f0"/></linearGradient></defs>
+<rect width="10" height="10" fill="url(#g)"/></svg>"##;
+        let head = LookId("head".into());
+        q.pictures
+            .insert(head.clone(), Picture::new("Head", shaded, 0)?);
+        q.pictures
+            .insert(into.clone(), Picture::new("In", shaded, 1)?);
+        let spec = LineLookSpec {
+            head: Some(head),
+            ..LineLookSpec::default()
+        };
+        let look = LookId("shaded".into());
+        q.line_looks
+            .insert(look.clone(), LineLook::new("shaded", spec, 0)?);
+        q.relations.get_mut(&rel).ok_or("rel")?.look = Some(look);
+        let svg = export::to_svg(&scene::scene(&render(&q, None)));
+        assert!(duplicate_ids(&svg).is_empty(), "{:?}", duplicate_ids(&svg));
+    }
+
     // The arrow the other way swaps them.
     p.relations.get_mut(&rel).ok_or("rel")?.direction = Direction::In;
     let l = render(&p, None);

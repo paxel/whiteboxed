@@ -147,10 +147,6 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> Option<ApiResu
                     json!({"name": p.name(), "width": w, "height": h})
                 })
                 .collect();
-            let picture_name = |id: Option<&LookId>| {
-                id.and_then(|id| editor.picture_copy(id))
-                    .map(|(_, p)| p.name().to_owned())
-            };
             let line_looks: Vec<Value> = editor
                 .line_looks_offered()
                 .into_iter()
@@ -160,8 +156,8 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> Option<ApiResu
                         "name": c.look.name(),
                         "width": c.look.width(),
                         "dash": c.look.dash().label(),
-                        "head": picture_name(c.look.head()),
-                        "tail": picture_name(c.look.tail()),
+                        "head": editor.picture_name(c.look.head()),
+                        "tail": editor.picture_name(c.look.tail()),
                     })
                 })
                 .collect();
@@ -170,8 +166,8 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> Option<ApiResu
                 "pictures": pictures,
                 "line_looks": line_looks,
                 "portals": {
-                    "in": picture_name(editor.project.portal_in.as_ref()),
-                    "out": picture_name(editor.project.portal_out.as_ref()),
+                    "in": editor.picture_name(editor.project.portal_in.as_ref()),
+                    "out": editor.picture_name(editor.project.portal_out.as_ref()),
                 },
             }))
         })),
@@ -222,13 +218,9 @@ pub fn call(editor: &mut Editor, tool: &str, arguments: Value) -> Option<ApiResu
             let into = into.and_then(|p| editor.picture_copy(&p));
             let out = out.and_then(|p| editor.picture_copy(&p));
             editor.apply_ai(|p| p.set_portals(into, out))?;
-            let picture_name = |id: Option<&LookId>| {
-                id.and_then(|id| editor.picture_copy(id))
-                    .map(|(_, p)| p.name().to_owned())
-            };
             Ok(Output::Json(json!({
-                "in": picture_name(editor.project.portal_in.as_ref()),
-                "out": picture_name(editor.project.portal_out.as_ref()),
+                "in": editor.picture_name(editor.project.portal_in.as_ref()),
+                "out": editor.picture_name(editor.project.portal_out.as_ref()),
                 "ok": true,
             })))
         })),
