@@ -52,6 +52,9 @@ pub const HOLE_IN: f32 = 26.0;
 /// A straight line from end to end over more boxes than this goes through
 /// mouseholes (unless told otherwise).
 pub const HOLE_OVER: usize = 2;
+/// A routed line crossing more other lines than this goes through mouseholes
+/// (unless told otherwise): the worst line first, until none is left over it.
+pub const HOLE_CROSSINGS: usize = 2;
 
 pub const DEFAULT_FILL: Rgb = Rgb(0xff, 0xff, 0xff);
 pub const NEIGHBOUR_FILL: Rgb = Rgb(0xe6, 0xe6, 0xe6);
@@ -204,12 +207,8 @@ pub struct Mousehole {
     pub b: Pos,
     pub piece_a: Vec<Pos>,
     pub piece_b: Vec<Pos>,
-    /// The numbers at hole `a` and at hole `b`: `2`, or `2,5` for a bundle. `None`
-    /// when another line's hole at the same spot carries this line's number too
-    /// (the branches of a fanned-out relation go under together at the frame), so
-    /// nothing is drawn there.
-    pub label_a: Option<String>,
-    pub label_b: Option<String>,
+    /// `2`, or `2,5` for a bundle.
+    pub label: String,
     /// The portals drawn instead of the arches, where the project has them: at hole
     /// `a` and at hole `b`, already in the line's colour.
     pub portal_a: Option<EndPicture>,
@@ -445,8 +444,10 @@ fn tangles(p: &[Pos], q: &[Pos]) -> usize {
     cross_points(p, q).len() + cross_points(q, p).len() + 2 * overlap_stretches(p, q).len()
 }
 
-/// Where a relation wants its port on a side, and the line ends that share it.
-type PortSlot = (f32, RelationId, Vec<(usize, End)>);
+/// Where a relation wants its port on a side, the line ends that share it, and
+/// whether further ends of the relation may join it (a branch that goes under
+/// keeps a slot to itself).
+type PortSlot = (f32, RelationId, Vec<(usize, End)>, bool);
 
 /// Where a box was put: its rect, and the grid columns and rows it covers.
 type Placed = (Rect, (usize, usize), (usize, usize));
@@ -498,11 +499,23 @@ pub fn layout(project: &Project, view: &DiagramView) -> Layout {
     } else {
         view
     };
-    // The first pass finds out how wide the gaps have to be; only the final one
-    // turns labels with no room into numbers (never with shortening turned off).
+    // The first pass finds out how wide the gaps have to be; only the later ones
+    // turn labels with no room into numbers (never with shortening turned off).
+    // Wider gaps change the routes, which can call for other widths again: built
+    // once more while that happens, a few times at most.
     let (first, grid) = build(project, view, &[], &[], false);
-    let (vgaps, hgaps) = widened_gaps(&first, &grid);
-    build(project, view, &vgaps, &hgaps, project.label_limit.is_some()).0
+    let (mut vgaps, mut hgaps) = widened_gaps(&first, &grid);
+    let number = project.label_limit.is_some();
+    let mut done = build(project, view, &vgaps, &hgaps, number);
+    for _ in 0..2 {
+        let (v, h) = widened_gaps(&done.0, &done.1);
+        if v == vgaps && h == hgaps {
+            break;
+        }
+        (vgaps, hgaps) = (v, h);
+        done = build(project, view, &vgaps, &hgaps, number);
+    }
+    done.0
 }
 
 /// Gaps wide enough for the labels that sit in them and for the lines that run
@@ -854,6 +867,15 @@ fn build(
     // a minimum distance from each other.
     // What a port sits on: the box, or of a box with its name below its picture the
     // picture (from below: the name's frame).
+    // The title is written inside the top left corner of the frame; frame points on
+    // the top side start right of it.
+    let title_end = match (frame, frame_caption, own) {
+        (Some(f), None, Some(b)) => {
+            let title = format!("{} (whitebox)", b.name);
+            f.min.x + 16.0 + text::width(&title, NAME_SIZE) + 40.0
+        }
+        _ => f32::MIN,
+    };
     let port_rect = |owner: Owner, side: Side| match owner {
         Owner::Block(id) => match look_rects.get(&id) {
             Some((picture, caption)) => Some(if side == Side::Bottom {
@@ -903,7 +925,8 @@ fn build(
     // Place every side's ports for given wishes, in the order of `order` where given
     // (else of the wishes); returns the coordinate along the side.
     let place = |wish: &BTreeMap<(usize, End), f32>,
-                 order: Option<&BTreeMap<(usize, End), OrderKey>>|
+                 order: Option<&BTreeMap<(usize, End), OrderKey>>,
+                 unshared: &BTreeSet<(usize, End)>|
      -> BTreeMap<(usize, End), f32> {
         let mut out = BTreeMap::new();
         for ((owner, side), list) in &ports {
@@ -911,8 +934,15 @@ fn build(
                 continue;
             };
             let (lo, hi) = range(rect, *side);
+            let lo = if (*owner, *side) == (Owner::Frame, Side::Top) {
+                lo.max(title_end - PORT_SPACING / 2.0).min(hi)
+            } else {
+                lo
+            };
             // A relation that fans out to several boxes of a whitebox enters through
             // one frame port: its ends there share a slot, at the mean of their wishes.
+            // Except the branches that go under (`unshared`): each needs a hole pair
+            // of its own, so each gets its own frame point.
             let mut wanted: Vec<(OrderKey, PortSlot)> = Vec::new();
             for (_, rel, li, end) in list {
                 let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
@@ -921,15 +951,18 @@ fn build(
                     0,
                     (at * 10.0).round() as i64,
                 ));
-                let shared = *owner == Owner::Frame;
-                match wanted.iter_mut().find(|(_, w)| shared && w.1 == *rel) {
+                let shared = *owner == Owner::Frame && !unshared.contains(&(*li, *end));
+                match wanted
+                    .iter_mut()
+                    .find(|(_, w)| shared && w.3 && w.1 == *rel)
+                {
                     Some((k, w)) => {
                         let n = w.2.len() as f32;
                         w.0 = (w.0 * n + at) / (n + 1.0);
                         *k = (*k).min(key);
                         w.2.push((*li, *end));
                     }
-                    None => wanted.push((key, (at, *rel, vec![(*li, *end)]))),
+                    None => wanted.push((key, (at, *rel, vec![(*li, *end)], shared))),
                 }
             }
             // In the order of their wishes; only slots that would collide take the
@@ -953,7 +986,7 @@ fn build(
             let at: Vec<f32> = wanted.iter().map(|(_, w)| w.0).collect();
             let gaps = vec![PORT_SPACING; wanted.len()];
             let placed = spread_by(&at, lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0, &gaps);
-            for ((_, (_, _, members)), v) in wanted.iter().zip(placed) {
+            for ((_, (_, _, members, _)), v) in wanted.iter().zip(placed) {
                 for (li, end) in members {
                     out.insert((*li, *end), v);
                 }
@@ -964,15 +997,19 @@ fn build(
     let busy = |owner: Owner, side: Side| ports.get(&(owner, side)).map_or(0, Vec::len);
     // Places every port: where it wants to be, then facing ends agree so the line
     // runs straight: a frame end follows its box, and of two boxes the one on the
-    // busier side keeps its place.
-    let settle = |order: Option<&BTreeMap<(usize, End), OrderKey>>| -> BTreeMap<(usize, End), f32> {
+    // busier side keeps its place. Where the spacing on the frame then pushed a
+    // frame end a little off its box, the box end follows it back, so no line ends
+    // in a step of a few pixels.
+    let settle = |order: Option<&BTreeMap<(usize, End), OrderKey>>,
+                  unshared: &BTreeSet<(usize, End)>|
+     -> BTreeMap<(usize, End), f32> {
         let first_wish: BTreeMap<(usize, End), f32> = ends
             .iter()
             .filter_map(|(&(li, end), &(owner, side))| {
                 ideal(li, end, owner, side).map(|v| ((li, end), v))
             })
             .collect();
-        let first = place(&first_wish, order);
+        let first = place(&first_wish, order, unshared);
         let second_wish: BTreeMap<(usize, End), f32> = first
             .iter()
             .map(|(&(li, end), &v)| {
@@ -991,7 +1028,35 @@ fn build(
                 ((li, end), follow.unwrap_or(v))
             })
             .collect();
-        place(&second_wish, order)
+        let second = place(&second_wish, order, unshared);
+        let third_wish: BTreeMap<(usize, End), f32> = second
+            .iter()
+            .map(|(&(li, end), &v)| {
+                let own = ends.get(&(li, end));
+                let other = ends.get(&(li, end.other()));
+                let follow = match (own, other, second.get(&(li, end.other()))) {
+                    (Some(&(o1 @ Owner::Block(_), s1)), Some(&(Owner::Frame, s2)), Some(&w))
+                        if s1.is_horizontal() == s2.is_horizontal()
+                            && (w - v).abs() > 0.01
+                            && (w - v).abs() < PORT_SPACING =>
+                    {
+                        // Never past a neighbour on the side: the order of the ports
+                        // there is what keeps their lines from crossing on the way in.
+                        let keeps_order = ports
+                            .get(&(o1, s1))
+                            .into_iter()
+                            .flatten()
+                            .filter(|(_, _, l, e)| (*l, *e) != (li, end))
+                            .filter_map(|(_, _, l, e)| second.get(&(*l, *e)))
+                            .all(|q| (w - q).signum() == (v - q).signum());
+                        keeps_order.then_some(w)
+                    }
+                    _ => None,
+                };
+                ((li, end), follow.unwrap_or(v))
+            })
+            .collect();
+        place(&third_wish, order, unshared)
     };
     // The ports as points on their sides, with the channel each line leaves into.
     let ports_at = |along: &BTreeMap<(usize, End), f32>| -> PortAt {
@@ -1050,11 +1115,11 @@ fn build(
     // Route every line that has two ports, each against all the others. Then the
     // ports of a side take the order their lines arrive in, so no line crosses
     // another on its way in, and the lines are routed again from there.
-    let mut port_at = ports_at(&settle(None));
+    let mut port_at = ports_at(&settle(None, &BTreeSet::new()));
     // Lines through mouseholes: as told, or when a straight line from end to end
     // would run over more than HOLE_OVER boxes. Their route is not drawn, so the
     // other lines neither avoid it nor leave it a lane.
-    let hidden: BTreeSet<usize> = (0..view.lines.len())
+    let mut hidden: BTreeSet<usize> = (0..view.lines.len())
         .filter(|li| {
             let (Some(a), Some(b)) = (port_at.get(&(*li, End::A)), port_at.get(&(*li, End::B)))
             else {
@@ -1072,37 +1137,88 @@ fn build(
     let mut routes: BTreeMap<usize, Route> = BTreeMap::new();
     let mut segments: Segments = BTreeMap::new();
     let n = view.lines.len();
-    route_lines(
-        &grid,
-        &boxes,
-        &port_at,
-        &heading,
-        n,
-        2,
-        &hidden,
-        &mut routes,
-        &mut segments,
-    );
-    let mut lanes = lane_order(&routes, &hidden);
     let mut offsets = BTreeMap::new();
-    for _ in 0..2 {
-        let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
-        let order = arrival_keys(&drawn, &ends);
-        port_at = ports_at(&settle(Some(&order)));
+    let mut drawn: BTreeMap<usize, Vec<Pos>> = BTreeMap::new();
+    // Routed, the picture may still show a line crossing more than HOLE_CROSSINGS
+    // others. The worst of them (most lines crossed, then the longest) is dealt
+    // with and everything is routed again, until no such line is left: a branch of
+    // a fanned-out relation first leaves the shared frame point for one of its own,
+    // in line with its box, which often is remedy enough; any other line, and a
+    // branch that still crosses too much from there, goes under.
+    let mut unshared: BTreeSet<(usize, End)> = BTreeSet::new();
+    let frame_end = |li: usize| {
+        ends.iter()
+            .find(|((l, _), (owner, _))| *l == li && *owner == Owner::Frame)
+            .map(|(key, _)| *key)
+    };
+    for _ in 0..=2 * n {
+        // The branches that go under leave the shared frame point as well: each
+        // needs a pair of holes of its own.
+        for ((li, end), (owner, _)) in &ends {
+            if *owner == Owner::Frame && hidden.contains(li) {
+                unshared.insert((*li, *end));
+            }
+        }
+        port_at = ports_at(&settle(None, &unshared));
         route_lines(
             &grid,
             &boxes,
             &port_at,
             &heading,
             n,
-            1,
+            2,
             &hidden,
             &mut routes,
             &mut segments,
         );
-        lanes = lane_order(&routes, &hidden);
+        let mut lanes = lane_order(&grid, &routes, &port_at, &hidden);
+        for _ in 0..2 {
+            let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+            let order = arrival_keys(&drawn, &ends);
+            port_at = ports_at(&settle(Some(&order), &unshared));
+            route_lines(
+                &grid,
+                &boxes,
+                &port_at,
+                &heading,
+                n,
+                1,
+                &hidden,
+                &mut routes,
+                &mut segments,
+            );
+            lanes = lane_order(&grid, &routes, &port_at, &hidden);
+        }
+        drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+        let Some(li) = worst_crossing(view, &drawn, &hidden) else {
+            break;
+        };
+        // A branch still sharing its frame point with another branch of its
+        // relation on that side fans out first.
+        let shares = frame_end(li).filter(|(_, end)| {
+            let (ViewEnd::Frame { side, .. }, rel) =
+                (view.lines[li].end(*end), view.lines[li].relation)
+            else {
+                return false;
+            };
+            !unshared.contains(&(li, *end))
+                && ends.iter().any(|((lj, ej), (owner, sj))| {
+                    *lj != li
+                        && *owner == Owner::Frame
+                        && sj == side
+                        && view.lines[*lj].relation == rel
+                        && !unshared.contains(&(*lj, *ej))
+                })
+        });
+        match shares {
+            Some(key) => {
+                unshared.insert(key);
+            }
+            None => {
+                hidden.insert(li);
+            }
+        }
     }
-    let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
     // Two lines of different relations that leave facing sides at one height toward
     // different lanes would run along each other between the boxes and the lanes:
     // the port of one of them moves half a lane along its side (where it has the
@@ -1194,7 +1310,7 @@ fn build(
             &mut routes,
             &mut segments,
         );
-        lanes = lane_order(&routes, &hidden);
+        let mut lanes = lane_order(&grid, &routes, &port_at, &hidden);
         finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
     }
 
@@ -1270,42 +1386,108 @@ fn build(
             });
         lines.push(LineGeom { frame_port, ..geom });
     }
-    // The branches of a fanned-out relation share one frame port: the partner is
-    // named once there, and where they go under together, one hole carries every
-    // branch's number.
-    let spot = |p: Pos| ((p.x * 10.0).round() as i64, (p.y * 10.0).round() as i64);
-    let mut named = BTreeSet::new();
-    for g in &mut lines {
-        if let Some((p, _, _)) = &g.frame_port {
-            g.frame_named = named.insert((g.relation, spot(*p)));
-        }
-    }
-    let mut carriers: BTreeMap<(RelationId, bool, (i64, i64)), usize> = BTreeMap::new();
-    for li in 0..lines.len() {
-        let Some(m) = &lines[li].mousehole else {
-            continue;
-        };
-        for (at_a, hole) in [(true, m.a), (false, m.b)] {
-            let key = (lines[li].relation, at_a, spot(hole));
-            let Some(&carrier) = carriers.get(&key) else {
-                carriers.insert(key, li);
+    // A line that still enters through the bottom, set so by hand, would cross the
+    // cross-cutting bands on its way: it goes under them instead, a hole before it
+    // meets the first band and one after it leaves the last, numbered per relation
+    // (the branches of a fanned-out relation share the stem there, so they share
+    // the number).
+    let band_span = blocks
+        .iter()
+        .filter(|b| b.band)
+        .map(|b| b.rect)
+        .reduce(|a, b| a.union(b));
+    if let Some(span) = band_span {
+        let mut band_numbers: BTreeMap<RelationId, String> = BTreeMap::new();
+        for (li, geom) in lines.iter_mut().enumerate() {
+            if geom.mousehole.is_some() || geom.tip.is_some() {
+                continue;
+            }
+            let (mut along, mut entry, mut exit) = (0.0, None, None);
+            for w in geom.points.windows(2) {
+                let len = w[0].dist(w[1]);
+                if let Some((t0, t1)) = clip_params(w[0], w[1], &span) {
+                    entry.get_or_insert(along + t0 * len);
+                    exit = Some(along + t1 * len);
+                }
+                along += len;
+            }
+            let (Some(entry), Some(exit)) = (entry, exit) else {
                 continue;
             };
-            let taken = lines[li].mousehole.as_mut().and_then(|m| {
-                if at_a {
-                    m.label_a.take()
-                } else {
-                    m.label_b.take()
-                }
-            });
-            let shared = lines[carrier]
-                .mousehole
-                .as_mut()
-                .map(|m| if at_a { &mut m.label_a } else { &mut m.label_b });
-            if let (Some(Some(label)), Some(more)) = (shared, taken) {
-                label.push(',');
-                label.push_str(&more);
+            if exit - entry < 1.0 {
+                continue;
             }
+            // The holes sit just before and just after the bands, their arches
+            // outside them.
+            let (piece_a, _) = cut_at(&geom.points, entry - 2.0 * crate::scene::HOLE_R);
+            let (_, piece_b) = cut_at(&geom.points, exit + 2.0 * crate::scene::HOLE_R);
+            let numbered = legend_keys
+                .iter()
+                .filter(|(k, _)| k.starts_with('['))
+                .count();
+            let full = geom.full_text.trim().to_owned();
+            let short = view.lines[li].short.clone();
+            let key = band_numbers
+                .entry(geom.relation)
+                .or_insert_with(|| {
+                    let key = format!("[{}]", numbered + 1);
+                    // A short label's entry explains the number from now on.
+                    let under_short = legend_keys
+                        .iter_mut()
+                        .find(|(k, text)| !short.is_empty() && *k == short && *text == full);
+                    match under_short {
+                        Some(entry) => entry.0 = key.clone(),
+                        None => {
+                            let entry = if full.is_empty() {
+                                ends_of(project, &view.lines[li])
+                            } else {
+                                full
+                            };
+                            legend_keys.push((key.clone(), entry));
+                        }
+                    }
+                    key
+                })
+                .clone();
+            let mut hole = Mousehole {
+                a: piece_a.last().copied().unwrap_or_default(),
+                b: piece_b.first().copied().unwrap_or_default(),
+                piece_a,
+                piece_b,
+                label: key.trim_matches(['[', ']']).to_owned(),
+                portal_a: None,
+                portal_b: None,
+            };
+            (hole.portal_a, hole.portal_b) = portals(project, &view.lines[li]);
+            geom.label_at = hole.a;
+            geom.text = view.lines[li].short.clone();
+            geom.mousehole = Some(hole);
+        }
+    }
+    // A fanned-out relation names its partner once per frame side: at the branch
+    // in the middle of its frame points (they share one, or going under, each has
+    // its own next to the others).
+    let mut by_side: BTreeMap<(RelationId, Side), Vec<(usize, f32)>> = BTreeMap::new();
+    for (li, g) in lines.iter_mut().enumerate() {
+        if let Some((p, side, _)) = &g.frame_port {
+            let along = if side.is_horizontal() { p.y } else { p.x };
+            by_side
+                .entry((g.relation, *side))
+                .or_default()
+                .push((li, along));
+            g.frame_named = false;
+        }
+    }
+    for members in by_side.values() {
+        let mean = members.iter().map(|(_, v)| v).sum::<f32>() / members.len() as f32;
+        let middle = members.iter().min_by(|a, b| {
+            (a.1 - mean)
+                .abs()
+                .total_cmp(&(b.1 - mean).abs())
+                .then(a.0.cmp(&b.0))
+        });
+        if let Some((li, _)) = middle {
+            lines[*li].frame_named = true;
         }
     }
     // The partner names beside the frame ends on top and bottom: left of the end
@@ -1323,6 +1505,10 @@ fn build(
         on_side.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let (lo, hi) = (bounds.min.x + PAD, bounds.max.x - PAD);
         let mut rows: Vec<Vec<(f32, f32)>> = Vec::new();
+        // The title sits in the first row at the top left; names keep off it.
+        if side == Side::Top && title_end > f32::MIN {
+            rows.push(vec![(bounds.min.x, title_end)]);
+        }
         for (x, li, name) in on_side {
             let w = text::width(&name, LABEL_SIZE);
             let (room_left, room_right) = (x - 8.0 - lo, hi - x - 8.0);
@@ -1380,11 +1566,17 @@ fn build(
         }
     }
 
-    // A relation that lands on several boxes is labelled once.
+    // A relation that lands on several boxes is labelled once per frame point:
+    // branches that share one share the label, a branch with a frame point of
+    // its own is a line of its own to the eye and carries the text too.
     let mut labelled = BTreeSet::new();
     for (li, geom) in lines.iter_mut().enumerate() {
         if let Some(text) = shown.get(li) {
-            geom.text = if labelled.insert(geom.relation) {
+            let at = geom
+                .frame_port
+                .as_ref()
+                .map(|(p, _, _)| ((p.x * 10.0).round() as i64, (p.y * 10.0).round() as i64));
+            geom.text = if labelled.insert((geom.relation, at)) {
                 text.clone()
             } else {
                 String::new()
@@ -1623,6 +1815,42 @@ fn ends_of(project: &Project, line: &ViewLine) -> String {
     format!("{} {arrow} {}", name(&line.a), name(&line.b))
 }
 
+/// Of the drawn lines whose mousehole setting is automatic, the one crossing more
+/// than `HOLE_CROSSINGS` other lines that is worst: the most lines crossed, then the
+/// longest route, then the lowest relation number.
+fn worst_crossing(
+    view: &DiagramView,
+    drawn: &BTreeMap<usize, Vec<Pos>>,
+    hidden: &BTreeSet<usize>,
+) -> Option<usize> {
+    let shown: Vec<(usize, &Vec<Pos>)> = drawn
+        .iter()
+        .filter(|(li, _)| !hidden.contains(li))
+        .map(|(li, p)| (*li, p))
+        .collect();
+    let length = |p: &[Pos]| p.windows(2).map(|w| w[0].dist(w[1])).sum::<f32>();
+    shown
+        .iter()
+        .filter(|(li, _)| view.lines[*li].mousehole == crate::model::MouseholeMode::Automatic)
+        .map(|(li, p)| {
+            let crossed = shown
+                .iter()
+                .filter(|(lj, q)| {
+                    view.lines[*lj].relation != view.lines[*li].relation
+                        && (!cross_points(p, q).is_empty() || !cross_points(q, p).is_empty())
+                })
+                .count();
+            (*li, crossed, length(p))
+        })
+        .filter(|(_, crossed, _)| *crossed > HOLE_CROSSINGS)
+        .max_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then(a.2.total_cmp(&b.2))
+                .then(view.lines[b.0].relation.cmp(&view.lines[a.0].relation))
+        })
+        .map(|(li, _, _)| li)
+}
+
 /// Where a line through mouseholes goes under: the hole `HOLE_IN` from each port
 /// (closer on a short line), with the drawn pieces up to them.
 fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
@@ -1636,8 +1864,7 @@ fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
         b: piece_b.first().copied().unwrap_or_default(),
         piece_a,
         piece_b,
-        label_a: Some(label.clone()),
-        label_b: Some(label),
+        label,
         portal_a: None,
         portal_b: None,
     }
@@ -1683,6 +1910,12 @@ fn crossed_boxes(a: Pos, b: Pos, boxes: &[Rect]) -> usize {
 
 /// Whether the segment `a`-`b` passes through `r` (Liang-Barsky).
 pub fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
+    clip_params(a, b, r).is_some()
+}
+
+/// Where the segment `a`-`b` enters and leaves `r`, as fractions of its length
+/// (Liang-Barsky); `None` when it misses `r`.
+fn clip_params(a: Pos, b: Pos, r: &Rect) -> Option<(f32, f32)> {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let (mut t0, mut t1) = (0.0f32, 1.0f32);
     for (p, q) in [
@@ -1693,7 +1926,7 @@ pub fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
     ] {
         if p.abs() < f32::EPSILON {
             if q < 0.0 {
-                return false;
+                return None;
             }
             continue;
         }
@@ -1704,10 +1937,10 @@ pub fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
             t1 = t1.min(t);
         }
         if t0 > t1 {
-            return false;
+            return None;
         }
     }
-    true
+    Some((t0, t1))
 }
 
 /// Splits `text` into lines no wider than `width` at `size`, at spaces where possible.
@@ -2393,14 +2626,43 @@ type Lanes = BTreeMap<Chan, Vec<usize>>;
 /// get slow).
 const UNTANGLE_LIMIT: usize = 60;
 
-fn lane_order(routes: &BTreeMap<usize, Route>, hidden: &BTreeSet<usize>) -> Lanes {
+/// Only a line that runs a stretch along a channel takes a lane there: one that
+/// merely turns in it, from its stem straight into the next channel, does not.
+fn lane_order(
+    grid: &Grid,
+    routes: &BTreeMap<usize, Route>,
+    port_at: &PortAt,
+    hidden: &BTreeSet<usize>,
+) -> Lanes {
     let mut users: Lanes = BTreeMap::new();
+    let no_offsets = BTreeMap::new();
     for (li, route) in routes {
         let Route::Chans(chans) = route else { continue };
         if hidden.contains(li) {
             continue;
         }
+        let (Some(a), Some(b)) = (port_at.get(&(*li, End::A)), port_at.get(&(*li, End::B))) else {
+            continue;
+        };
+        let points = route_points(grid, &no_offsets, *li, a.0, b.0, route);
+        let runs_along = |chan: Chan| {
+            points.windows(2).any(|w| match chan {
+                Chan::H(h) => {
+                    (w[0].y - grid.hy[h]).abs() < 0.5
+                        && (w[1].y - grid.hy[h]).abs() < 0.5
+                        && (w[0].x - w[1].x).abs() > 0.5
+                }
+                Chan::V(v) => {
+                    (w[0].x - grid.vx[v]).abs() < 0.5
+                        && (w[1].x - grid.vx[v]).abs() < 0.5
+                        && (w[0].y - w[1].y).abs() > 0.5
+                }
+            })
+        };
         for chan in chans {
+            if !runs_along(*chan) {
+                continue;
+            }
             let list = users.entry(*chan).or_default();
             if !list.contains(li) {
                 list.push(*li);
@@ -2410,8 +2672,12 @@ fn lane_order(routes: &BTreeMap<usize, Route>, hidden: &BTreeSet<usize>) -> Lane
     users
 }
 
-/// Swaps neighbouring lanes wherever that leaves fewer crossings, until nothing
-/// improves.
+/// A better order of the lanes of one channel: the crossings left, the order, and
+/// the lines of the channel as drawn in it.
+type LaneMove = (usize, Vec<usize>, Vec<(usize, Vec<Pos>)>);
+
+/// Moves lines to other lanes of their channel wherever that leaves fewer
+/// crossings, until nothing improves.
 fn untangle(
     grid: &Grid,
     routes: &BTreeMap<usize, Route>,
@@ -2460,36 +2726,50 @@ fn untangle(
     for _ in 0..4 {
         let mut improved = false;
         for chan in &chans {
-            let n = lanes.get(chan).map_or(0, Vec::len);
-            for k in 0..n.saturating_sub(1) {
-                // A swap moves only the two lines swapped.
-                let Some(users) = lanes.get(chan).map(|l| vec![l[k], l[k + 1]]) else {
-                    break;
-                };
-                let before = count(&points, &users);
-                if before == 0 {
-                    continue;
-                }
-                if let Some(list) = lanes.get_mut(chan) {
-                    list.swap(k, k + 1);
-                }
-                let offsets = lane_offsets(lanes, grid);
-                let old: Vec<(usize, Vec<Pos>)> = users
-                    .iter()
-                    .map(|li| {
-                        (
-                            *li,
-                            points.insert(*li, draw(&offsets, *li)).unwrap_or_default(),
-                        )
-                    })
-                    .collect();
-                if count(&points, &users) < before {
-                    improved = true;
-                } else {
-                    points.extend(old);
-                    if let Some(list) = lanes.get_mut(chan) {
-                        list.swap(k, k + 1);
+            let Some(list) = lanes.get(chan).cloned() else {
+                continue;
+            };
+            let k = list.len();
+            if k < 2 {
+                continue;
+            }
+            let before = count(&points, &list);
+            if before == 0 {
+                continue;
+            }
+            // Every way of moving one line to another lane of the channel (a swap
+            // of neighbours among them); the best of them wins, if any helps. A
+            // line can move past several others at once, where a single swap of
+            // neighbours would not have helped on its own.
+            let mut best: Option<LaneMove> = None;
+            for from in 0..k {
+                for to in 0..k {
+                    if from == to {
+                        continue;
                     }
+                    let mut order = list.clone();
+                    let moved = order.remove(from);
+                    order.insert(to, moved);
+                    lanes.insert(*chan, order.clone());
+                    let offsets = lane_offsets(lanes, grid);
+                    let redrawn: Vec<(usize, Vec<Pos>)> =
+                        order.iter().map(|li| (*li, draw(&offsets, *li))).collect();
+                    let mut trial = points.clone();
+                    trial.extend(redrawn.iter().cloned());
+                    let after = count(&trial, &order);
+                    if after < before && best.as_ref().is_none_or(|b| after < b.0) {
+                        best = Some((after, order, redrawn));
+                    }
+                }
+            }
+            match best {
+                Some((_, order, redrawn)) => {
+                    lanes.insert(*chan, order);
+                    points.extend(redrawn);
+                    improved = true;
+                }
+                None => {
+                    lanes.insert(*chan, list);
                 }
             }
         }
@@ -2683,16 +2963,19 @@ struct LabelSpot {
     clear: bool,
     /// The stretch is long enough for the text.
     fits: bool,
+    /// In the middle of the stretch, not slid toward one end.
+    centered: bool,
     length: f32,
 }
 
 /// Puts every label of a routed line where it fits: on a stretch of the line
-/// between crossings, inside `area`, that holds the text clear of boxes and of
-/// other lines; a stretch with room before one without, a horizontal one before a
-/// vertical one, the usual side of the line before the other, the longest first.
-/// When `number`, a label with no clear place takes a legend number instead, and
-/// its text goes to the legend; when even the number fits nowhere, it goes to the
-/// best place there is.
+/// between crossings, inside `area`, that holds the text clear of boxes, of other
+/// lines, of the pictures at line ends and of the labels placed before it; a stretch with room before one
+/// without, a horizontal one before a vertical one, the middle of the stretch
+/// before a spot slid toward one end, the usual side of the line before the other,
+/// the longest first. When `number`, a label with no clear place takes a legend
+/// number instead, and its text goes to the legend; when even the number fits
+/// nowhere, it goes to the best place there is.
 fn place_labels(
     lines: &mut [LineGeom],
     boxes: &[Rect],
@@ -2711,6 +2994,11 @@ fn place_labels(
                 .collect();
             (g.relation, segs)
         })
+        .collect();
+    // The pictures at the ends of lines with a look take room like boxes do.
+    let mut placed: Vec<Rect> = lines
+        .iter()
+        .flat_map(crate::scene::end_picture_rects)
         .collect();
     for (li, geom) in lines.iter_mut().enumerate() {
         if geom.tip.is_some() || geom.mousehole.is_some() || geom.text.is_empty() {
@@ -2748,41 +3036,73 @@ fn place_labels(
                 cuts.sort_by(f32::total_cmp);
                 for (c, flipped) in cuts.windows(2).flat_map(|c| [(c, false), (c, true)]) {
                     let mid = (c[0] + c[1]) / 2.0;
-                    let at = if horizontal {
-                        Pos::new(mid, w[0].y)
-                    } else {
-                        Pos::new(w[0].x, mid)
+                    let spot_at = |v: f32| {
+                        if horizontal {
+                            Pos::new(v, w[0].y)
+                        } else {
+                            Pos::new(w[0].x, v)
+                        }
                     };
-                    let rect = crate::scene::label_rect(at, horizontal, flipped, text);
-                    // Clear means with a little air around the paper.
-                    let near = rect.expand(4.0);
-                    let clear = !boxes.iter().any(|b| b.overlaps(&near))
-                        && !others.iter().any(|(rel, segs)| {
-                            *rel != geom.relation
-                                && segs.iter().any(|(a, b)| segment_meets(*a, *b, &near))
-                        });
+                    let rect = crate::scene::label_rect(spot_at(mid), horizontal, flipped, text);
                     let need = if horizontal {
                         rect.width()
                     } else {
                         rect.height()
                     };
-                    out.push(LabelSpot {
-                        at,
-                        horizontal,
-                        flipped,
-                        inside: area.holds(&rect),
-                        clear,
-                        fits: c[1] - c[0] >= need,
-                        length: c[1] - c[0],
-                    });
+                    // The middle of the stretch, then spots slid toward either end
+                    // by half the label at a time, as long as the label stays on it.
+                    let room = ((c[1] - c[0] - need) / 2.0).max(0.0);
+                    let steps = (room / (need / 2.0)).floor().min(8.0) as i32;
+                    let mut slid: Vec<(f32, bool)> = vec![(mid, true)];
+                    for k in 1..=steps {
+                        let d = (k as f32) * need / 2.0;
+                        slid.push((mid - d, false));
+                        slid.push((mid + d, false));
+                    }
+                    for (v, centered) in slid {
+                        let at = spot_at(v);
+                        let rect = crate::scene::label_rect(at, horizontal, flipped, text);
+                        // Clear means with a little air around the paper.
+                        let near = rect.expand(4.0);
+                        let clear = !boxes.iter().any(|b| b.overlaps(&near))
+                            && !placed.iter().any(|r| r.overlaps(&near))
+                            && !others.iter().any(|(rel, segs)| {
+                                *rel != geom.relation
+                                    && segs.iter().any(|(a, b)| segment_meets(*a, *b, &near))
+                            });
+                        out.push(LabelSpot {
+                            at,
+                            horizontal,
+                            flipped,
+                            inside: area.holds(&rect),
+                            clear,
+                            fits: c[1] - c[0] >= need,
+                            centered,
+                            length: c[1] - c[0],
+                        });
+                    }
                 }
             }
             out
         };
         let best = |spots: Vec<LabelSpot>| {
             spots.into_iter().max_by(|p, q| {
-                (p.inside, p.clear, p.fits, p.horizontal, !p.flipped)
-                    .cmp(&(q.inside, q.clear, q.fits, q.horizontal, !q.flipped))
+                (
+                    p.inside,
+                    p.clear,
+                    p.fits,
+                    p.horizontal,
+                    p.centered,
+                    !p.flipped,
+                )
+                    .cmp(&(
+                        q.inside,
+                        q.clear,
+                        q.fits,
+                        q.horizontal,
+                        q.centered,
+                        !q.flipped,
+                    ))
                     .then(p.length.total_cmp(&q.length))
             })
         };
@@ -2806,6 +3126,12 @@ fn place_labels(
             spot = best(spots(&text));
         }
         if let Some(s) = spot {
+            placed.push(crate::scene::label_rect(
+                s.at,
+                s.horizontal,
+                s.flipped,
+                &text,
+            ));
             geom.text = text;
             geom.label_at = s.at;
             geom.label_horizontal = s.horizontal;
@@ -2830,5 +3156,63 @@ fn label_position(points: &[Pos]) -> (Pos, bool) {
     match longest(true) {
         Some(p) => (p, true),
         None => (longest(false).unwrap_or_default(), false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Direction, LinePattern, MouseholeMode};
+
+    /// A vertical line of `text` between two boxes that leave no room beside it.
+    fn boxed_in(text: &str) -> (Vec<LineGeom>, Vec<Rect>) {
+        let view = ViewLine {
+            relation: RelationId(1),
+            a: ViewEnd::Open,
+            b: ViewEnd::Open,
+            direction: Direction::Out,
+            text: text.to_owned(),
+            style: LineStyle::Round12,
+            short: String::new(),
+            bundle: Vec::new(),
+            pattern: LinePattern::Solid,
+            color: None,
+            mousehole: MouseholeMode::Automatic,
+            look: None,
+        };
+        let points = vec![Pos::new(100.0, 0.0), Pos::new(100.0, 60.0)];
+        let line = build_line(&view, LineKind::Routed, points, None, None, None);
+        let boxes = vec![
+            Rect::from_min_size(Pos::new(0.0, -50.0), 89.0, 160.0),
+            Rect::from_min_size(Pos::new(111.0, -50.0), 89.0, 160.0),
+        ];
+        (vec![line], boxes)
+    }
+
+    #[test]
+    fn a_label_with_no_clear_place_becomes_a_number() {
+        let (mut lines, boxes) = boxed_in("dashboard");
+        let area = Rect::from_min_size(Pos::new(-100.0, -100.0), 400.0, 400.0);
+        let mut legend = Vec::new();
+        place_labels(&mut lines, &boxes, area, true, &mut legend);
+        assert_eq!(lines[0].text, "[1]");
+        assert_eq!(legend, vec![("[1]".to_owned(), "dashboard".to_owned())]);
+        // With shortening off the text stays, at the best place there is.
+        let (mut lines, boxes) = boxed_in("dashboard");
+        let mut legend = Vec::new();
+        place_labels(&mut lines, &boxes, area, false, &mut legend);
+        assert_eq!(lines[0].text, "dashboard");
+        assert!(legend.is_empty());
+        // A label that already has a legend entry under its short text keeps the
+        // entry, now under the number.
+        let (mut lines, boxes) = boxed_in("dash");
+        lines[0].full_text = "dashboard of everything".to_owned();
+        let mut legend = vec![("dash".to_owned(), "dashboard of everything".to_owned())];
+        place_labels(&mut lines, &boxes, area, true, &mut legend);
+        assert_eq!(lines[0].text, "[1]");
+        assert_eq!(
+            legend,
+            vec![("[1]".to_owned(), "dashboard of everything".to_owned())]
+        );
     }
 }

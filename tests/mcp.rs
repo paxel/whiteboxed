@@ -153,10 +153,12 @@ fn a_client_lists_and_calls_tools() -> TestResult {
     let r = post(f.server.addr, "/mcp", &init, &[("Authorization", &auth)])?;
     assert_eq!(r.status, 200, "{}", r.body);
     let hello = message(&r.body, 1).ok_or("no initialize result")?;
+    let instructions = hello["result"]["instructions"].as_str().unwrap_or_default();
+    assert!(instructions.contains("arc42"));
+    // The AI is told to leave mouseholes to the automatic rule.
     assert!(
-        hello["result"]["instructions"]
-            .as_str()
-            .is_some_and(|s| s.contains("arc42"))
+        instructions.contains("Leave mouseholes on automatic"),
+        "{instructions}"
     );
     assert_eq!(hello["result"]["serverInfo"]["name"], "whiteboxed");
     let session = r.session.ok_or("no session id")?;

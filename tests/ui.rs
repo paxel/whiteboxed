@@ -545,6 +545,12 @@ fn turning_ai_access_on_shows_how_to_connect() -> TestResult {
     h.get_by_label("Allow AI access").click();
     h.run();
     assert!(h.state().ai.is_on());
+    // Turning it on opens no dialog; Connection… in the AI menu does.
+    assert!(h.query_by_label("AI access: On").is_none());
+    h.get_by_label("AI").click();
+    h.run();
+    h.get_by_label("Connection\u{2026}").click();
+    h.run();
     assert!(h.query_by_label("AI access: On").is_some());
     let url = h.state().ai.url().ok_or("no url")?;
     let port: u16 = url
@@ -1064,6 +1070,7 @@ fn the_ai_dialog_chooses_who_may_connect() -> TestResult {
     h.run();
     let ctx = h.ctx.clone();
     h.state_mut().ai.start(&ctx);
+    h.state_mut().ai.dialog = true;
     h.run();
     assert!(h.state().ai.is_on());
     if cfg!(target_os = "linux") && !std::path::Path::new("/sys/class/net/docker0").exists() {

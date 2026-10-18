@@ -161,7 +161,9 @@ impl Project {
 impl Project {
     /// The frame side where an end of a relation enters the whitebox of `outer`:
     /// nearest to the boxes it lands on inside (ties keep the side it has one level
-    /// up), or that side when it lands nowhere yet.
+    /// up), or that side when it lands nowhere yet. While the whitebox has
+    /// cross-cutting bands, which lie along the bottom, the bottom is never chosen
+    /// (a side set by hand still may be).
     pub fn frame_side(
         &self,
         rel: &super::Relation,
@@ -173,11 +175,17 @@ impl Project {
             return *side;
         }
         let endpoint = rel.end(end);
+        let banded = self.blocks_in(Some(outer)).any(|(_, b)| b.band);
         let above = endpoint
             .anchors
             .iter()
             .find(|a| a.block == outer)
             .map_or(Side::Left, |a| a.side);
+        let above = if banded && above == Side::Bottom {
+            Side::Top
+        } else {
+            above
+        };
         let landed: Vec<Cell> = self
             .landings(endpoint, outer)
             .iter()
@@ -214,6 +222,7 @@ impl Project {
         [above, above.opposite()]
             .into_iter()
             .chain(across)
+            .filter(|s| !(banded && *s == Side::Bottom))
             .min_by_key(|s| distance(*s))
             .unwrap_or(above)
     }

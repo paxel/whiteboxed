@@ -79,14 +79,15 @@ impl Ai {
         self.settings.clone()
     }
 
-    /// Opens the endpoint. A taken port shows up as an error in the dialog.
+    /// Opens the endpoint. Only trouble opens the dialog (a taken port, no user
+    /// data directory); the command to connect is under Connection… at any time.
     pub fn start(&mut self, ctx: &Context) {
-        self.dialog = true;
         self.wanted = true;
         let Some(s) = self.settings() else {
             if self.error.is_none() {
                 self.error = Some("AI access needs a user data directory.".into());
             }
+            self.dialog = true;
             return;
         };
         self.stop();
@@ -94,6 +95,7 @@ impl Ai {
             Ok(e) => e,
             Err(e) => {
                 self.error = Some(e);
+                self.dialog = true;
                 return;
             }
         };
@@ -114,6 +116,7 @@ impl Ai {
                     "{}:{} cannot be used ({e}). Choose another port or address.",
                     endpoint.bind, s.port
                 ));
+                self.dialog = true;
             }
         }
     }

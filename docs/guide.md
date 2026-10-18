@@ -207,24 +207,30 @@ that box); the relation itself stays on its own level.
 
 ### Mouseholes
 
-A line that would run straight over more than two boxes goes through **mouseholes**
-instead: out of its box a short way into a numbered hole, and out of the hole with
-the same number near its other end; nothing is drawn in between. The number is the
+A line that would run straight over more than two boxes, or that would cross more
+than two other lines, goes through **mouseholes** instead: out of its box a short way
+into a numbered hole, and out of the hole with the same number near its other end;
+nothing is drawn in between. Of several lines crossing too much, the worst goes under
+first (the one crossing the most lines, then the longest) and the rest is drawn
+again, until no line crosses more than two others. The number is the
 line's number in the [legend](#long-texts-and-the-legend), which always holds its
 text; a line without text is listed by its two ends (`Orders → Billing`). A short
 label is written at the holes as well. Several relations drawn as one line share a
 pair of holes carrying all their numbers (`2,5`). Inside a whitebox the end at the
 frame can be a hole, and of a fanned-out relation only the branches that need it go
-under. Each such branch has a number of its own, so you can pair its holes; the
-legend lists it with the box it reaches (`use cases › Provide`), and where the
-branches go under together at the frame, that one hole carries all their numbers.
+under. A branch that crosses too much first gets a frame point of its own, in line
+with its box, and stays drawn when that is enough, carrying the text as well. A
+branch that goes under has a
+frame point and a pair of holes of its own, with a number of its own, so you can pair
+its holes; the legend lists it with the box it reaches (`use cases › Provide`).
 
 In the app, hovering a hole highlights both holes and shows the route between them
 faintly; clicking one selects the line. **Mouseholes** in the line's **Edit…** dialog
 sets it for the diagram shown: **automatic**, **always** or **never**. Lines through
 mouseholes count for [readability](#readability).
 
-The holes are arches in the line's colour, or **portals**: two pictures from the
+The holes are arches in the line's colour, always with the round side up, or
+**portals**: two pictures from the
 library, chosen under **Mouseholes** in [Project settings](#project-settings), one
 where a line goes in (near its tail) and one where it comes out (near its head). A
 line without a head goes in at its first end. Portals keep their own colours, like the
@@ -247,8 +253,10 @@ There is nothing to position by pixel.
 - Lines on one side of a box keep 40 px apart, so a box grows along a side from its
   second relation there. A box never gets smaller than its minimum size.
 - Lines run horizontally and vertically through the gaps between cells and never
-  through a box. Only a line that enters a whitebox through the bottom of its frame
-  crosses the [cross-cutting bands](#cross-cutting-bands) on its way in. Gaps widen
+  through a box. While a whitebox has [cross-cutting bands](#cross-cutting-bands), a
+  relation entering it never takes the bottom side on its own, since the bands lie
+  there; a side set to bottom by hand goes under the bands through a pair of
+  [mouseholes](#mouseholes) at their edges. Gaps widen
   to fit long labels and the lines that run along them, which keep 40 px apart.
 - A line leaves a box in the middle of its side. Two boxes facing each other are
   joined by a straight line, also across empty cells, as close to both middles as
@@ -468,12 +476,14 @@ its editing operations as [MCP](https://modelcontextprotocol.io) tools on
 
 ![The AI access dialog with the endpoint and the command for Claude Code](screenshots/ai-access.png)
 
-- **Connecting Claude Code** takes three steps, listed in the dialog: open a terminal
+- **Connecting Claude Code** takes three steps, listed in the dialog under **AI >
+  Connection…**: open a terminal
   in your project folder (a normal shell, not inside Claude Code), paste the copied
   `claude mcp add` command there, then start `claude` and check with `/mcp` that
   whiteboxed is connected.
 - **Off by default.** **AI > Allow AI access** turns it on until you turn it off or
-  quit; the next start begins with it off.
+  quit; the next start begins with it off. The dialog opens on its own only when the
+  endpoint cannot start.
 - **Token.** Every request needs the access token, as `Authorization: Bearer <token>`
   or as `?token=<token>` in the URL. The token is made once per user and stored in
   your user data directory (`whiteboxed/ai.yaml`), never in a project. **Generate new

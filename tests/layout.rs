@@ -1227,10 +1227,7 @@ fn a_line_over_more_than_two_boxes_goes_through_mouseholes() -> TestResult {
     );
     assert!(line.points.len() > 2);
     // The holes carry the legend number, and the legend the text.
-    assert_eq!(
-        (m.label_a.as_deref(), m.label_b.as_deref()),
-        (Some("1"), Some("1"))
-    );
+    assert_eq!(m.label, "1");
     assert_eq!(l.legend.len(), 1);
     assert_eq!(
         (l.legend[0].key.as_str(), l.legend[0].lines.join(" ")),
@@ -1471,21 +1468,35 @@ fn branches_through_mouseholes_get_their_own_numbers() -> TestResult {
         .filter_map(|g| g.mousehole.as_ref())
         .collect();
     assert_eq!(holes.len(), inner.len());
-    // At the boxes (end A of the relation) every branch has its own number; at
-    // the frame, where the branches go under together, one hole carries all of them.
-    let (at_boxes, at_frame): (Vec<Option<&str>>, Vec<Option<&str>>) = holes
+    // Every branch has its own number and its own pair of holes: the frame ends
+    // spread out next to each other instead of sharing one point.
+    let labels: Vec<&str> = holes.iter().map(|m| m.label.as_str()).collect();
+    assert_eq!(labels, vec!["1", "2", "3"]);
+    let frame_ports: Vec<Pos> = l
+        .lines
         .iter()
-        .map(|m| (m.label_a.as_deref(), m.label_b.as_deref()))
-        .unzip();
-    let mut carried: Vec<Option<&str>> = at_frame.clone();
-    carried.sort();
-    assert_eq!(carried, vec![None, None, Some("1,2,3")], "{at_frame:?}");
-    assert_eq!(at_boxes, vec![Some("1"), Some("2"), Some("3")]);
+        .filter(|g| g.relation == rel)
+        .filter_map(|g| g.frame_port.as_ref().map(|(p, _, _)| *p))
+        .collect();
+    for (i, p) in frame_ports.iter().enumerate() {
+        for q in &frame_ports[i + 1..] {
+            assert!(p.dist(*q) >= PORT_SPACING - 0.01, "{frame_ports:?}");
+        }
+    }
     let frame_holes: Vec<Pos> = holes.iter().map(|m| m.b).collect();
-    assert!(
-        frame_holes.iter().all(|h| h.dist(frame_holes[0]) < 0.01),
-        "{frame_holes:?}"
-    );
+    for (i, p) in frame_holes.iter().enumerate() {
+        for q in &frame_holes[i + 1..] {
+            assert!(p.dist(*q) >= PORT_SPACING - 0.01, "{frame_holes:?}");
+        }
+    }
+    // The partner is still named once, at the branch in the middle.
+    let named: Vec<Option<BlockId>> = l
+        .lines
+        .iter()
+        .filter(|g| g.relation == rel && g.frame_named)
+        .map(|g| g.landing)
+        .collect();
+    assert_eq!(named, vec![Some(inner[1])]);
     let legend: Vec<(String, String)> = l
         .legend
         .iter()
@@ -1499,11 +1510,11 @@ fn branches_through_mouseholes_get_their_own_numbers() -> TestResult {
             ("[3]".to_owned(), "uses \u{203a} b3".to_owned()),
         ]
     );
-    // The frame hole is drawn once, with every number.
+    // Each number is written at both holes of its branch.
     let svg = export::to_svg(&scene::scene(&l));
-    assert_eq!(svg.matches(">1,2,3</text>").count(), 1, "{svg}");
-    assert_eq!(svg.matches(">2</text>").count(), 1, "{svg}");
-    assert_eq!(svg.matches(">1</text>").count(), 1, "{svg}");
+    for n in ["1", "2", "3"] {
+        assert_eq!(svg.matches(&format!(">{n}</text>")).count(), 2, "{svg}");
+    }
     Ok(())
 }
 
@@ -1637,9 +1648,10 @@ fn a_label_moves_to_the_other_side_of_its_line_when_another_runs_through_it() ->
 }
 
 #[test]
-fn a_label_with_no_clear_place_becomes_a_number() -> TestResult {
+fn a_label_slides_along_its_line_to_a_clear_spot() -> TestResult {
     // Two lines run down one gap side by side past the middle row: beside the
-    // first is the other line or a box, and its short stems hug its boxes.
+    // first, at mid-height, is the other line or a box, and its short stems hug
+    // its boxes. Further up, between the rows, there is room left of it.
     let mut p = Project::new();
     let k = BlockKind::Component;
     let mut at = |name: &str, col: i32, row: i32| -> Result<BlockId, Box<dyn std::error::Error>> {
@@ -1677,18 +1689,22 @@ fn a_label_with_no_clear_place_becomes_a_number() -> TestResult {
         .iter()
         .map(|g| (g.relation, g.text.as_str()))
         .collect();
-    // The second line's stem into B, moved half a lane down to keep off the first
-    // line's stem, has room below it; the first has none anywhere.
-    assert_eq!(texts, vec![(ad, "[1]"), (cb, "auth code")], "{:?}", l.lines);
     assert_eq!(
-        l.legend
-            .iter()
-            .map(|e| (e.key.as_str(), e.lines.join(" ")))
-            .collect::<Vec<_>>(),
-        vec![("[1]", "dashboard".to_owned())]
+        texts,
+        vec![(ad, "dashboard"), (cb, "auth code")],
+        "{:?}",
+        l.lines
     );
-    let _ = (e, f);
-    // The numbers themselves sit clear of every box and line.
+    assert!(l.legend.is_empty());
+    let line = l.lines.iter().find(|g| g.relation == ad).ok_or("line")?;
+    let (re, rf) = (l.block(e).ok_or("e")?.rect, l.block(f).ok_or("f")?.rect);
+    assert!(!line.label_horizontal && line.label_flipped, "{line:?}");
+    assert!(
+        line.label_at.y < re.min.y || line.label_at.y > re.max.y,
+        "slid off the middle row: {:?} vs {re:?} {rf:?}",
+        line.label_at
+    );
+    // Every label sits clear of every box and line.
     for (li, rect) in scene::label_rects(&l) {
         assert!(l.blocks.iter().all(|b| !b.rect.overlaps(&rect)), "{li}");
         for other in l
@@ -1747,5 +1763,533 @@ fn a_straight_branch_of_a_fanned_out_relation_has_no_jog() -> TestResult {
             .collect();
         assert!(short.is_empty(), "jog in {:?}: {short:?}", g.points);
     }
+    Ok(())
+}
+
+#[test]
+fn partner_names_at_the_top_keep_off_the_title() -> TestResult {
+    // The only box sits at the top left, right under the title; the name of the
+    // relation entering above it goes to the next row instead of over the title.
+    let mut p = Project::new();
+    let a = p.add_block(
+        None,
+        &spec("A rather long whitebox name indeed", BlockKind::Component),
+    )?;
+    let (_, rel) = p.connect_new(
+        a,
+        Side::Top,
+        &spec("X", BlockKind::Component),
+        Direction::In,
+        "",
+    )?;
+    let b = p.add_block(Some(a), &spec("b", BlockKind::Component))?;
+    p.attach(rel, End::A, a, b, Side::Top)?;
+    let l = render(&p, Some(a));
+    let frame = l.frame.ok_or("frame")?;
+    let title = format!("{} (whitebox)", l.title.as_deref().unwrap_or(""));
+    let title_rect = Rect::from_min_size(
+        Pos::new(
+            frame.min.x + 16.0,
+            frame.min.y + 20.0 - layout::NAME_SIZE * 0.75,
+        ),
+        whiteboxed::text::width(&title, layout::NAME_SIZE),
+        layout::NAME_SIZE,
+    );
+    let names = scene::frame_label_rects(&l);
+    assert_eq!(names.len(), 1);
+    assert!(
+        !names[0].1.overlaps(&title_rect),
+        "{:?} over the title {title_rect:?}",
+        names[0].1
+    );
+    // The frame point itself starts right of the title as well.
+    let line = l.lines.iter().find(|g| g.relation == rel).ok_or("line")?;
+    let (port, _, _) = line.frame_port.as_ref().ok_or("frame port")?;
+    assert!(
+        port.x >= title_rect.max.x,
+        "{port:?} under the title {title_rect:?}"
+    );
+    Ok(())
+}
+
+/// `rows` lines from left to right across `cols` lines from top to bottom, all on
+/// automatic mouseholes, every line crossing every line of the other direction.
+fn grid_of_lines(rows: usize, cols: usize) -> Result<Project, Box<dyn std::error::Error>> {
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    for r in 0..rows {
+        let l = p.add_block(None, &spec(&format!("L{r}"), k))?;
+        let rt = p.add_block(None, &spec(&format!("R{r}"), k))?;
+        p.move_block(l, Cell::new(0, r as i32))?;
+        p.move_block(rt, Cell::new(cols as i32 + 1, r as i32))?;
+        p.connect_existing(l, Side::Right, rt, Direction::Out, "", Placement::Keep)?;
+    }
+    for c in 0..cols {
+        let t = p.add_block(None, &spec(&format!("T{c}"), k))?;
+        let b = p.add_block(None, &spec(&format!("B{c}"), k))?;
+        p.move_block(t, Cell::new(c as i32 + 1, -1))?;
+        p.move_block(b, Cell::new(c as i32 + 1, rows as i32))?;
+        p.connect_existing(t, Side::Bottom, b, Direction::Out, "", Placement::Keep)?;
+    }
+    Ok(p)
+}
+
+#[test]
+fn a_line_crossing_more_than_two_others_goes_under() -> TestResult {
+    // One vertical across three horizontals: it crosses three lines, they cross one.
+    let p = grid_of_lines(3, 1)?;
+    let l = render(&p, None);
+    let under: Vec<_> = l
+        .lines
+        .iter()
+        .filter(|g| g.mousehole.is_some())
+        .map(|g| g.relation)
+        .collect();
+    assert_eq!(under.len(), 1, "{under:?}");
+    assert_eq!(layout::crossings(&l), Vec::new());
+    // Across two horizontals it stays drawn, with two jumps.
+    let l = render(&grid_of_lines(2, 1)?, None);
+    assert!(l.lines.iter().all(|g| g.mousehole.is_none()));
+    assert_eq!(layout::crossings(&l).len(), 2);
+    Ok(())
+}
+
+#[test]
+fn of_equal_offenders_the_longer_lines_go_under_first() -> TestResult {
+    // Three by three: every line crosses three others. The horizontals are the
+    // longer lines, so one of them goes under first; the verticals then cross two,
+    // which is allowed, while the other horizontals still cross three. Three holes
+    // where all at once would have made six.
+    let p = grid_of_lines(3, 3)?;
+    let l = render(&p, None);
+    let under: Vec<bool> = l.lines.iter().map(|g| g.mousehole.is_some()).collect();
+    assert_eq!(
+        under,
+        vec![true, true, true, false, false, false],
+        "{under:?}"
+    );
+    assert!(l.lines[..3].iter().all(|g| g.points[0].y == g.points[1].y));
+    assert_eq!(layout::crossings(&l), Vec::new());
+    // Told never, a line stays drawn however much it crosses.
+    let mut p = grid_of_lines(3, 1)?;
+    let vertical = p
+        .relations
+        .iter()
+        .find(|(_, r)| {
+            p.blocks
+                .get(&r.a.anchors[0].block)
+                .is_some_and(|b| b.name == "T0")
+        })
+        .map(|(id, _)| *id)
+        .ok_or("vertical")?;
+    p.set_mousehole(vertical, None, whiteboxed::model::MouseholeMode::Never)?;
+    let l = render(&p, None);
+    assert!(l.lines.iter().all(|g| g.mousehole.is_none()));
+    assert_eq!(layout::crossings(&l).len(), 3);
+    Ok(())
+}
+
+#[test]
+fn a_far_branch_gets_its_own_frame_point_before_it_goes_under() -> TestResult {
+    // A relation fans out to the first and the last of seven boxes from a frame
+    // point in the middle; five more relations come straight down into the boxes
+    // between. From the middle, the branch to b1 crosses three of them; from a
+    // frame point of its own above b1 it crosses nothing, so it stays drawn.
+    let names = ["b1", "b2", "b3", "b4", "b5", "b6", "b7"];
+    let (mut p, a, inner, rel) = fanned_in(&names, &[0, 6], "wide")?;
+    for (i, b) in inner.iter().enumerate().skip(1).take(5) {
+        let (_, r) = p.connect_new(
+            a,
+            Side::Bottom,
+            &spec(&format!("X{i}"), BlockKind::Component),
+            Direction::In,
+            "",
+        )?;
+        p.attach(r, End::A, a, *b, Side::Bottom)?;
+    }
+    let l = render(&p, Some(a));
+    assert!(
+        l.lines.iter().all(|g| g.mousehole.is_none()),
+        "no holes needed"
+    );
+    let ports: Vec<Pos> = l
+        .lines
+        .iter()
+        .filter(|g| g.relation == rel)
+        .filter_map(|g| g.frame_port.as_ref().map(|(p, _, _)| *p))
+        .collect();
+    assert_eq!(ports.len(), 2);
+    assert!(
+        ports[0].dist(ports[1]) > PORT_SPACING,
+        "fanned out: {ports:?}"
+    );
+    let (b1, b7) = (
+        l.block(inner[0]).ok_or("b1")?.rect,
+        l.block(inner[6]).ok_or("b7")?.rect,
+    );
+    assert!(
+        ports.iter().any(|p| p.x >= b1.min.x && p.x <= b1.max.x),
+        "{ports:?} {b1:?}"
+    );
+    assert!(
+        ports.iter().any(|p| p.x >= b7.min.x && p.x <= b7.max.x),
+        "{ports:?} {b7:?}"
+    );
+    assert_eq!(layout::crossings(&l), Vec::new());
+    Ok(())
+}
+
+#[test]
+fn a_lane_moves_past_its_neighbours_when_that_undoes_crossings() -> TestResult {
+    // Down the gap between A and B run three lines: from T around B into C's top,
+    // from A into C's left (which turns off toward C), and from E into F. On the
+    // lane nearest A the line from T crosses A's two lines and the one into C
+    // twice; on the lane nearest B it crosses only A's line into B.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let mut at = |name: &str, col: i32, row: i32| -> Result<BlockId, Box<dyn std::error::Error>> {
+        let id = p.add_block(None, &spec(name, k))?;
+        p.move_block(id, Cell::new(col, row))?;
+        Ok(id)
+    };
+    let a = at("A", 0, 0)?;
+    let b = at("B", 1, 0)?;
+    let c = at("C", 1, 1)?;
+    let e = at("E", 0, 1)?;
+    let f = at("F", 1, 2)?;
+    let t = at("T", 1, -1)?;
+    fn at2(
+        p: &mut Project,
+        name: &str,
+        col: i32,
+        row: i32,
+    ) -> Result<BlockId, Box<dyn std::error::Error>> {
+        let id = p.add_block(None, &spec(name, BlockKind::Component))?;
+        p.move_block(id, Cell::new(col, row))?;
+        Ok(id)
+    }
+    // The line from T is the oldest relation, so it starts on the lane nearest A.
+    let tc = p.connect_existing(t, Side::Bottom, c, Direction::Out, "", Placement::Keep)?;
+    p.set_side_at(tc, c, Side::Top)?;
+    let ab = p.connect_existing(a, Side::Right, b, Direction::Out, "count", Placement::Keep)?;
+    let ef = p.connect_existing(e, Side::Right, f, Direction::Out, "", Placement::Keep)?;
+    p.set_side_at(ef, f, Side::Left)?;
+    let ac = p.connect_existing(
+        a,
+        Side::Right,
+        c,
+        Direction::Out,
+        "helpers",
+        Placement::Keep,
+    )?;
+    p.set_side_at(ac, c, Side::Left)?;
+    // Lines from B and C to boxes on their right make the gap right of B worse:
+    // two crossings there against one left of B, so the line from T goes left.
+    let g = at2(&mut p, "G", 2, 0)?;
+    let h = at2(&mut p, "H", 2, 1)?;
+    p.connect_existing(b, Side::Right, g, Direction::Out, "", Placement::Keep)?;
+    p.connect_existing(c, Side::Right, h, Direction::Out, "", Placement::Keep)?;
+    let l = render(&p, None);
+    let crossings = layout::crossings(&l);
+    let pairs: Vec<(u64, u64)> = crossings
+        .iter()
+        .map(|x| {
+            (
+                l.lines[x.horizontal].relation.0,
+                l.lines[x.vertical].relation.0,
+            )
+        })
+        .collect();
+    assert_eq!(pairs.len(), 1, "{pairs:?}\n{:?}", l.lines);
+    assert!(
+        pairs[0].1 == tc.0 && pairs[0].0 == ab.0 || pairs[0].1 == tc.0,
+        "{pairs:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_branch_that_goes_under_keeps_its_frame_point_to_itself() -> TestResult {
+    // The first branch goes under (its straight line would cross three boxes), the
+    // other two stay drawn. They used to join the hidden branch's frame point, so
+    // its hole sat on their stem.
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let (_, rel) = p.connect_new(
+        a,
+        Side::Top,
+        &spec("X", BlockKind::Component),
+        Direction::In,
+        "uses",
+    )?;
+    let mut at = |name: &str, col: i32, row: i32| -> Result<BlockId, Box<dyn std::error::Error>> {
+        let id = p.add_block(Some(a), &spec(name, BlockKind::Component))?;
+        p.move_block(id, Cell::new(col, row))?;
+        Ok(id)
+    };
+    let b1 = at("b1", 1, 3)?;
+    for (name, row) in [("c1", 0), ("c2", 1), ("c3", 2)] {
+        at(name, 1, row)?;
+    }
+    let b2 = at("b2", 0, 0)?;
+    let b3 = at("b3", 2, 0)?;
+    for b in [b1, b2, b3] {
+        p.attach(rel, End::A, a, b, Side::Top)?;
+    }
+    let l = render(&p, Some(a));
+    let branches: Vec<&layout::LineGeom> = l.lines.iter().filter(|g| g.relation == rel).collect();
+    let under: Vec<Option<BlockId>> = branches
+        .iter()
+        .filter(|g| g.mousehole.is_some())
+        .map(|g| g.landing)
+        .collect();
+    assert_eq!(under, vec![Some(b1)]);
+    let port_of = |b: BlockId| {
+        branches
+            .iter()
+            .find(|g| g.landing == Some(b))
+            .and_then(|g| g.frame_port.as_ref().map(|(p, _, _)| *p))
+            .ok_or("frame port")
+    };
+    let (p1, p2, p3) = (port_of(b1)?, port_of(b2)?, port_of(b3)?);
+    assert!(p2.dist(p3) < 0.01, "the drawn branches share a frame point");
+    assert!(p1.dist(p2) >= PORT_SPACING - 0.01, "{p1:?} vs {p2:?}");
+    // No drawn line passes through either hole.
+    let hole = branches
+        .iter()
+        .find_map(|g| g.mousehole.as_ref())
+        .ok_or("hole")?;
+    for g in l.lines.iter().filter(|g| g.mousehole.is_none()) {
+        for h in [hole.a, hole.b] {
+            let d = whiteboxed::geom::polyline_dist(h, &g.points);
+            assert!(
+                d > scene::HOLE_R,
+                "line {:?} runs through the hole at {h:?}",
+                g.relation
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn partner_names_at_the_frame_are_no_labels() -> TestResult {
+    // Branches without a text of their own have no label rect at all, and the
+    // one that carries the text has the label's rect, not the partner name's.
+    let (p, a, _, rel) = fanned_in(&["b1", "b2", "b3"], &[0, 1, 2], "uses")?;
+    let l = render(&p, Some(a));
+    let frame = l.frame.ok_or("frame")?;
+    let labels = scene::label_rects(&l);
+    let of_rel: Vec<(usize, Rect)> = labels
+        .into_iter()
+        .filter(|(li, _)| l.lines[*li].relation == rel)
+        .collect();
+    assert_eq!(of_rel.len(), 1, "{of_rel:?}");
+    let (li, rect) = of_rel[0];
+    let line = &l.lines[li];
+    assert_eq!(line.text, "uses");
+    assert_eq!(
+        rect,
+        scene::label_rect(
+            line.label_at,
+            line.label_horizontal,
+            line.label_flipped,
+            "uses"
+        )
+    );
+    assert!(frame.expand(-8.0).holds(&rect), "{rect:?} inside {frame:?}");
+    // The names are still drawn, and listed separately.
+    assert_eq!(
+        scene::frame_label_rects(&l)
+            .iter()
+            .filter(|(li, _)| l.lines[*li].relation == rel)
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn with_bands_a_relation_never_enters_from_the_bottom_on_its_own() -> TestResult {
+    // A sibling below A reaches a box in A's bottom row: without a band it enters
+    // from the bottom; with a band across the bottom it takes the next best side.
+    let (mut p, a, inner, rel) = fanned_in(&["b1", "b2", "b3"], &[2], "uses")?;
+    let side_of = |p: &Project| {
+        diagram_view(p, Some(a))
+            .lines
+            .iter()
+            .find_map(|l| match (&l.a, &l.b) {
+                (ViewEnd::Frame { side, .. }, _) | (_, ViewEnd::Frame { side, .. }) => Some(*side),
+                _ => None,
+            })
+    };
+    assert_eq!(side_of(&p), Some(Side::Bottom));
+    p.add_block(Some(a), &spec("Guards", BlockKind::Component).as_band())?;
+    assert_ne!(side_of(&p), Some(Side::Bottom));
+    let l = render(&p, Some(a));
+    let band = l.blocks.iter().find(|b| b.band).ok_or("band")?.rect;
+    for g in &l.lines {
+        for w in g.points.windows(2) {
+            assert!(
+                !layout::segment_meets(w[0], w[1], &band),
+                "{:?} runs through the band {band:?}",
+                g.points
+            );
+        }
+    }
+    // Set to bottom by hand, it goes under the band: a hole where it meets the
+    // band and one where it leaves it, with its text in the legend, once, even
+    // though its short label had an entry there already.
+    p.set_relation_short(rel, "u")?;
+    p.set_frame_side(rel, a, Some(Side::Bottom))?;
+    assert_eq!(side_of(&p), Some(Side::Bottom));
+    let l = render(&p, Some(a));
+    let band = l.blocks.iter().find(|b| b.band).ok_or("band")?.rect;
+    let line = l.lines.iter().find(|g| g.relation == rel).ok_or("line")?;
+    let m = line.mousehole.as_ref().ok_or("no hole at the band")?;
+    // The arches sit outside the band, their round side toward it.
+    let gap = 2.0 * scene::HOLE_R;
+    assert!(
+        (m.a.y - (band.min.y - gap)).abs() < 0.01,
+        "{:?} vs {band:?}",
+        m.a
+    );
+    assert!(
+        (m.b.y - (band.max.y + gap)).abs() < 0.01,
+        "{:?} vs {band:?}",
+        m.b
+    );
+    assert!(m.piece_a.iter().all(|p| p.y <= band.min.y - gap + 0.01));
+    assert!(m.piece_b.iter().all(|p| p.y >= band.max.y + gap - 0.01));
+    assert_eq!(m.label, "1");
+    let about_uses: Vec<(&str, String)> = l
+        .legend
+        .iter()
+        .filter(|e| e.lines.join(" ") == "uses")
+        .map(|e| (e.key.as_str(), e.lines.join(" ")))
+        .collect();
+    assert_eq!(about_uses, vec![("[1]", "uses".to_owned())]);
+    let svg = export::to_svg(&scene::scene(&l));
+    assert_eq!(svg.matches(">1 u</text>").count(), 2, "{svg}");
+    let _ = inner;
+    Ok(())
+}
+
+#[test]
+fn a_frame_end_pushed_off_its_box_takes_the_box_end_along() -> TestResult {
+    // The fanned-out relation's frame point sits at the mean of its three boxes,
+    // right over b2; the single relation into b2 wants the same spot, so the two
+    // frame points are spread apart. The single line still runs straight: its port
+    // on b2 follows its frame point.
+    let (mut p, a, inner, _) = fanned_in(&["b1", "b2", "b3"], &[0, 1, 2], "wide")?;
+    let (_, single) = p.connect_new(
+        a,
+        Side::Bottom,
+        &spec("Y", BlockKind::Component),
+        Direction::In,
+        "one",
+    )?;
+    p.attach(single, End::A, a, inner[1], Side::Bottom)?;
+    let l = render(&p, Some(a));
+    for g in l.lines.iter().filter(|g| g.relation == single) {
+        assert_eq!(g.points.len(), 2, "straight: {:?}", g.points);
+    }
+    for g in &l.lines {
+        let short: Vec<f32> = g
+            .points
+            .windows(2)
+            .map(|w| w[0].dist(w[1]))
+            .filter(|d| *d < layout::LANE / 2.0)
+            .collect();
+        assert!(short.is_empty(), "step in {:?}", g.points);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_label_keeps_off_the_pictures_at_line_ends() -> TestResult {
+    // A line look with a tall picture at the tail: the label of a short line used to
+    // be written over it.
+    let mut p = Project::new();
+    let k = BlockKind::Component;
+    let a = p.add_block(None, &spec("A", k))?;
+    let (b, rel) = p.connect_new(a, Side::Right, &spec("B", k), Direction::Out, "snapshot")?;
+    use whiteboxed::look::{LineLook, LineLookCopy, LineLookSpec, LookId, Picture};
+    let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'><rect width='40' height='10' fill='currentColor'/></svg>";
+    let key = LookId("key".into());
+    let spec = LineLookSpec {
+        tail: Some(key.clone()),
+        ..LineLookSpec::default()
+    };
+    p.wear_line_look(
+        rel,
+        Some(LineLookCopy {
+            id: LookId("admin".into()),
+            look: LineLook::new("admin", spec, 1)?,
+            pictures: vec![(key, Picture::new("key", svg, 1)?)],
+        }),
+    )?;
+    let _ = b;
+    let l = render(&p, None);
+    let line = l.lines.iter().find(|g| g.relation == rel).ok_or("line")?;
+    let pictures = scene::end_picture_rects(line);
+    assert_eq!(pictures.len(), 1, "{pictures:?}");
+    let label = scene::label_rects(&l)
+        .into_iter()
+        .find(|(li, _)| l.lines[*li].relation == rel)
+        .map(|(_, r)| r)
+        .ok_or("label")?;
+    assert!(
+        !label.overlaps(&pictures[0]),
+        "label {label:?} over the picture {:?}",
+        pictures[0]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_straight_line_stays_left_of_a_line_turning_right_on_the_same_side() -> TestResult {
+    // On b1's top: a line straight up to its own frame point, pushed right of the
+    // whitebox title, and a branch of a fan-out that comes from the right. The
+    // straight one keeps the left port, so the branch does not cross it.
+    let mut p = Project::new();
+    let a = p.add_block(
+        None,
+        &spec("A very long whitebox name indeed", BlockKind::Component),
+    )?;
+    let (_, straight) = p.connect_new(
+        a,
+        Side::Top,
+        &spec("X", BlockKind::Component),
+        Direction::In,
+        "straight",
+    )?;
+    let (_, fan) = p.connect_new(
+        a,
+        Side::Top,
+        &spec("Y", BlockKind::Component),
+        Direction::In,
+        "fan",
+    )?;
+    let mut inner = Vec::new();
+    for (i, name) in ["b1", "b2", "b3"].iter().enumerate() {
+        let b = p.add_block(Some(a), &spec(name, BlockKind::Component))?;
+        p.move_block(b, Cell::new(i as i32, 0))?;
+        inner.push(b);
+    }
+    p.attach(straight, End::A, a, inner[0], Side::Top)?;
+    for b in &inner {
+        p.attach(fan, End::A, a, *b, Side::Top)?;
+    }
+    let l = render(&p, Some(a));
+    assert_eq!(layout::crossings(&l), Vec::new(), "{:?}", l.lines);
+    let port_on_b1 = |rel| {
+        l.lines
+            .iter()
+            .find(|g| g.relation == rel && g.landing == Some(inner[0]))
+            .map(|g| g.points[0].x)
+            .ok_or("line")
+    };
+    assert!(port_on_b1(straight)? < port_on_b1(fan)?);
     Ok(())
 }

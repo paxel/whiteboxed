@@ -237,6 +237,7 @@ pub fn scene(layout: &Layout) -> Scene {
     // Labels stay inside the frame of a whitebox, or inside the picture.
     let label_area = label_area(layout);
     for line in &layout.lines {
+        frame_name_shapes(&mut shapes, line);
         label_shapes(&mut shapes, line, label_area);
     }
     if let Some(at) = layout.legend_at {
@@ -662,6 +663,53 @@ fn along(look: Option<&DrawnLook>, pattern: crate::model::LinePattern, color: Rg
     }
 }
 
+/// Where the pictures of a line's look sit at its ends, as drawn by [`end_shapes`]:
+/// the area each covers (unrotated: as wide as the picture is long along the line).
+pub fn end_picture_rects(line: &LineGeom) -> Vec<Rect> {
+    let Some(look) = &line.look else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    // A whole line has both ends; a piece to a mousehole only the end at its port.
+    let pieces: Vec<(&[Pos], bool, bool)> = match &line.mousehole {
+        Some(m) => vec![(&m.piece_a[..], true, false), (&m.piece_b[..], false, true)],
+        None => vec![(&line.points[..], true, true)],
+    };
+    for (piece, at_a, at_b) in pieces {
+        let n = piece.len();
+        if n < 2 {
+            continue;
+        }
+        for (at_start, arrow, drawn) in [
+            (true, line.arrow_start, at_a),
+            (false, line.arrow_end, at_b),
+        ] {
+            if !drawn {
+                continue;
+            }
+            let picture = if arrow {
+                look.head.as_ref()
+            } else {
+                look.tail.as_ref()
+            };
+            let Some(picture) = picture else { continue };
+            let (from, tip) = if at_start {
+                (piece[1], piece[0])
+            } else {
+                (piece[n - 2], piece[n - 1])
+            };
+            let (dx, dy) = (tip.x - from.x, tip.y - from.y);
+            let len = (dx * dx + dy * dy).sqrt().max(0.001);
+            let (ux, uy) = (dx / len, dy / len);
+            let width = END_H * picture.size.0 / picture.size.1;
+            let center = Pos::new(tip.x - ux * width / 2.0, tip.y - uy * width / 2.0);
+            let reach = width.max(END_H);
+            out.push(Rect::from_center(center, reach, reach));
+        }
+    }
+    out
+}
+
 /// The ends of a line (or of a piece of one): the picture of its look, with the line
 /// cut back to where the picture begins, or the plain arrowhead. `arrows` says which
 /// ends point into their box; `ends` which ends are drawn at all (a piece drawn to a
@@ -751,39 +799,32 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
                 stroke: along,
             });
         }
-        // A hole whose number another line's hole carries is not drawn again.
-        let label = |numbers: &str| {
-            if line.text.is_empty() {
-                numbers.to_owned()
-            } else {
-                format!("{numbers} {}", line.text)
-            }
+        let label = if line.text.is_empty() {
+            m.label.clone()
+        } else {
+            format!("{} {}", m.label, line.text)
         };
         let n = m.piece_a.len();
         let before_a = m.piece_a.get(n.wrapping_sub(2)).copied().unwrap_or(m.a);
         let before_b = m.piece_b.get(1).copied().unwrap_or(m.b);
-        if let Some(numbers) = &m.label_a {
-            hole_shapes(
-                shapes,
-                m.a,
-                before_a,
-                &label(numbers),
-                color,
-                m.portal_a.as_ref(),
-                key + 2,
-            );
-        }
-        if let Some(numbers) = &m.label_b {
-            hole_shapes(
-                shapes,
-                m.b,
-                before_b,
-                &label(numbers),
-                color,
-                m.portal_b.as_ref(),
-                key + 3,
-            );
-        }
+        hole_shapes(
+            shapes,
+            m.a,
+            before_a,
+            &label,
+            color,
+            m.portal_a.as_ref(),
+            key + 2,
+        );
+        hole_shapes(
+            shapes,
+            m.b,
+            before_b,
+            &label,
+            color,
+            m.portal_b.as_ref(),
+            key + 3,
+        );
     } else {
         let mut points = line.points.clone();
         let n = points.len();
@@ -843,7 +884,8 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
 }
 
 /// A mousehole at `c` for a line coming from `from`: a filled arch, its round side
-/// ahead, or the project's portal picture turned the same way; and the label past it.
+/// up like a hole in a skirting board whichever way the line runs, or the project's
+/// portal picture turned the way of the line; and the label past the hole.
 fn hole_shapes(
     shapes: &mut Vec<Shape>,
     c: Pos,
@@ -873,13 +915,7 @@ fn hole_shapes(
         }
         None => {
             shapes.push(Shape::Polygon {
-                points: arc(
-                    c,
-                    HOLE_R,
-                    HOLE_R,
-                    theta.to_degrees() - 90.0,
-                    theta.to_degrees() + 90.0,
-                ),
+                points: arc(c, HOLE_R, HOLE_R, 180.0, 360.0),
                 fill: Some(color),
                 stroke: None,
             });
@@ -986,7 +1022,8 @@ struct FrameName {
     rect: Rect,
 }
 
-fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
+/// The partner name at a frame end, on paper.
+fn frame_name_shapes(shapes: &mut Vec<Shape>, line: &LineGeom) {
     if let Some(name) = frame_name(line) {
         // On paper, since a name in a further row lies over neighbouring lines.
         shapes.push(Shape::Rect {
@@ -1005,6 +1042,10 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
             });
         }
     }
+}
+
+/// The line's label on paper: at its tip for a stub, else where the layout put it.
+fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
     // A line through mouseholes writes its short label at the holes.
     if line.text.is_empty() || line.mousehole.is_some() {
         return;

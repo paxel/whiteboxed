@@ -176,7 +176,7 @@ pub struct EditLineArgs {
     #[serde(default)]
     pub color: Option<String>,
     /// Whether the line goes through mouseholes: automatic (over more than two
-    /// shapes), always, or never.
+    /// shapes, or crossing more than two other lines), always, or never.
     #[serde(default)]
     pub mousehole: Option<super::ApiMousehole>,
     /// A line look by name (see list_looks); "" takes it off.
