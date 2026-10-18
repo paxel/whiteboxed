@@ -30,6 +30,9 @@ impl Level {
 pub struct Score {
     pub boxes: usize,
     pub crossings: usize,
+    /// Stretches where a line runs along another relation's line; judged with the
+    /// crossings, each as one of them.
+    pub overlaps: usize,
     /// The box with the most lines, and how many.
     pub busiest: Option<(BlockId, String, usize)>,
     pub boxes_level: Level,
@@ -76,13 +79,24 @@ impl Score {
             });
         }
         if self.crossings_level > Level::Green {
-            out.push(Cause {
-                level: self.crossings_level,
-                what: format!(
+            let mut what = Vec::new();
+            if self.crossings > 0 {
+                what.push(format!(
                     "{} crossing{}",
                     self.crossings,
                     if self.crossings == 1 { "" } else { "s" }
-                ),
+                ));
+            }
+            if self.overlaps > 0 {
+                what.push(format!(
+                    "{} line{} running along another",
+                    self.overlaps,
+                    if self.overlaps == 1 { "" } else { "s" }
+                ));
+            }
+            out.push(Cause {
+                level: self.crossings_level,
+                what: what.join(" and "),
                 help: if self.doodle {
                     "Drag shapes so partners face each other. If lines still cross, the page \
                      may hold too much: split it."
@@ -206,6 +220,7 @@ pub fn score(project: &Project, l: &Layout) -> Score {
         })
         .count();
     let crossings = layout::crossings(l).len();
+    let overlaps = layout::overlaps(l).len();
     let mouseholes = l.lines.iter().filter(|g| g.mousehole.is_some()).count();
     let line_looks = l
         .lines
@@ -235,8 +250,9 @@ pub fn score(project: &Project, l: &Layout) -> Score {
     Score {
         boxes,
         crossings,
+        overlaps,
         boxes_level: judge(boxes, limits.boxes),
-        crossings_level: judge(crossings, limits.crossings),
+        crossings_level: judge(crossings + overlaps, limits.crossings),
         lines_level: judge(busiest.as_ref().map_or(0, |b| b.2), limits.lines),
         mouseholes,
         mouseholes_level: judge(mouseholes, limits.mouseholes),

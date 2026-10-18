@@ -751,32 +751,39 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
                 stroke: along,
             });
         }
-        let label = if line.text.is_empty() {
-            m.label.clone()
-        } else {
-            format!("{} {}", m.label, line.text)
+        // A hole whose number another line's hole carries is not drawn again.
+        let label = |numbers: &str| {
+            if line.text.is_empty() {
+                numbers.to_owned()
+            } else {
+                format!("{numbers} {}", line.text)
+            }
         };
         let n = m.piece_a.len();
         let before_a = m.piece_a.get(n.wrapping_sub(2)).copied().unwrap_or(m.a);
         let before_b = m.piece_b.get(1).copied().unwrap_or(m.b);
-        hole_shapes(
-            shapes,
-            m.a,
-            before_a,
-            &label,
-            color,
-            m.portal_a.as_ref(),
-            key + 2,
-        );
-        hole_shapes(
-            shapes,
-            m.b,
-            before_b,
-            &label,
-            color,
-            m.portal_b.as_ref(),
-            key + 3,
-        );
+        if let Some(numbers) = &m.label_a {
+            hole_shapes(
+                shapes,
+                m.a,
+                before_a,
+                &label(numbers),
+                color,
+                m.portal_a.as_ref(),
+                key + 2,
+            );
+        }
+        if let Some(numbers) = &m.label_b {
+            hole_shapes(
+                shapes,
+                m.b,
+                before_b,
+                &label(numbers),
+                color,
+                m.portal_b.as_ref(),
+                key + 3,
+            );
+        }
     } else {
         let mut points = line.points.clone();
         let n = points.len();
@@ -921,7 +928,7 @@ fn arrow_head(from: Pos, to: Pos, color: Rgb) -> Shape {
 /// frame; on top and bottom where and how the layout decided (see
 /// [`LineGeom::frame_name`]), the rows further from the frame stacked inward.
 fn frame_name(line: &LineGeom) -> Option<FrameName> {
-    let (p, side, partner) = line.frame_port.as_ref()?;
+    let (p, side, partner) = line.frame_port.as_ref().filter(|_| line.frame_named)?;
     let (left, row, width) = line.frame_name;
     let (pos, align) = match side {
         Side::Left => (Pos::new(p.x + 8.0, p.y + 13.0), Align::Left),
@@ -1009,14 +1016,7 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
             Side::Top => (Pos::new(tip.x, tip.y - 16.0), Align::Center),
             Side::Bottom => (Pos::new(tip.x, tip.y + 18.0), Align::Center),
         },
-        _ if line.label_horizontal => (
-            Pos::new(line.label_at.x, line.label_at.y - 11.0),
-            Align::Center,
-        ),
-        _ => (
-            Pos::new(line.label_at.x + 8.0, line.label_at.y),
-            Align::Left,
-        ),
+        _ => label_anchor(line.label_at, line.label_horizontal, line.label_flipped),
     };
     // Too wide for the area: wrap; then shift the block so it lies inside the area.
     let lines = if text::width(&line.text, LABEL_SIZE) > area.width() {
@@ -1051,6 +1051,31 @@ fn label_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, area: Rect) {
             align: Align::Left,
         });
     }
+}
+
+/// Where a label is written for a line at `at`: above a horizontal segment, centred,
+/// or right of a vertical one; `flipped`, below or left of it.
+fn label_anchor(at: Pos, horizontal: bool, flipped: bool) -> (Pos, Align) {
+    match (horizontal, flipped) {
+        (true, false) => (Pos::new(at.x, at.y - 11.0), Align::Center),
+        (true, true) => (Pos::new(at.x, at.y + 11.0), Align::Center),
+        (false, false) => (Pos::new(at.x + 8.0, at.y), Align::Left),
+        (false, true) => (Pos::new(at.x - 8.0, at.y), Align::Right),
+    }
+}
+
+/// The paper a one-line label of `text` takes when written for a line at `at`, as
+/// [`label_shapes`] draws it (before wrapping or shifting it into the picture).
+pub fn label_rect(at: Pos, horizontal: bool, flipped: bool, text: &str) -> Rect {
+    let (pos, align) = label_anchor(at, horizontal, flipped);
+    let w = text::width(text, LABEL_SIZE);
+    let left = match align {
+        Align::Left => pos.x,
+        Align::Center => pos.x - w / 2.0,
+        Align::Right => pos.x - w,
+    };
+    let top = pos.y - LABEL_SIZE / 2.0 - 2.0;
+    Rect::from_min_size(Pos::new(left - 3.0, top), w + 6.0, LABEL_SIZE + 4.0)
 }
 
 /// Where relation labels have to stay: inside the frame of a whitebox, or inside the

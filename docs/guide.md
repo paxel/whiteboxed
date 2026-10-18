@@ -215,7 +215,9 @@ text; a line without text is listed by its two ends (`Orders → Billing`). A sh
 label is written at the holes as well. Several relations drawn as one line share a
 pair of holes carrying all their numbers (`2,5`). Inside a whitebox the end at the
 frame can be a hole, and of a fanned-out relation only the branches that need it go
-under.
+under. Each such branch has a number of its own, so you can pair its holes; the
+legend lists it with the box it reaches (`use cases › Provide`), and where the
+branches go under together at the frame, that one hole carries all their numbers.
 
 In the app, hovering a hole highlights both holes and shows the route between them
 faintly; clicking one selects the line. **Mouseholes** in the line's **Edit…** dialog
@@ -256,8 +258,13 @@ There is nothing to position by pixel.
 - Lines avoid crossing each other where a detour of about one cell, or a free gap
   nearby, allows it. The lines on one side of a box take the order they arrive in, so
   none crosses another on its way in. Where two lines still cross, the horizontal one
-  jumps over the other in a small arc.
-- Labels stay inside the whitebox frame, wrapped onto several lines if needed.
+  jumps over the other in a small arc. No line runs along another relation's line:
+  where two would share a stretch, one of them moves half a lane along its box.
+- A label sits on a stretch of its line with room for it, clear of boxes and of other
+  lines: above or below a horizontal stretch, right or left of a vertical one. A label
+  with no such place shows its legend number instead, with the text in the legend
+  (unless shortening is turned off). Labels stay inside the whitebox frame, wrapped
+  onto several lines if needed.
 - The side you click is the side the partner ends up on. A new box goes to the cell
   next to it. Several new boxes on the same side fill a block that stays as square as
   possible: 2 side by side, then 2×2, 3×2, 3×3 …
@@ -320,10 +327,12 @@ selected, the details panel lists each cause with what helps.
 | Measure                  | Yellow from | Red from | What usually helps                                   |
 |--------------------------|-------------|----------|------------------------------------------------------|
 | Boxes in the diagram     | 8           | 10       | Group boxes, move details into a whitebox, bands     |
-| Lines that cross         | 1           | 3        | Rearrange so partners face each other, or group      |
+| Lines that cross (*)     | 1           | 3        | Rearrange so partners face each other, or group      |
 | Lines on the busiest box | 6           | 9        | Split the box, or move its partners into its whitebox |
 | Lines through mouseholes | 3           | 5        | Move partners closer, or set lines to never go under  |
 | Line looks in use        | 3           | 5        | Fewer kinds of line; say the difference in the texts   |
+
+(*) A line running along another relation's line counts as a crossing here.
 
 The worst of the five gives the colour. The limits are a rule of thumb, not part of
 arc42: arc42 asks for a level 1 with the major parts of the system and lets you refine
@@ -547,8 +556,9 @@ and lines by id, since texts may repeat:
 | `doodle_group`        | A group framed around shapes; `doodle_widen_group`      |
 
 The problems `get_diagram` lists are lines that cross (both relations and where),
-labels on top of each other, and labels that do not fit inside the frame or the
-picture. The AI can then tidy the diagram with `move_box`.
+lines running along each other (both relations and the stretch), labels on top of
+each other, labels over a box or across another line, and labels that do not fit
+inside the frame or the picture. The AI can then tidy the diagram with `move_box`.
 
 Boxes are addressed by id or by their path of names from the context view, as a list
 (`["Web Shop", "Orders"]`) or as one string (`"Web Shop/Orders"`). Names compare

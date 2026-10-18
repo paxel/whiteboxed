@@ -1,5 +1,14 @@
+toolchains = [
+    "node",
+    "rust",
+]
 git_mode = "full"
 gh = true
+
+[[mounts]]
+path = "/home/axel/development/"
+mode = "rw"
+target = "/all_dev"
 
 [[mounts]]
 path = "/home/axel/development/"

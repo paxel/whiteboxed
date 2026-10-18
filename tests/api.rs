@@ -732,7 +732,14 @@ fn get_diagram_lists_crossing_lines_as_problems() -> TestResult {
     let mut e = Editor::new(None);
     shop(&mut e)?;
     let clean = call(&mut e, "get_diagram", json!({}))?;
-    for kind in ["crossings", "overlapping_labels", "cut_off_labels"] {
+    for kind in [
+        "crossings",
+        "overlaps",
+        "overlapping_labels",
+        "labels_over_boxes",
+        "labels_over_lines",
+        "cut_off_labels",
+    ] {
         assert_eq!(clean["problems"][kind], json!([]), "{kind}");
     }
     // A box in the middle with lines from left to right and from top to bottom.

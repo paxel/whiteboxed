@@ -99,6 +99,9 @@ pub struct LineGeom {
     /// Whether `label_at` sits on a horizontal segment (text goes above it) or a
     /// vertical one (text goes right of it).
     pub label_horizontal: bool,
+    /// The text on the other side of the line (below a horizontal segment, left of
+    /// a vertical one), where that keeps it off a box or another line.
+    pub label_flipped: bool,
     /// The open end of a stub or the loose end of a dangling line.
     pub tip: Option<Pos>,
     /// Direction from the port toward `tip`.
@@ -109,6 +112,9 @@ pub struct LineGeom {
     /// end (left of it), in which row of names (0: next to the frame), and the width
     /// it wraps to.
     pub frame_name: (bool, usize, f32),
+    /// Whether the partner name is written at this line's frame end: of the branches
+    /// of a fanned-out relation, which share one frame port, only the first has it.
+    pub frame_named: bool,
     /// Set when the line goes through mouseholes: only the pieces from the ports to
     /// the holes are drawn; `points` still holds the whole route, shown faintly on
     /// hover.
@@ -198,8 +204,12 @@ pub struct Mousehole {
     pub b: Pos,
     pub piece_a: Vec<Pos>,
     pub piece_b: Vec<Pos>,
-    /// `2`, or `2,5` for a bundle.
-    pub label: String,
+    /// The numbers at hole `a` and at hole `b`: `2`, or `2,5` for a bundle. `None`
+    /// when another line's hole at the same spot carries this line's number too
+    /// (the branches of a fanned-out relation go under together at the frame), so
+    /// nothing is drawn there.
+    pub label_a: Option<String>,
+    pub label_b: Option<String>,
     /// The portals drawn instead of the arches, where the project has them: at hole
     /// `a` and at hole `b`, already in the line's colour.
     pub portal_a: Option<EndPicture>,
@@ -364,6 +374,77 @@ fn cross_points(h: &[Pos], v: &[Pos]) -> Vec<Pos> {
     out
 }
 
+/// Where two lines of different relations run along each other: a stretch two
+/// collinear segments share.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Overlap {
+    /// Indices into `Layout::lines`, the lower first.
+    pub a: usize,
+    pub b: usize,
+    pub from: Pos,
+    pub to: Pos,
+}
+
+/// Every stretch where a segment of one relation lies on a segment of another. Worse
+/// than a crossing: the reader cannot tell which line goes on where.
+pub fn overlaps(layout: &Layout) -> Vec<Overlap> {
+    line_overlaps(&layout.lines)
+}
+
+fn line_overlaps(lines: &[LineGeom]) -> Vec<Overlap> {
+    let mut out = Vec::new();
+    for (a, p) in lines.iter().enumerate() {
+        for (b, q) in lines.iter().enumerate().skip(a + 1) {
+            if p.relation == q.relation {
+                continue;
+            }
+            for pp in p.drawn() {
+                for qp in q.drawn() {
+                    for (from, to) in overlap_stretches(pp, qp) {
+                        out.push(Overlap { a, b, from, to });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The stretches where a segment of `p` and a segment of `q` lie on one line and
+/// share more than a point.
+fn overlap_stretches(p: &[Pos], q: &[Pos]) -> Vec<(Pos, Pos)> {
+    let horizontal = |w: &[Pos]| (w[0].y - w[1].y).abs() < 0.01;
+    let vertical = |w: &[Pos]| (w[0].x - w[1].x).abs() < 0.01;
+    let shared = |a0: f32, a1: f32, b0: f32, b1: f32| {
+        let lo = a0.min(a1).max(b0.min(b1));
+        let hi = a0.max(a1).min(b0.max(b1));
+        (hi > lo + 0.5).then_some((lo, hi))
+    };
+    let mut out = Vec::new();
+    for pw in p.windows(2) {
+        for qw in q.windows(2) {
+            if horizontal(pw) && horizontal(qw) && (pw[0].y - qw[0].y).abs() < 0.5 {
+                if let Some((lo, hi)) = shared(pw[0].x, pw[1].x, qw[0].x, qw[1].x) {
+                    out.push((Pos::new(lo, pw[0].y), Pos::new(hi, pw[0].y)));
+                }
+            } else if vertical(pw)
+                && vertical(qw)
+                && (pw[0].x - qw[0].x).abs() < 0.5
+                && let Some((lo, hi)) = shared(pw[0].y, pw[1].y, qw[0].y, qw[1].y)
+            {
+                out.push((Pos::new(pw[0].x, lo), Pos::new(pw[0].x, hi)));
+            }
+        }
+    }
+    out
+}
+
+/// What two polylines cost each other: a crossing counts once, a stretch they share
+/// twice.
+fn tangles(p: &[Pos], q: &[Pos]) -> usize {
+    cross_points(p, q).len() + cross_points(q, p).len() + 2 * overlap_stretches(p, q).len()
+}
+
 /// Where a relation wants its port on a side, and the line ends that share it.
 type PortSlot = (f32, RelationId, Vec<(usize, End)>);
 
@@ -417,9 +498,11 @@ pub fn layout(project: &Project, view: &DiagramView) -> Layout {
     } else {
         view
     };
-    let (first, grid) = build(project, view, &[], &[]);
+    // The first pass finds out how wide the gaps have to be; only the final one
+    // turns labels with no room into numbers (never with shortening turned off).
+    let (first, grid) = build(project, view, &[], &[], false);
     let (vgaps, hgaps) = widened_gaps(&first, &grid);
-    build(project, view, &vgaps, &hgaps).0
+    build(project, view, &vgaps, &hgaps, project.label_limit.is_some()).0
 }
 
 /// Gaps wide enough for the labels that sit in them and for the lines that run
@@ -484,7 +567,13 @@ fn widened_gaps(layout: &Layout, grid: &Grid) -> (Vec<f32>, Vec<f32>) {
     (gaps, hgaps)
 }
 
-fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) -> (Layout, Grid) {
+fn build(
+    project: &Project,
+    view: &DiagramView,
+    vgaps: &[f32],
+    hgaps: &[f32],
+    number_labels: bool,
+) -> (Layout, Grid) {
     // Ports per box side and per frame side.
     let mut ports: BTreeMap<(Owner, Side), Vec<PortRef>> = BTreeMap::new();
     let cell_of = |id: BlockId| project.blocks.get(&id).map(|b| b.cell);
@@ -843,12 +932,24 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
                     None => wanted.push((key, (at, *rel, vec![(*li, *end)]))),
                 }
             }
-            wanted.sort_by(|(ka, a), (kb, b)| {
-                ka.cmp(kb)
-                    .then(a.0.total_cmp(&b.0))
-                    .then(a.1.cmp(&b.1))
-                    .then(a.2.cmp(&b.2))
-            });
+            // In the order of their wishes; only slots that would collide take the
+            // order their lines arrive in, so a slot far from the rest stays where
+            // its box is instead of being dragged next to them.
+            wanted.sort_by(|(_, a), (_, b)| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            let mut start = 0;
+            while start < wanted.len() {
+                let mut end = start + 1;
+                while end < wanted.len() && wanted[end].1.0 - wanted[end - 1].1.0 < PORT_SPACING {
+                    end += 1;
+                }
+                wanted[start..end].sort_by(|(ka, a), (kb, b)| {
+                    ka.cmp(kb)
+                        .then(a.0.total_cmp(&b.0))
+                        .then(a.1.cmp(&b.1))
+                        .then(a.2.cmp(&b.2))
+                });
+                start = end;
+            }
             let at: Vec<f32> = wanted.iter().map(|(_, w)| w.0).collect();
             let gaps = vec![PORT_SPACING; wanted.len()];
             let placed = spread_by(&at, lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0, &gaps);
@@ -1001,7 +1102,101 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
         );
         lanes = lane_order(&routes, &hidden);
     }
-    finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+    let drawn = finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+    // Two lines of different relations that leave facing sides at one height toward
+    // different lanes would run along each other between the boxes and the lanes:
+    // the port of one of them moves half a lane along its side (where it has the
+    // most room), and the lines are routed again from there.
+    let mut nudged = BTreeSet::new();
+    let indices: Vec<usize> = drawn
+        .keys()
+        .copied()
+        .filter(|li| !hidden.contains(li))
+        .collect();
+    for (i, &li) in indices.iter().enumerate() {
+        for &lj in &indices[i + 1..] {
+            if view.lines[li].relation == view.lines[lj].relation {
+                continue;
+            }
+            let (p, q) = (&drawn[&li], &drawn[&lj]);
+            for (from, to) in overlap_stretches(p, q) {
+                let on_stem = |pts: &[Pos], line: usize| -> Option<(usize, End)> {
+                    let n = pts.len();
+                    let holds =
+                        |a: Pos, b: Pos| !overlap_stretches(&[a, b], &[from, to]).is_empty();
+                    if n >= 2 && holds(pts[0], pts[1]) {
+                        Some((line, End::A))
+                    } else if n >= 2 && holds(pts[n - 2], pts[n - 1]) {
+                        Some((line, End::B))
+                    } else {
+                        None
+                    }
+                };
+                let Some((line, end)) = on_stem(p, li).or_else(|| on_stem(q, lj)) else {
+                    continue;
+                };
+                let Some(&(owner, side)) = ends.get(&(line, end)) else {
+                    continue;
+                };
+                // A frame port is shared by the branches of a fanned-out relation.
+                if owner == Owner::Frame || !nudged.insert((line, end)) {
+                    continue;
+                }
+                let (Some(&(pos, s, chan)), Some(rect)) =
+                    (port_at.get(&(line, end)), port_rect(owner, side))
+                else {
+                    continue;
+                };
+                let (lo, hi) = range(rect, side);
+                let coord = |p: Pos| if side.is_horizontal() { p.y } else { p.x };
+                let others: Vec<f32> = ports
+                    .get(&(owner, side))
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, _, l, e)| (*l, *e) != (line, end))
+                    .filter_map(|(_, _, l, e)| port_at.get(&(*l, *e)))
+                    .map(|(p, _, _)| coord(*p))
+                    .collect();
+                let room = |v: f32| {
+                    v >= lo + PORT_SPACING / 2.0 - 0.01 && v <= hi - PORT_SPACING / 2.0 + 0.01
+                };
+                let space = |v: f32| {
+                    others
+                        .iter()
+                        .map(|o| (o - v).abs())
+                        .fold(f32::MAX, f32::min)
+                };
+                let at = coord(pos);
+                let best = [at - PORT_SPACING / 2.0, at + PORT_SPACING / 2.0]
+                    .into_iter()
+                    .filter(|v| room(*v))
+                    .max_by(|a, b| space(*a).total_cmp(&space(*b)).then(b.total_cmp(a)));
+                if let Some(v) = best {
+                    let p = if side.is_horizontal() {
+                        Pos::new(pos.x, v)
+                    } else {
+                        Pos::new(v, pos.y)
+                    };
+                    port_at.insert((line, end), (p, s, chan));
+                }
+            }
+        }
+    }
+    if !nudged.is_empty() {
+        route_lines(
+            &grid,
+            &boxes,
+            &port_at,
+            &heading,
+            n,
+            1,
+            &hidden,
+            &mut routes,
+            &mut segments,
+        );
+        lanes = lane_order(&routes, &hidden);
+        finish_lanes(&grid, &routes, &port_at, &mut lanes, &mut offsets);
+    }
 
     let mut lines = Vec::new();
     let (shown, mut legend_keys, hole_labels) =
@@ -1075,6 +1270,44 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             });
         lines.push(LineGeom { frame_port, ..geom });
     }
+    // The branches of a fanned-out relation share one frame port: the partner is
+    // named once there, and where they go under together, one hole carries every
+    // branch's number.
+    let spot = |p: Pos| ((p.x * 10.0).round() as i64, (p.y * 10.0).round() as i64);
+    let mut named = BTreeSet::new();
+    for g in &mut lines {
+        if let Some((p, _, _)) = &g.frame_port {
+            g.frame_named = named.insert((g.relation, spot(*p)));
+        }
+    }
+    let mut carriers: BTreeMap<(RelationId, bool, (i64, i64)), usize> = BTreeMap::new();
+    for li in 0..lines.len() {
+        let Some(m) = &lines[li].mousehole else {
+            continue;
+        };
+        for (at_a, hole) in [(true, m.a), (false, m.b)] {
+            let key = (lines[li].relation, at_a, spot(hole));
+            let Some(&carrier) = carriers.get(&key) else {
+                carriers.insert(key, li);
+                continue;
+            };
+            let taken = lines[li].mousehole.as_mut().and_then(|m| {
+                if at_a {
+                    m.label_a.take()
+                } else {
+                    m.label_b.take()
+                }
+            });
+            let shared = lines[carrier]
+                .mousehole
+                .as_mut()
+                .map(|m| if at_a { &mut m.label_a } else { &mut m.label_b });
+            if let (Some(Some(label)), Some(more)) = (shared, taken) {
+                label.push(',');
+                label.push_str(&more);
+            }
+        }
+    }
     // The partner names beside the frame ends on top and bottom: left of the end
     // when that stays inside the frame, else right of it, wrapped only when even
     // that is too little; in the first row of names where it overlaps no other.
@@ -1084,7 +1317,7 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             .enumerate()
             .filter_map(|(li, g)| {
                 let (p, s, name) = g.frame_port.as_ref()?;
-                (*s == side).then(|| (p.x, li, name.clone()))
+                (*s == side && g.frame_named).then(|| (p.x, li, name.clone()))
             })
             .collect();
         on_side.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
@@ -1158,18 +1391,8 @@ fn build(project: &Project, view: &DiagramView, vgaps: &[f32], hgaps: &[f32]) ->
             };
         }
     }
-    // A label over a crossing would hide the jump: move it along its segment.
-    let found = line_crossings(&lines);
-    for (li, geom) in lines.iter_mut().enumerate() {
-        let marks: Vec<Pos> = found
-            .iter()
-            .filter(|c| c.horizontal == li || c.vertical == li)
-            .map(|c| c.at)
-            .collect();
-        if geom.tip.is_none() && geom.mousehole.is_none() && !marks.is_empty() {
-            geom.label_at = clear_of(&geom.points, geom.label_at, geom.label_horizontal, &marks);
-        }
-    }
+    let area = frame.unwrap_or(bounds).expand(-8.0);
+    place_labels(&mut lines, &boxes, area, number_labels, &mut legend_keys);
     // The legend goes below everything, as wide as the diagram (or a readable
     // minimum), with long texts wrapped.
     let legend_width = bounds.width().max(LEGEND_MIN_WIDTH) - 2.0 * PAD;
@@ -1271,7 +1494,9 @@ fn short_partners(
 
 /// Besides the labels: for every line through mouseholes (`hidden`) the number(s)
 /// its holes carry. Such a line always goes to the legend, one entry per relation
-/// of a bundle; a relation without text is listed by its two ends.
+/// of a bundle; a relation without text is listed by its two ends. Of a fanned-out
+/// relation every branch that goes under has a number of its own, so a reader can
+/// pair its holes; the legend lists each with the box it reaches.
 fn shown_labels(
     project: &Project,
     view: &DiagramView,
@@ -1282,29 +1507,57 @@ fn shown_labels(
     let mut holes = Vec::new();
     let mut legend: Vec<(String, String)> = Vec::new();
     let mut numbers: BTreeMap<RelationId, String> = BTreeMap::new();
+    let mut issued = 0usize;
     let mut seen = BTreeSet::new();
+    let mut under_per_relation: BTreeMap<RelationId, usize> = BTreeMap::new();
+    for li in hidden {
+        if let Some(line) = view.lines.get(*li) {
+            *under_per_relation.entry(line.relation).or_default() += 1;
+        }
+    }
+    let text_of = |rel: RelationId| {
+        project
+            .relations
+            .get(&rel)
+            .map(|r| r.text.trim().to_owned())
+            .unwrap_or_default()
+    };
     for (li, line) in view.lines.iter().enumerate() {
         if hidden.contains(&li) {
             let mut keys = Vec::new();
+            let branched = under_per_relation
+                .get(&line.relation)
+                .is_some_and(|n| *n > 1);
             for rel in std::iter::once(line.relation).chain(line.bundle.iter().copied()) {
-                let next = numbers.len() + 1;
-                let key = numbers
-                    .entry(rel)
-                    .or_insert_with(|| format!("[{next}]"))
-                    .clone();
-                if seen.insert(rel) {
-                    let text = project
-                        .relations
-                        .get(&rel)
-                        .map(|r| r.text.trim().to_owned())
-                        .unwrap_or_default();
+                let text = text_of(rel);
+                let key = if branched && rel == line.relation {
+                    issued += 1;
+                    let key = format!("[{issued}]");
                     let entry = if text.is_empty() {
                         ends_of(project, line)
                     } else {
-                        text
+                        format!("{text} \u{203a} {}", landing_of(project, line))
                     };
                     legend.push((key.clone(), entry));
-                }
+                    key
+                } else {
+                    let key = numbers
+                        .entry(rel)
+                        .or_insert_with(|| {
+                            issued += 1;
+                            format!("[{issued}]")
+                        })
+                        .clone();
+                    if seen.insert(rel) {
+                        let entry = if text.is_empty() {
+                            ends_of(project, line)
+                        } else {
+                            text
+                        };
+                        legend.push((key.clone(), entry));
+                    }
+                    key
+                };
                 keys.push(key.trim_matches(['[', ']']).to_owned());
             }
             shown.push(line.short.clone());
@@ -1320,10 +1573,12 @@ fn shown_labels(
             }
             line.short.clone()
         } else if limit.is_some_and(too_long) {
-            let next = numbers.len() + 1;
             let key = numbers
                 .entry(line.relation)
-                .or_insert_with(|| format!("[{next}]"))
+                .or_insert_with(|| {
+                    issued += 1;
+                    format!("[{issued}]")
+                })
                 .clone();
             if seen.insert(line.relation) {
                 legend.push((key.clone(), full.to_owned()));
@@ -1335,6 +1590,17 @@ fn shown_labels(
         shown.push(label);
     }
     (shown, legend, holes)
+}
+
+/// The box a line from the frame lands on (else its ends).
+fn landing_of(project: &Project, line: &ViewLine) -> String {
+    match (&line.a, &line.b) {
+        (ViewEnd::Block { block, .. }, _) | (_, ViewEnd::Block { block, .. }) => project
+            .blocks
+            .get(block)
+            .map_or_else(|| "?".to_owned(), |b| b.name.replace('\n', " ")),
+        _ => ends_of(project, line),
+    }
 }
 
 /// The two ends of a line, with its direction between them: `A → B`.
@@ -1370,7 +1636,8 @@ fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
         b: piece_b.first().copied().unwrap_or_default(),
         piece_a,
         piece_b,
-        label,
+        label_a: Some(label.clone()),
+        label_b: Some(label),
         portal_a: None,
         portal_b: None,
     }
@@ -1415,7 +1682,7 @@ fn crossed_boxes(a: Pos, b: Pos, boxes: &[Rect]) -> usize {
 }
 
 /// Whether the segment `a`-`b` passes through `r` (Liang-Barsky).
-fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
+pub fn segment_meets(a: Pos, b: Pos, r: &Rect) -> bool {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let (mut t0, mut t1) = (0.0f32, 1.0f32);
     for (p, q) in [
@@ -1832,8 +2099,7 @@ fn crossings_with(segs: &[(Pos, Pos)], segments: &Segments, skip: usize) -> usiz
         }
         for (p, q) in segs {
             for (r, s) in list {
-                n += cross_points(&[*p, *q], &[*r, *s]).len()
-                    + cross_points(&[*r, *s], &[*p, *q]).len();
+                n += tangles(&[*p, *q], &[*r, *s]);
             }
         }
     }
@@ -2185,7 +2451,7 @@ fn untangle(
                 if li == u || (users.contains(li) && li < u) || apart(extent(p), eq) {
                     continue;
                 }
-                n += cross_points(p, q).len() + cross_points(q, p).len();
+                n += tangles(p, q);
             }
         }
         n
@@ -2306,7 +2572,42 @@ fn route_points(
         Chan::H(h) => Pos::new(pb.x, y(h)),
     });
     pts.push(pb);
-    simplify(pts)
+    simplify(unjog(pts))
+}
+
+/// A step across shorter than this, right after a line leaves its port and before
+/// it runs on along the same axis, reads as a bow in the line, not as a turn.
+const JOG: f32 = LANE / 2.0;
+
+/// Takes the jog out of a line's ends: where the line leaves its port, steps aside
+/// by less than `JOG` and goes on in the port's direction, the run keeps the port's
+/// coordinate instead (the frame port of a fanned-out relation sits at the mean of
+/// its branches, a few pixels off the lane of the branch that goes straight).
+fn unjog(mut pts: Vec<Pos>) -> Vec<Pos> {
+    let n = pts.len();
+    if n < 5 {
+        return pts;
+    }
+    let vertical = |a: Pos, b: Pos| (a.x - b.x).abs() < 0.01 && (a.y - b.y).abs() >= 0.01;
+    let horizontal = |a: Pos, b: Pos| (a.y - b.y).abs() < 0.01 && (a.x - b.x).abs() >= 0.01;
+    // From each end: the port, the turn, the step and the next corner.
+    for idx in [[0, 1, 2, 3], [n - 1, n - 2, n - 3, n - 4]] {
+        let [p0, p1, p2, p3] = idx.map(|i| pts[i]);
+        if vertical(p0, p1) && horizontal(p1, p2) && (p1.x - p2.x).abs() < JOG && vertical(p2, p3) {
+            for i in &idx[1..] {
+                pts[*i].x = p0.x;
+            }
+        } else if horizontal(p0, p1)
+            && vertical(p1, p2)
+            && (p1.y - p2.y).abs() < JOG
+            && horizontal(p2, p3)
+        {
+            for i in &idx[1..] {
+                pts[*i].y = p0.y;
+            }
+        }
+    }
+    pts
 }
 
 /// Drops repeated points and points in the middle of a straight run.
@@ -2348,11 +2649,13 @@ fn build_line(
         text: line.text.clone(),
         label_at,
         label_horizontal,
+        label_flipped: false,
         points,
         tip,
         tip_dir,
         frame_port: None,
         frame_name: (true, 0, f32::MAX),
+        frame_named: true,
         mousehole: None,
         style: line.style,
         full_text: line.text.clone(),
@@ -2367,43 +2670,147 @@ fn build_line(
     }
 }
 
-/// The middle of the longest stretch between crossings on the segment that holds
-/// the label at `at`; `at` itself when no crossing lies on that segment.
-fn clear_of(points: &[Pos], at: Pos, horizontal: bool, marks: &[Pos]) -> Pos {
-    let along = |p: Pos| if horizontal { p.x } else { p.y };
-    let across = |p: Pos| if horizontal { p.y } else { p.x };
-    let Some(w) = points.windows(2).find(|w| {
-        (across(w[0]) - across(at)).abs() < 0.01
-            && (across(w[1]) - across(at)).abs() < 0.01
-            && along(at) >= along(w[0]).min(along(w[1])) - 0.01
-            && along(at) <= along(w[0]).max(along(w[1])) + 0.01
-    }) else {
-        return at;
-    };
-    let (lo, hi) = (along(w[0]).min(along(w[1])), along(w[0]).max(along(w[1])));
-    let mut cuts: Vec<f32> = marks
+/// A place for a label: on a stretch of its line between two crossings (or the
+/// segment's ends), and how good it is there.
+struct LabelSpot {
+    at: Pos,
+    horizontal: bool,
+    /// On the other side of the line: below it, or left of it.
+    flipped: bool,
+    /// Inside the frame (or the picture).
+    inside: bool,
+    /// Clear of every box and of every other relation's line.
+    clear: bool,
+    /// The stretch is long enough for the text.
+    fits: bool,
+    length: f32,
+}
+
+/// Puts every label of a routed line where it fits: on a stretch of the line
+/// between crossings, inside `area`, that holds the text clear of boxes and of
+/// other lines; a stretch with room before one without, a horizontal one before a
+/// vertical one, the usual side of the line before the other, the longest first.
+/// When `number`, a label with no clear place takes a legend number instead, and
+/// its text goes to the legend; when even the number fits nowhere, it goes to the
+/// best place there is.
+fn place_labels(
+    lines: &mut [LineGeom],
+    boxes: &[Rect],
+    area: Rect,
+    number: bool,
+    legend: &mut Vec<(String, String)>,
+) {
+    let crossings = line_crossings(lines);
+    let others: Vec<(RelationId, Vec<(Pos, Pos)>)> = lines
         .iter()
-        .filter(|m| (across(**m) - across(at)).abs() < 0.01 && along(**m) > lo && along(**m) < hi)
-        .map(|m| along(*m))
+        .map(|g| {
+            let segs = g
+                .drawn()
+                .into_iter()
+                .flat_map(|piece| piece.windows(2).map(|w| (w[0], w[1])))
+                .collect();
+            (g.relation, segs)
+        })
         .collect();
-    if cuts.is_empty() {
-        return at;
-    }
-    cuts.push(lo);
-    cuts.push(hi);
-    cuts.sort_by(f32::total_cmp);
-    let (a, b) = cuts
-        .windows(2)
-        .map(|c| (c[0], c[1]))
-        .fold(
-            (lo, lo),
-            |best, c| if c.1 - c.0 > best.1 - best.0 { c } else { best },
-        );
-    let mid = (a + b) / 2.0;
-    if horizontal {
-        Pos::new(mid, at.y)
-    } else {
-        Pos::new(at.x, mid)
+    for (li, geom) in lines.iter_mut().enumerate() {
+        if geom.tip.is_some() || geom.mousehole.is_some() || geom.text.is_empty() {
+            continue;
+        }
+        let marks: Vec<Pos> = crossings
+            .iter()
+            .filter(|c| c.horizontal == li || c.vertical == li)
+            .map(|c| c.at)
+            .collect();
+        let spots = |text: &str| -> Vec<LabelSpot> {
+            let mut out = Vec::new();
+            for w in geom.points.windows(2) {
+                let horizontal = (w[0].y - w[1].y).abs() < 0.01;
+                let along = |p: Pos| if horizontal { p.x } else { p.y };
+                let (lo, hi) = (along(w[0]).min(along(w[1])), along(w[0]).max(along(w[1])));
+                let mut cuts = vec![lo];
+                cuts.extend(
+                    marks
+                        .iter()
+                        .filter(|m| {
+                            (if horizontal {
+                                m.y - w[0].y
+                            } else {
+                                m.x - w[0].x
+                            })
+                            .abs()
+                                < 0.01
+                                && along(**m) > lo
+                                && along(**m) < hi
+                        })
+                        .map(|m| along(*m)),
+                );
+                cuts.push(hi);
+                cuts.sort_by(f32::total_cmp);
+                for (c, flipped) in cuts.windows(2).flat_map(|c| [(c, false), (c, true)]) {
+                    let mid = (c[0] + c[1]) / 2.0;
+                    let at = if horizontal {
+                        Pos::new(mid, w[0].y)
+                    } else {
+                        Pos::new(w[0].x, mid)
+                    };
+                    let rect = crate::scene::label_rect(at, horizontal, flipped, text);
+                    // Clear means with a little air around the paper.
+                    let near = rect.expand(4.0);
+                    let clear = !boxes.iter().any(|b| b.overlaps(&near))
+                        && !others.iter().any(|(rel, segs)| {
+                            *rel != geom.relation
+                                && segs.iter().any(|(a, b)| segment_meets(*a, *b, &near))
+                        });
+                    let need = if horizontal {
+                        rect.width()
+                    } else {
+                        rect.height()
+                    };
+                    out.push(LabelSpot {
+                        at,
+                        horizontal,
+                        flipped,
+                        inside: area.holds(&rect),
+                        clear,
+                        fits: c[1] - c[0] >= need,
+                        length: c[1] - c[0],
+                    });
+                }
+            }
+            out
+        };
+        let best = |spots: Vec<LabelSpot>| {
+            spots.into_iter().max_by(|p, q| {
+                (p.inside, p.clear, p.fits, p.horizontal, !p.flipped)
+                    .cmp(&(q.inside, q.clear, q.fits, q.horizontal, !q.flipped))
+                    .then(p.length.total_cmp(&q.length))
+            })
+        };
+        let mut text = geom.text.clone();
+        let mut spot = best(spots(&text));
+        if number && spot.as_ref().is_some_and(|s| !s.clear) && !text.starts_with('[') {
+            // Nowhere clear: the number instead, the text under it in the legend
+            // (in place of the entry its short label had, if any).
+            let full = if geom.full_text.trim().is_empty() {
+                text.clone()
+            } else {
+                geom.full_text.trim().to_owned()
+            };
+            let numbered = legend.iter().filter(|(k, _)| k.starts_with('[')).count();
+            let key = format!("[{}]", numbered + 1);
+            match legend.iter_mut().find(|(k, _)| *k == text) {
+                Some(entry) => entry.0 = key.clone(),
+                None => legend.push((key.clone(), full)),
+            }
+            text = key;
+            spot = best(spots(&text));
+        }
+        if let Some(s) = spot {
+            geom.text = text;
+            geom.label_at = s.at;
+            geom.label_horizontal = s.horizontal;
+            geom.label_flipped = s.flipped;
+        }
     }
 }
 

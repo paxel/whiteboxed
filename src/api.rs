@@ -2,6 +2,7 @@
 //! input schema, and how it maps onto the editor. Each call is one undo step, the
 //! same as a click; errors come back as readable text for the model to correct.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use base64::Engine;
@@ -636,7 +637,7 @@ fn arc42_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "get_diagram",
-            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs), relations from the level above that no box handles yet (dangling), problems worth tidying with move_box (crossing lines, overlapping and cut-off labels), and a readability score (green, yellow, red) with its causes and what helps.",
+            description: "One diagram as drawn: its boxes with grid cells, its lines, open ends (stubs), relations from the level above that no box handles yet (dangling), problems worth tidying with move_box (crossing lines, lines running along each other, labels on top of each other, over a box or across another line, and cut-off labels), and a readability score (green, yellow, red) with its causes and what helps.",
             schema: schema::<DiagramArgs>(),
         },
         ToolInfo {
@@ -1586,6 +1587,7 @@ fn score_json(s: &crate::score::Score) -> Value {
         "level": level_name(s.level()),
         "boxes": s.boxes,
         "crossings": s.crossings,
+        "overlaps": s.overlaps,
         "mouseholes": s.mouseholes,
         "line_looks": s.line_looks,
         "busiest_box": s.busiest.as_ref().map(|(id, name, n)| json!({"id": id.0, "name": name, "lines": n})),
@@ -1597,16 +1599,28 @@ fn score_json(s: &crate::score::Score) -> Value {
     })
 }
 
-/// What makes a diagram hard to read: lines that cross, labels on top of each other,
+/// What makes a diagram hard to read: lines that cross, lines running along each
+/// other, labels on top of each other, labels over a box or across another line,
 /// and labels that do not fit where they belong.
 fn problems(l: &layout::Layout) -> Value {
     let rel = |li: usize| l.lines.get(li).map(|g| g.relation.0);
+    let point = |p: crate::geom::Pos| json!({"x": p.x.round(), "y": p.y.round()});
     let crossings: Vec<Value> = layout::crossings(l)
         .iter()
         .map(|c| {
             json!({
                 "relations": [rel(c.horizontal), rel(c.vertical)],
-                "at": {"x": c.at.x.round(), "y": c.at.y.round()},
+                "at": point(c.at),
+            })
+        })
+        .collect();
+    let overlaps: Vec<Value> = layout::overlaps(l)
+        .iter()
+        .map(|o| {
+            json!({
+                "relations": [rel(o.a), rel(o.b)],
+                "from": point(o.from),
+                "to": point(o.to),
             })
         })
         .collect();
@@ -1619,6 +1633,25 @@ fn problems(l: &layout::Layout) -> Value {
             }
         }
     }
+    let mut over_boxes = BTreeSet::new();
+    let mut over_lines = BTreeSet::new();
+    for (li, r) in &labels {
+        for b in &l.blocks {
+            if b.kind != crate::model::BlockKind::Group && b.rect.overlaps(r) {
+                over_boxes.insert((rel(*li), b.id.0));
+            }
+        }
+        for (lj, other) in l.lines.iter().enumerate() {
+            let runs_through = other.drawn().into_iter().any(|piece| {
+                piece
+                    .windows(2)
+                    .any(|w| layout::segment_meets(w[0], w[1], r))
+            });
+            if rel(lj) != rel(*li) && runs_through {
+                over_lines.insert((rel(*li), rel(lj)));
+            }
+        }
+    }
     let area = scene::label_area(l);
     let cut_off: Vec<Value> = labels
         .iter()
@@ -1627,7 +1660,16 @@ fn problems(l: &layout::Layout) -> Value {
         .collect();
     json!({
         "crossings": crossings,
+        "overlaps": overlaps,
         "overlapping_labels": overlapping,
+        "labels_over_boxes": over_boxes
+            .iter()
+            .map(|(r, b)| json!({"relation": r, "box": b}))
+            .collect::<Vec<_>>(),
+        "labels_over_lines": over_lines
+            .iter()
+            .map(|(r, o)| json!({"relation": r, "other": o}))
+            .collect::<Vec<_>>(),
         "cut_off_labels": cut_off,
     })
 }
