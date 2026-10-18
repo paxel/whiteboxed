@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - A relation with more than one frame point on a side (a fan-out spread along the frame) is multiplied: each point shows a legend number with its place in the group, like `[1] 3/6`, the branches carry no text, and one legend row names the relation and its partner. Mouseholes of such branches show the same.
+- Partner names and tags along the top and bottom of the frame keep off the neighbouring lines: they go into the first row with room, wrap into a narrow gap, and a name that fits nowhere next to the frame shows its legend number instead.
 - Mousehole arches always point up, whichever way the line runs, so they read as holes everywhere.
 - In a whitebox with cross-cutting bands, a relation entering it no longer takes the bottom frame side on its own, so its line does not run through the bands; a side set to bottom by hand goes under them through a pair of mouseholes at the band edges.
 - The MCP server instructions tell the AI to leave mouseholes on automatic and what the automatic rule does, so it stops forcing lines under.

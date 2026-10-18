@@ -285,8 +285,10 @@ There is nothing to position by pixel.
   possible: 2 side by side, then 2×2, 3×2, 3×3 …
 - Relations from the level above enter a whitebox opposite the box that takes them,
   in line with its port, so the line runs straight. The partner names along the top
-  and bottom of the frame make room for that: beside their end, and in a further row
-  where they would overlap.
+  and bottom of the frame make room for that: beside their end, in the first row
+  where no line, name or title is in the way, wrapped into the gap between two
+  lines when it is narrow. A name that fits in none of the rows next to the frame
+  shows its legend number instead (unless shortening is turned off).
 - Connecting an **existing** box on a side moves it there. If that would break the side
   of another relation, the app asks: **move** it (default) or **keep** it and route
   the line around.

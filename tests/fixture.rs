@@ -22,6 +22,8 @@ struct Measures {
     through_title_or_band: usize,
     /// Steps shorter than half a lane between two runs along one axis.
     short_steps: usize,
+    /// Partner names at the frame with another line through them.
+    crossed_names: usize,
 }
 
 fn sanshain() -> Result<Project, Box<dyn std::error::Error>> {
@@ -106,6 +108,19 @@ fn measure(p: &Project, l: &Layout) -> Measures {
         .flat_map(|g| g.points.windows(3).collect::<Vec<_>>())
         .filter(|w| w[0].dist(w[1]) > 0.0 && w[1].dist(w[2]) < LANE / 2.0 && w[1].dist(w[2]) > 0.01)
         .count();
+    let crossed_names = scene::frame_label_rects(l)
+        .into_iter()
+        .filter(|(li, r)| {
+            l.lines.iter().enumerate().any(|(lj, g)| {
+                lj != *li
+                    && g.drawn().into_iter().any(|piece| {
+                        piece
+                            .windows(2)
+                            .any(|w| layout::segment_meets(w[0], w[1], r))
+                    })
+            })
+        })
+        .count();
     let _ = p;
     Measures {
         crossings,
@@ -114,6 +129,7 @@ fn measure(p: &Project, l: &Layout) -> Measures {
         label_collisions,
         through_title_or_band,
         short_steps,
+        crossed_names,
     }
 }
 
@@ -129,6 +145,7 @@ const DIAGRAMS: [(&str, Measures); 5] = [
             label_collisions: 0,
             through_title_or_band: 0,
             short_steps: 0,
+            crossed_names: 0,
         },
     ),
     (
@@ -140,6 +157,7 @@ const DIAGRAMS: [(&str, Measures); 5] = [
             label_collisions: 0,
             through_title_or_band: 0,
             short_steps: 0,
+            crossed_names: 0,
         },
     ),
     (
@@ -151,6 +169,7 @@ const DIAGRAMS: [(&str, Measures); 5] = [
             label_collisions: 0,
             through_title_or_band: 0,
             short_steps: 0,
+            crossed_names: 0,
         },
     ),
     (
@@ -162,6 +181,7 @@ const DIAGRAMS: [(&str, Measures); 5] = [
             label_collisions: 0,
             through_title_or_band: 0,
             short_steps: 1,
+            crossed_names: 0,
         },
     ),
     (
@@ -173,6 +193,7 @@ const DIAGRAMS: [(&str, Measures); 5] = [
             label_collisions: 0,
             through_title_or_band: 0,
             short_steps: 0,
+            crossed_names: 0,
         },
     ),
 ];
@@ -202,6 +223,7 @@ fn the_sanshain_diagrams_stay_as_readable_as_recorded() -> TestResult {
                 recorded.through_title_or_band,
             ),
             ("short_steps", now.short_steps, recorded.short_steps),
+            ("crossed_names", now.crossed_names, recorded.crossed_names),
         ];
         for (name, got, allowed) in fields {
             if got > allowed {

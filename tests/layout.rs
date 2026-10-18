@@ -1,7 +1,8 @@
 use whiteboxed::geom::{Pos, Rect};
 use whiteboxed::layout::{self, Layout, LineKind, MIN_H, PORT_SPACING};
 use whiteboxed::model::{
-    BlockId, BlockKind, BlockSpec, Cell, Direction, End, LineStyle, Placement, Project, Side,
+    BlockId, BlockKind, BlockSpec, Cell, Direction, End, LineStyle, Placement, Project, RelationId,
+    Side,
 };
 use whiteboxed::view::{ViewEnd, dangling_count, diagram_view};
 use whiteboxed::{export, scene};
@@ -2330,5 +2331,124 @@ fn a_straight_line_stays_left_of_a_line_turning_right_on_the_same_side() -> Test
             .ok_or("line")
     };
     assert!(port_on_b1(straight)? < port_on_b1(fan)?);
+    Ok(())
+}
+
+/// Partner names at the frame of `l` that another line runs through.
+fn crossed_frame_names(l: &Layout) -> Vec<(usize, String)> {
+    scene::frame_label_rects(l)
+        .into_iter()
+        .filter(|(li, r)| {
+            l.lines.iter().enumerate().any(|(lj, g)| {
+                lj != *li
+                    && g.drawn().into_iter().any(|piece| {
+                        piece
+                            .windows(2)
+                            .any(|w| layout::segment_meets(w[0], w[1], r))
+                    })
+            })
+        })
+        .map(|(li, _)| {
+            (
+                li,
+                l.lines[li]
+                    .frame_port
+                    .clone()
+                    .map(|f| f.2)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn tags_at_frame_points_a_port_apart_keep_off_the_neighbouring_lines() -> TestResult {
+    use whiteboxed::model::MouseholeMode;
+    // Three relations from above, each through mouseholes to the same two inner
+    // boxes: every branch gets a frame point of its own, three a port apart over
+    // each box, each with a tag like `[2] 1/2`.
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let b1 = p.add_block(Some(a), &spec("B1", BlockKind::Component))?;
+    let b2 = p.add_block(Some(a), &spec("B2", BlockKind::Component))?;
+    p.move_block(b2, Cell::new(1, 0))?;
+    let mut rels = Vec::new();
+    for name in ["X", "Y", "Z"] {
+        let (_, rel) = p.connect_new(
+            a,
+            Side::Top,
+            &spec(name, BlockKind::Component),
+            Direction::In,
+            "uses",
+        )?;
+        p.attach(rel, End::A, a, b1, Side::Top)?;
+        p.attach(rel, End::A, a, b2, Side::Top)?;
+        p.set_mousehole(rel, Some(a), MouseholeMode::Always)?;
+        rels.push(rel);
+    }
+    let l = render(&p, Some(a));
+    let mut names: Vec<(f32, String, (bool, usize, f32))> = l
+        .lines
+        .iter()
+        .filter(|g| g.frame_named)
+        .filter_map(|g| {
+            g.frame_port
+                .as_ref()
+                .map(|f| (f.0.x, f.2.clone(), g.frame_name))
+        })
+        .collect();
+    names.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(names.len(), 6, "{names:?}");
+    assert!(names.iter().all(|n| n.1.contains('/')), "{names:?}");
+    assert_eq!(crossed_frame_names(&l), vec![], "{names:?}");
+    // Every tag sits in the rows next to the frame; one with no room for its whole
+    // width between two stems wraps into number and place.
+    for (_, _, (_, row, _)) in &names {
+        assert_eq!(*row, 0, "{names:?}");
+    }
+    assert!(names.iter().any(|n| n.2.2 < PORT_SPACING), "{names:?}");
+    Ok(())
+}
+
+#[test]
+fn a_partner_name_with_no_room_between_the_lines_becomes_its_number() -> TestResult {
+    // Three relations from above land on the same inner box: three frame points a
+    // port apart. The middle one's long partner name fits between neither pair of
+    // stems; it shows its legend number, the others keep their names.
+    let mut p = Project::new();
+    let a = p.add_block(None, &spec("A", BlockKind::Component))?;
+    let inner = p.add_block(Some(a), &spec("Inner", BlockKind::Component))?;
+    let mut rels = Vec::new();
+    for name in ["Left", "Some Long Partner Name", "Right"] {
+        let (_, rel) = p.connect_new(
+            a,
+            Side::Top,
+            &spec(name, BlockKind::Component),
+            Direction::In,
+            "",
+        )?;
+        p.attach(rel, End::A, a, inner, Side::Top)?;
+        rels.push(rel);
+    }
+    let l = render(&p, Some(a));
+    assert_eq!(crossed_frame_names(&l), vec![]);
+    let name_of = |rel: RelationId| {
+        l.lines
+            .iter()
+            .find(|g| g.relation == rel)
+            .and_then(|g| g.frame_port.clone())
+            .map(|f| f.2)
+            .unwrap_or_default()
+    };
+    assert_eq!(name_of(rels[0]), "Left");
+    assert_eq!(name_of(rels[2]), "Right");
+    assert!(name_of(rels[1]).starts_with('['), "{}", name_of(rels[1]));
+    assert!(
+        l.legend
+            .iter()
+            .any(|e| e.key == name_of(rels[1]) && e.lines.join(" ") == "Some Long Partner Name"),
+        "{:?}",
+        l.legend
+    );
     Ok(())
 }

@@ -36,6 +36,13 @@ pub const LOOK_H: f32 = MIN_H;
 pub const NAME_SIZE: f32 = 15.0;
 pub const KIND_SIZE: f32 = 11.0;
 pub const LABEL_SIZE: f32 = 12.0;
+/// Clearance between a partner name at the frame and a line or another name.
+const NAME_GAP: f32 = 4.0;
+/// Rows of partner names next to a frame side a name may go to before it turns
+/// into its legend number.
+const NAME_ROWS: usize = 4;
+/// The least width a partner name wraps to.
+const NAME_MIN: f32 = 24.0;
 pub const STUB_LEN: f32 = 40.0;
 /// Between lines that share a gap: as far apart as ports, so a line can leave a box
 /// and take its lane without a step.
@@ -1680,42 +1687,144 @@ fn build(
             }
         }
     }
-    // The partner names beside the frame ends on top and bottom: left of the end
-    // when that stays inside the frame, else right of it, wrapped only when even
-    // that is too little; in the first row of names where it overlaps no other.
+    // The partner names beside the frame ends on top and bottom: in the first row
+    // of names where a line, another name, the title or the frame's edge leaves
+    // room, left of the end when the whole name fits there, else right, else
+    // wrapped into the wider of the two. A name that fits in no row near the frame
+    // becomes its legend number (never with shortening turned off); a number that
+    // fits nowhere either, or any name with shortening off, goes beside its end
+    // regardless of the lines.
+    let mut segments: Vec<(usize, Pos, Pos)> = lines
+        .iter()
+        .enumerate()
+        .flat_map(|(li, g)| {
+            g.drawn()
+                .into_iter()
+                .flat_map(|piece| piece.windows(2).map(|w| (li, w[0], w[1])))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    // The pictures at the ends of lines with a look take room like a line would
+    // (a name's own line, picture included, is no wall to it: the name sits beside
+    // its end).
+    segments.extend(lines.iter().enumerate().flat_map(|(li, g)| {
+        crate::scene::end_picture_rects(g)
+            .into_iter()
+            .map(move |r| (li, r.min, r.max))
+    }));
     for side in [Side::Top, Side::Bottom] {
-        let mut on_side: Vec<(f32, usize, String)> = lines
+        let mut on_side: Vec<(Pos, usize, String)> = lines
             .iter()
             .enumerate()
             .filter_map(|(li, g)| {
                 let (p, s, name) = g.frame_port.as_ref()?;
-                (*s == side && g.frame_named).then(|| (p.x, li, name.clone()))
+                (*s == side && g.frame_named).then(|| (*p, li, name.clone()))
             })
             .collect();
-        on_side.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        on_side.sort_by(|a, b| a.0.x.total_cmp(&b.0.x).then(a.1.cmp(&b.1)));
         let (lo, hi) = (bounds.min.x + PAD, bounds.max.x - PAD);
         let mut rows: Vec<Vec<(f32, f32)>> = Vec::new();
         // The title sits in the first row at the top left; names keep off it.
         if side == Side::Top && title_end > f32::MIN {
             rows.push(vec![(bounds.min.x, title_end)]);
         }
-        for (x, li, name) in on_side {
-            let w = text::width(&name, LABEL_SIZE);
-            let (room_left, room_right) = (x - 8.0 - lo, hi - x - 8.0);
-            let (left, width) = if w <= room_left {
-                (true, f32::MAX)
-            } else if w <= room_right {
-                (false, f32::MAX)
-            } else if room_left >= room_right {
-                (true, room_left.max(40.0))
-            } else {
-                (false, room_right.max(40.0))
+        for (p, li, mut name) in on_side {
+            let x = p.x;
+            // The room beside the end in rows `row..row + n`, left and right of
+            // it, up to the nearest name (and line, with `walls`) or the frame's
+            // edge.
+            let room = |rows: &Vec<Vec<(f32, f32)>>, row: usize, n: usize, walls: bool| {
+                let band = crate::scene::name_rows_rect(p, side, row, n, lo, hi);
+                let mut blocked: Vec<(f32, f32)> = rows
+                    [row.min(rows.len())..(row + n).min(rows.len())]
+                    .iter()
+                    .flatten()
+                    .map(|(a, b)| (a - NAME_GAP, b + NAME_GAP))
+                    .collect();
+                if walls {
+                    blocked.extend(
+                        segments
+                            .iter()
+                            .filter(|(lj, a, b)| {
+                                *lj != li
+                                    && a.y.min(b.y) <= band.max.y
+                                    && a.y.max(b.y) >= band.min.y
+                            })
+                            .map(|(_, a, b)| (a.x.min(b.x) - NAME_GAP, a.x.max(b.x) + NAME_GAP)),
+                    );
+                }
+                let (l, r) = (x - 8.0, x + 8.0);
+                let left_wall = blocked
+                    .iter()
+                    .filter(|(a, _)| *a < l)
+                    .map(|(_, b)| b.min(l))
+                    .fold(lo, f32::max);
+                let right_wall = blocked
+                    .iter()
+                    .filter(|(_, b)| *b > r)
+                    .map(|(a, _)| a.max(r))
+                    .fold(hi, f32::min);
+                (l - left_wall, right_wall - r)
             };
-            let shown: Vec<String> = if width == f32::MAX {
-                vec![name]
-            } else {
-                wrap(&name, width, LABEL_SIZE)
+            // Where `name` goes: before or after the end, the row, the width it
+            // wraps to and its lines; `None` when no row up to `limit` has room.
+            let fit = |rows: &Vec<Vec<(f32, f32)>>, name: &str, limit: usize, walls: bool| {
+                let w = text::width(name, LABEL_SIZE);
+                (0..limit).find_map(|row| {
+                    let (rl, rr) = room(rows, row, 1, walls);
+                    if w <= rl {
+                        return Some((true, row, f32::MAX, vec![name.to_owned()]));
+                    }
+                    if w <= rr {
+                        return Some((false, row, f32::MAX, vec![name.to_owned()]));
+                    }
+                    let (left, width) = if rl >= rr { (true, rl) } else { (false, rr) };
+                    let width = width.max(NAME_MIN);
+                    let shown = wrap(name, width, LABEL_SIZE);
+                    let shown_w = shown
+                        .iter()
+                        .map(|l| text::width(l, LABEL_SIZE))
+                        .fold(0.0, f32::max);
+                    let (rl, rr) = room(rows, row, shown.len(), walls);
+                    (shown_w <= if left { rl } else { rr }).then_some((left, row, width, shown))
+                })
             };
+            let mut found = fit(&rows, &name, NAME_ROWS, true);
+            if found.is_none() && number_labels && !tagged.contains(&li) {
+                // The legend number of the partner: the one it has, else a new one.
+                let partner = [&view.lines[li].a, &view.lines[li].b]
+                    .into_iter()
+                    .find_map(|end| match end {
+                        ViewEnd::Frame { partner, .. } => Some(partner.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| name.clone());
+                let key = match legend_keys
+                    .iter()
+                    .find(|(k, text)| k.starts_with('[') && *text == partner)
+                {
+                    Some((k, _)) => k.clone(),
+                    None => {
+                        let numbered = legend_keys
+                            .iter()
+                            .filter(|(k, _)| k.starts_with('['))
+                            .count();
+                        let key = format!("[{}]", numbered + 1);
+                        legend_keys.push((key.clone(), partner));
+                        key
+                    }
+                };
+                name = key;
+                found = fit(&rows, &name, NAME_ROWS, true);
+            }
+            let (left, row, width, shown) = found.unwrap_or_else(|| {
+                fit(&rows, &name, usize::MAX, false).unwrap_or((
+                    true,
+                    0,
+                    f32::MAX,
+                    vec![name.clone()],
+                ))
+            });
             let shown_w = shown
                 .iter()
                 .map(|l| text::width(l, LABEL_SIZE))
@@ -1725,20 +1834,16 @@ fn build(
             } else {
                 (x + 8.0, x + 8.0 + shown_w)
             };
-            let free = |row: &Vec<(f32, f32)>| {
-                row.iter()
-                    .all(|(a, b)| extent.1 <= *a + 0.5 || extent.0 >= *b - 0.5)
-            };
-            let row = (0..)
-                .find(|k| (*k..*k + shown.len()).all(|r| rows.get(r).is_none_or(free)))
-                .unwrap_or(0);
-            for r in row..row + shown.len() {
-                if rows.len() <= r {
-                    rows.resize_with(r + 1, Vec::new);
-                }
-                rows[r].push(extent);
+            if rows.len() < row + shown.len() {
+                rows.resize_with(row + shown.len(), Vec::new);
+            }
+            for r in rows.iter_mut().skip(row).take(shown.len()) {
+                r.push(extent);
             }
             lines[li].frame_name = (left, row, width);
+            if let Some(port) = lines[li].frame_port.as_mut() {
+                port.2 = name;
+            }
         }
     }
 

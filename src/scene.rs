@@ -1044,14 +1044,27 @@ fn frame_name(line: &LineGeom) -> Option<FrameName> {
         Align::Center => pos.x - w / 2.0,
         Align::Right => pos.x - w,
     };
-    let h = LABEL_SIZE * 1.4 + (lines.len() as f32 - 1.0) * NAME_ROW;
-    let rect = Rect::from_min_size(Pos::new(x, top - LABEL_SIZE * 0.7), w, h);
+    let rect = name_rows_rect(*p, *side, row, lines.len(), x, x + w);
     let texts = lines
         .into_iter()
         .enumerate()
         .map(|(i, text)| (Pos::new(pos.x, top + i as f32 * NAME_ROW), text))
         .collect();
     Some(FrameName { texts, align, rect })
+}
+
+/// What rows `row..row + n` of a partner name beside the frame end `p` on `side`
+/// cover between `x0` and `x1`: the rect of a name as drawn, or of a placement
+/// the layout weighs against the lines.
+pub fn name_rows_rect(p: Pos, side: Side, row: usize, n: usize, x0: f32, x1: f32) -> Rect {
+    let depth = (row + n - 1) as f32 * NAME_ROW;
+    let top = if side == Side::Top {
+        p.y + 16.0 + row as f32 * NAME_ROW
+    } else {
+        p.y - 14.0 - depth
+    };
+    let h = LABEL_SIZE * 1.4 + (n as f32 - 1.0) * NAME_ROW;
+    Rect::from_min_size(Pos::new(x0, top - LABEL_SIZE * 0.7), x1 - x0, h)
 }
 
 /// A partner name as written at its frame end.
