@@ -190,7 +190,13 @@ where, for example `B › b1, b2`. A name longer than the label limit becomes `B
 with the full name in the legend. Inside, you
 **attach** it to the box that actually handles it. Until then it ends in an orange
 warning marker, and the status bar counts it. Attaching it to further boxes fans the
-line out: one frame point, one label, a branch to each box.
+line out: one frame point, one label, a branch to each box. Where the layout gives
+branches frame points of their own (to keep the picture free of crossings, or for
+their mouseholes), the relation is multiplied, and the same text at every point
+would leave you guessing whether it is one thing or several: each point then shows
+a legend number with its place in the group, `[1] 3/6`, the branches carry no text,
+and the legend names the relation once with its partner, `use cases — HTTP API › …`.
+Holes of such a branch show the same, `1 3/6`.
 
 When one coarse relation turns out to be several flows, **Split relation…** (right-click
 the line) makes them precise. A grid lists the boxes the relation reaches at both ends

@@ -1478,10 +1478,11 @@ fn branches_through_mouseholes_get_their_own_numbers() -> TestResult {
         .filter_map(|g| g.mousehole.as_ref())
         .collect();
     assert_eq!(holes.len(), inner.len());
-    // Every branch has its own number and its own pair of holes: the frame ends
-    // spread out next to each other instead of sharing one point.
+    // Every branch has its own pair of holes and its own frame point next to the
+    // others; multiplied like that, the relation is one legend number and each
+    // hole says which of the three it is.
     let labels: Vec<&str> = holes.iter().map(|m| m.label.as_str()).collect();
-    assert_eq!(labels, vec!["1", "2", "3"]);
+    assert_eq!(labels, vec!["1 1/3", "1 2/3", "1 3/3"]);
     let frame_ports: Vec<Pos> = l
         .lines
         .iter()
@@ -1506,7 +1507,14 @@ fn branches_through_mouseholes_get_their_own_numbers() -> TestResult {
         .filter(|g| g.relation == rel && g.frame_named)
         .map(|g| g.landing)
         .collect();
-    assert_eq!(named, vec![Some(inner[1])]);
+    assert_eq!(named, vec![Some(inner[0]), Some(inner[1]), Some(inner[2])]);
+    let tags: Vec<String> = l
+        .lines
+        .iter()
+        .filter(|g| g.relation == rel)
+        .filter_map(|g| g.frame_port.as_ref().map(|(_, _, name)| name.clone()))
+        .collect();
+    assert_eq!(tags, vec!["[1] 1/3", "[1] 2/3", "[1] 3/3"]);
     let legend: Vec<(String, String)> = l
         .legend
         .iter()
@@ -1514,17 +1522,20 @@ fn branches_through_mouseholes_get_their_own_numbers() -> TestResult {
         .collect();
     assert_eq!(
         legend,
-        vec![
-            ("[1]".to_owned(), "uses \u{203a} b1".to_owned()),
-            ("[2]".to_owned(), "uses \u{203a} b2".to_owned()),
-            ("[3]".to_owned(), "uses \u{203a} b3".to_owned()),
-        ]
+        vec![("[1]".to_owned(), "uses \u{2014} X".to_owned())]
     );
-    // Each number is written at both holes of its branch.
+    // Each tag is written at both holes of its branch, and the branches carry no
+    // text of their own.
     let svg = export::to_svg(&scene::scene(&l));
-    for n in ["1", "2", "3"] {
-        assert_eq!(svg.matches(&format!(">{n}</text>")).count(), 2, "{svg}");
+    for k in 1..=3 {
+        assert_eq!(svg.matches(&format!(">1 {k}/3</text>")).count(), 2, "{svg}");
     }
+    assert!(
+        l.lines
+            .iter()
+            .filter(|g| g.relation == rel)
+            .all(|g| g.text.is_empty())
+    );
     Ok(())
 }
 
@@ -1942,6 +1953,30 @@ fn a_far_branch_gets_its_own_frame_point_before_it_goes_under() -> TestResult {
         "{ports:?} {b7:?}"
     );
     assert_eq!(layout::crossings(&l), Vec::new());
+    // Two frame points make the relation multiplied: each point carries the
+    // legend number with its place in the group, the branches no text, the legend
+    // the text with the partner.
+    let mut tags: Vec<String> = l
+        .lines
+        .iter()
+        .filter(|g| g.relation == rel)
+        .filter_map(|g| g.frame_port.as_ref().map(|(_, _, name)| name.clone()))
+        .collect();
+    tags.sort();
+    assert_eq!(tags, vec!["[1] 1/2", "[1] 2/2"]);
+    assert!(
+        l.lines
+            .iter()
+            .filter(|g| g.relation == rel)
+            .all(|g| g.text.is_empty())
+    );
+    assert!(
+        l.legend
+            .iter()
+            .any(|e| e.key == "[1]" && e.lines.join(" ") == "wide \u{2014} X"),
+        "{:?}",
+        l.legend
+    );
     Ok(())
 }
 

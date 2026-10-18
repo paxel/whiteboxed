@@ -1465,9 +1465,41 @@ fn build(
     let routes = drawing.routes;
     let offsets = drawing.offsets;
     let mut lines = Vec::new();
-    let (shown, mut legend_keys, hole_labels) =
-        shown_labels(project, view, project.label_limit, &hidden);
-    let partners = short_partners(view, project.label_limit, &mut legend_keys);
+    // A relation with more than one frame point on a side is multiplied: the same
+    // text at every point would leave the reader guessing whether it is one thing
+    // or several, so its points are numbered along the side (k of m) and the
+    // legend names it once.
+    let mut multiplied: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+    let mut groups: BTreeMap<(RelationId, Side), Vec<(usize, i64)>> = BTreeMap::new();
+    for (&(li, end), &(owner, side)) in &ends {
+        let Some((p, _, _)) = port_at.get(&(li, end)) else {
+            continue;
+        };
+        if owner == Owner::Frame {
+            let along = if side.is_horizontal() { p.y } else { p.x };
+            groups
+                .entry((view.lines[li].relation, side))
+                .or_default()
+                .push((li, (along * 10.0).round() as i64));
+        }
+    }
+    for members in groups.values() {
+        let mut spots: Vec<i64> = members.iter().map(|(_, a)| *a).collect();
+        spots.sort_unstable();
+        spots.dedup();
+        if spots.len() < 2 {
+            continue;
+        }
+        for (li, along) in members {
+            let k = spots.iter().position(|s| s == along).unwrap_or(0) + 1;
+            multiplied.insert(*li, (k, spots.len()));
+        }
+    }
+    let (shown, mut legend_keys, hole_labels, tags) =
+        shown_labels(project, view, project.label_limit, &hidden, &multiplied);
+    // Lines with a tag at the frame name no partner there.
+    let tagged: BTreeSet<usize> = tags.keys().copied().collect();
+    let partners = short_partners(view, project.label_limit, &tagged, &mut legend_keys);
     for (li, line) in view.lines.iter().enumerate() {
         let look = drawn_look(project, line);
         let pa = port_at.get(&(li, End::A)).copied();
@@ -1527,10 +1559,12 @@ fn build(
                 (ViewEnd::Frame { partner, side }, Some(p)) => Some((
                     p.0,
                     *side,
-                    partners
-                        .get(partner)
-                        .cloned()
-                        .unwrap_or_else(|| partner.clone()),
+                    tags.get(&li).cloned().unwrap_or_else(|| {
+                        partners
+                            .get(partner)
+                            .cloned()
+                            .unwrap_or_else(|| partner.clone())
+                    }),
                 )),
                 _ => None,
             });
@@ -1614,9 +1648,9 @@ fn build(
             geom.mousehole = Some(hole);
         }
     }
-    // A fanned-out relation names its partner once per frame side: at the branch
-    // in the middle of its frame points (they share one, or going under, each has
-    // its own next to the others).
+    // A fanned-out relation on one frame point names its partner there once; a
+    // multiplied one carries its tag at every point, written by the first branch
+    // at each.
     let mut by_side: BTreeMap<(RelationId, Side), Vec<(usize, f32)>> = BTreeMap::new();
     for (li, g) in lines.iter_mut().enumerate() {
         if let Some((p, side, _)) = &g.frame_port {
@@ -1629,15 +1663,21 @@ fn build(
         }
     }
     for members in by_side.values() {
-        let mean = members.iter().map(|(_, v)| v).sum::<f32>() / members.len() as f32;
-        let middle = members.iter().min_by(|a, b| {
-            (a.1 - mean)
-                .abs()
-                .total_cmp(&(b.1 - mean).abs())
-                .then(a.0.cmp(&b.0))
-        });
-        if let Some((li, _)) = middle {
-            lines[*li].frame_named = true;
+        let mut spots: Vec<i64> = members
+            .iter()
+            .map(|(_, v)| (v * 10.0).round() as i64)
+            .collect();
+        spots.sort_unstable();
+        spots.dedup();
+        for spot in spots {
+            let first = members
+                .iter()
+                .filter(|(_, v)| (v * 10.0).round() as i64 == spot)
+                .map(|(li, _)| *li)
+                .min();
+            if let Some(li) = first {
+                lines[li].frame_named = true;
+            }
         }
     }
     // The partner names beside the frame ends on top and bottom: left of the end
@@ -1816,12 +1856,16 @@ fn build(
 fn short_partners(
     view: &DiagramView,
     limit: Option<u32>,
+    skip: &BTreeSet<usize>,
     legend: &mut Vec<(String, String)>,
 ) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let Some(limit) = limit else { return out };
     let sep = " \u{203a} ";
-    for line in &view.lines {
+    for (li, line) in view.lines.iter().enumerate() {
+        if skip.contains(&li) {
+            continue;
+        }
         for end in [&line.a, &line.b] {
             let ViewEnd::Frame { partner, .. } = end else {
                 continue;
@@ -1841,29 +1885,34 @@ fn short_partners(
     out
 }
 
-/// Besides the labels: for every line through mouseholes (`hidden`) the number(s)
-/// its holes carry. Such a line always goes to the legend, one entry per relation
-/// of a bundle; a relation without text is listed by its two ends. Of a fanned-out
-/// relation every branch that goes under has a number of its own, so a reader can
-/// pair its holes; the legend lists each with the box it reaches.
+/// What every line shows, the legend, the numbers at mouseholes, and the tags of
+/// multiplied relations. Besides the labels: for every line through mouseholes
+/// (`hidden`) the number(s) its holes carry; such a line always goes to the
+/// legend, one entry per relation of a bundle, a relation without text listed by
+/// its two ends. A multiplied relation (`multiplied`: line to its point k of m) is
+/// one legend entry, its text and its partner; every point shows `[n] k/m`, a
+/// hole `n k/m`, and the branches carry no text of their own.
+type Shown = (
+    Vec<String>,
+    Vec<(String, String)>,
+    Vec<String>,
+    BTreeMap<usize, String>,
+);
+
 fn shown_labels(
     project: &Project,
     view: &DiagramView,
     limit: Option<u32>,
     hidden: &BTreeSet<usize>,
-) -> (Vec<String>, Vec<(String, String)>, Vec<String>) {
+    multiplied: &BTreeMap<usize, (usize, usize)>,
+) -> Shown {
     let mut shown = Vec::new();
     let mut holes = Vec::new();
+    let mut tags = BTreeMap::new();
     let mut legend: Vec<(String, String)> = Vec::new();
     let mut numbers: BTreeMap<RelationId, String> = BTreeMap::new();
     let mut issued = 0usize;
     let mut seen = BTreeSet::new();
-    let mut under_per_relation: BTreeMap<RelationId, usize> = BTreeMap::new();
-    for li in hidden {
-        if let Some(line) = view.lines.get(*li) {
-            *under_per_relation.entry(line.relation).or_default() += 1;
-        }
-    }
     let text_of = |rel: RelationId| {
         project
             .relations
@@ -1871,42 +1920,59 @@ fn shown_labels(
             .map(|r| r.text.trim().to_owned())
             .unwrap_or_default()
     };
+    let partner_of = |line: &ViewLine| match (&line.a, &line.b) {
+        (ViewEnd::Frame { partner, .. }, _) | (_, ViewEnd::Frame { partner, .. }) => {
+            partner.clone()
+        }
+        _ => String::new(),
+    };
     for (li, line) in view.lines.iter().enumerate() {
+        if let Some((k, m)) = multiplied.get(&li) {
+            let key = numbers
+                .entry(line.relation)
+                .or_insert_with(|| {
+                    issued += 1;
+                    format!("[{issued}]")
+                })
+                .clone();
+            if seen.insert(line.relation) {
+                let text = text_of(line.relation);
+                let text = if text.is_empty() {
+                    ends_of(project, line)
+                } else {
+                    text
+                };
+                legend.push((key.clone(), format!("{text} \u{2014} {}", partner_of(line))));
+            }
+            let number = key.trim_matches(['[', ']']).to_owned();
+            tags.insert(li, format!("{key} {k}/{m}"));
+            shown.push(String::new());
+            holes.push(if hidden.contains(&li) {
+                format!("{number} {k}/{m}")
+            } else {
+                String::new()
+            });
+            continue;
+        }
         if hidden.contains(&li) {
             let mut keys = Vec::new();
-            let branched = under_per_relation
-                .get(&line.relation)
-                .is_some_and(|n| *n > 1);
             for rel in std::iter::once(line.relation).chain(line.bundle.iter().copied()) {
                 let text = text_of(rel);
-                let key = if branched && rel == line.relation {
-                    issued += 1;
-                    let key = format!("[{issued}]");
+                let key = numbers
+                    .entry(rel)
+                    .or_insert_with(|| {
+                        issued += 1;
+                        format!("[{issued}]")
+                    })
+                    .clone();
+                if seen.insert(rel) {
                     let entry = if text.is_empty() {
                         ends_of(project, line)
                     } else {
-                        format!("{text} \u{203a} {}", landing_of(project, line))
+                        text
                     };
                     legend.push((key.clone(), entry));
-                    key
-                } else {
-                    let key = numbers
-                        .entry(rel)
-                        .or_insert_with(|| {
-                            issued += 1;
-                            format!("[{issued}]")
-                        })
-                        .clone();
-                    if seen.insert(rel) {
-                        let entry = if text.is_empty() {
-                            ends_of(project, line)
-                        } else {
-                            text
-                        };
-                        legend.push((key.clone(), entry));
-                    }
-                    key
-                };
+                }
                 keys.push(key.trim_matches(['[', ']']).to_owned());
             }
             shown.push(line.short.clone());
@@ -1938,18 +2004,7 @@ fn shown_labels(
         };
         shown.push(label);
     }
-    (shown, legend, holes)
-}
-
-/// The box a line from the frame lands on (else its ends).
-fn landing_of(project: &Project, line: &ViewLine) -> String {
-    match (&line.a, &line.b) {
-        (ViewEnd::Block { block, .. }, _) | (_, ViewEnd::Block { block, .. }) => project
-            .blocks
-            .get(block)
-            .map_or_else(|| "?".to_owned(), |b| b.name.replace('\n', " ")),
-        _ => ends_of(project, line),
-    }
+    (shown, legend, holes, tags)
 }
 
 /// The two ends of a line, with its direction between them: `A → B`.
