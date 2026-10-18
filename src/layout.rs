@@ -3052,7 +3052,8 @@ struct LabelSpot {
 
 /// Puts every label of a routed line where it fits: on a stretch of the line
 /// between crossings, inside `area`, that holds the text clear of boxes, of other
-/// lines, of the pictures at line ends and of the labels placed before it; a stretch with room before one
+/// lines, of the pictures at line ends, of the labels at mouseholes and of the
+/// labels placed before it; a stretch with room before one
 /// without, a horizontal one before a vertical one, the middle of the stretch
 /// before a spot slid toward one end, the usual side of the line before the other,
 /// the longest first. When `number`, a label with no clear place takes a legend
@@ -3077,10 +3078,15 @@ fn place_labels(
             (g.relation, segs)
         })
         .collect();
-    // The pictures at the ends of lines with a look take room like boxes do.
+    // The pictures at the ends of lines with a look and the labels at mouseholes
+    // take room like boxes do.
     let mut placed: Vec<Rect> = lines
         .iter()
-        .flat_map(crate::scene::end_picture_rects)
+        .flat_map(|g| {
+            let mut taken = crate::scene::end_picture_rects(g);
+            taken.extend(crate::scene::hole_label_rects(g));
+            taken
+        })
         .collect();
     for (li, geom) in lines.iter_mut().enumerate() {
         if geom.tip.is_some() || geom.mousehole.is_some() || geom.text.is_empty() {

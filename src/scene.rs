@@ -883,6 +883,57 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
     }
 }
 
+/// Where the label of a hole at `c` is written: past the hole in the line's
+/// direction `(ux, uy)`, beyond what the hole reaches.
+fn hole_label_anchor(c: Pos, (ux, uy): (f32, f32), reach: f32) -> (Pos, Align) {
+    if ux.abs() > uy.abs() {
+        if ux > 0.0 {
+            (Pos::new(c.x + reach + 5.0, c.y), Align::Left)
+        } else {
+            (Pos::new(c.x - reach - 5.0, c.y), Align::Right)
+        }
+    } else if uy > 0.0 {
+        (Pos::new(c.x, c.y + reach + 10.0), Align::Center)
+    } else {
+        (Pos::new(c.x, c.y - reach - 9.0), Align::Center)
+    }
+}
+
+/// What the labels at a line's two holes cover, as [`hole_shapes`] writes them;
+/// nothing for a line that is not through mouseholes.
+pub fn hole_label_rects(line: &LineGeom) -> Vec<Rect> {
+    let Some(m) = &line.mousehole else {
+        return Vec::new();
+    };
+    let label = if line.text.is_empty() {
+        m.label.clone()
+    } else {
+        format!("{} {}", m.label, line.text)
+    };
+    let w = text::width(&label, HOLE_SIZE);
+    let n = m.piece_a.len();
+    let before_a = m.piece_a.get(n.wrapping_sub(2)).copied().unwrap_or(m.a);
+    let before_b = m.piece_b.get(1).copied().unwrap_or(m.b);
+    [(m.a, before_a, &m.portal_a), (m.b, before_b, &m.portal_b)]
+        .into_iter()
+        .map(|(c, from, portal)| {
+            let (dx, dy) = (c.x - from.x, c.y - from.y);
+            let len = (dx * dx + dy * dy).sqrt().max(0.001);
+            let reach = match portal {
+                Some(p) => (HOLE_R * p.size.0 / p.size.1).max(HOLE_R),
+                None => HOLE_R,
+            };
+            let (pos, align) = hole_label_anchor(c, (dx / len, dy / len), reach);
+            let left = match align {
+                Align::Left => pos.x,
+                Align::Center => pos.x - w / 2.0,
+                Align::Right => pos.x - w,
+            };
+            Rect::from_min_size(Pos::new(left, pos.y - HOLE_SIZE / 2.0), w, HOLE_SIZE)
+        })
+        .collect()
+}
+
 /// A mousehole at `c` for a line coming from `from`: a filled arch, its round side
 /// up like a hole in a skirting board whichever way the line runs, or the project's
 /// portal picture turned the way of the line; and the label past the hole.
@@ -922,17 +973,7 @@ fn hole_shapes(
             HOLE_R
         }
     };
-    let (pos, align) = if ux.abs() > uy.abs() {
-        if ux > 0.0 {
-            (Pos::new(c.x + reach + 5.0, c.y), Align::Left)
-        } else {
-            (Pos::new(c.x - reach - 5.0, c.y), Align::Right)
-        }
-    } else if uy > 0.0 {
-        (Pos::new(c.x, c.y + reach + 10.0), Align::Center)
-    } else {
-        (Pos::new(c.x, c.y - reach - 9.0), Align::Center)
-    };
+    let (pos, align) = hole_label_anchor(c, (ux, uy), reach);
     shapes.push(Shape::Text {
         pos,
         text: label.to_owned(),

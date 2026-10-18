@@ -1248,6 +1248,17 @@ fn a_line_over_more_than_two_boxes_goes_through_mouseholes() -> TestResult {
     // The holes show the number and the short label; the text is in the legend.
     let svg = whiteboxed::export::to_svg(&scene::scene(&l));
     assert_eq!(svg.matches(">1 ord</text>").count(), 2, "{svg}");
+    // What those labels cover starts just past each hole.
+    let covered = scene::hole_label_rects(line);
+    assert_eq!(covered.len(), 2);
+    assert!(
+        (covered[0].min.x - (m.a.x + scene::HOLE_R + 5.0)).abs() < 0.01,
+        "{covered:?}"
+    );
+    assert!(
+        covered[1].max.x <= m.b.x - scene::HOLE_R - 5.0 + 0.01,
+        "{covered:?}"
+    );
     // Two boxes in between are fine; told to, even a short line goes under.
     let (p2, _, _, ab2) = far_apart(2)?;
     let l2 = render(&p2, None);

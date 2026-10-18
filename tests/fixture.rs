@@ -15,7 +15,8 @@ struct Measures {
     crossings: usize,
     overlaps: usize,
     holes: usize,
-    /// Labels on top of each other, over a box, or with another line through them.
+    /// Labels on top of each other or of a hole's label, over a box, or with another
+    /// line through them.
     label_collisions: usize,
     /// Drawn segments through the whitebox title or a cross-cutting band.
     through_title_or_band: usize,
@@ -50,8 +51,10 @@ fn measure(p: &Project, l: &Layout) -> Measures {
     let holes = l.lines.iter().filter(|g| g.mousehole.is_some()).count();
     let labels = scene::label_rects(l);
     let rel = |li: usize| l.lines[li].relation;
+    let hole_labels: Vec<Rect> = l.lines.iter().flat_map(scene::hole_label_rects).collect();
     let mut label_collisions = 0;
     for (i, (a, ra)) in labels.iter().enumerate() {
+        label_collisions += hole_labels.iter().filter(|h| h.overlaps(ra)).count();
         for (b, rb) in &labels[i + 1..] {
             if rel(*a) != rel(*b) && ra.overlaps(rb) {
                 label_collisions += 1;
