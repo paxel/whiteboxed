@@ -463,7 +463,7 @@ pub struct Relation {
 #[serde(rename_all = "snake_case")]
 pub enum MouseholeMode {
     /// When a straight line from end to end would cross more than two boxes, or
-    /// the routed line would cross more than two other lines.
+    /// going under saves the picture about three crossings.
     #[default]
     Automatic,
     Always,

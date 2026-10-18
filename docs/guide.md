@@ -207,12 +207,10 @@ that box); the relation itself stays on its own level.
 
 ### Mouseholes
 
-A line that would run straight over more than two boxes, or that would cross more
-than two other lines, goes through **mouseholes** instead: out of its box a short way
-into a numbered hole, and out of the hole with the same number near its other end;
-nothing is drawn in between. Of several lines crossing too much, the worst goes under
-first (the one crossing the most lines, then the longest) and the rest is drawn
-again, until no line crosses more than two others. The number is the
+A line that would run straight over more than two boxes, or whose going under
+saves the picture about three crossings or more, goes through **mouseholes**
+instead: out of its box a short way into a numbered hole, and out of the hole with
+the same number near its other end; nothing is drawn in between. The number is the
 line's number in the [legend](#long-texts-and-the-legend), which always holds its
 text; a line without text is listed by its two ends (`Orders → Billing`). A short
 label is written at the holes as well. Several relations drawn as one line share a
@@ -263,11 +261,15 @@ There is nothing to position by pixel.
   their sides allow. Boxes that lie diagonally are joined with one bend through free
   cells, from the middle of one side into the middle of the other; where that would
   run through a box, or cross more lines than the gaps do, the line takes the gaps.
-- Lines avoid crossing each other where a detour of about one cell, or a free gap
-  nearby, allows it. The lines on one side of a box take the order they arrive in, so
-  none crosses another on its way in. Where two lines still cross, the horizontal one
-  jumps over the other in a small arc. No line runs along another relation's line:
-  where two would share a stretch, one of them moves half a lane along its box.
+- Routes, lanes, mouseholes and the frame points of fanned-out relations are chosen
+  together, by one measure over the whole picture: crossings, lines running along
+  each other, holes and lines through the title or a band count most, then bends,
+  short steps and length. A line goes under only where that saves about three
+  crossings; a branch gets a frame point of its own before that. The lines on one
+  side of a box take the order they arrive in, so none crosses another on its way
+  in. Where two lines still cross, the horizontal one jumps over the other in a
+  small arc. No line runs along another relation's line: where two would share a
+  stretch, one of them moves half a lane along its box.
 - A label sits on a stretch of its line with room for it, clear of boxes and of other
   lines: above or below a horizontal stretch, right or left of a vertical one. A label
   with no such place shows its legend number instead, with the text in the legend

@@ -424,8 +424,8 @@ pub struct EditRelationArgs {
     #[serde(default)]
     pub color: Option<String>,
     /// Whether the line goes through mouseholes: automatic (over more than two
-    /// boxes, or crossing more than two other lines), always, or never; for the
-    /// diagram in `in_diagram`.
+    /// boxes, or where going under saves about three crossings), always, or never;
+    /// for the diagram in `in_diagram`.
     #[serde(default)]
     pub mousehole: Option<ApiMousehole>,
     /// The box whose whitebox shows the line the mousehole setting is for; omit for
@@ -607,7 +607,7 @@ details into a whitebox instead of splitting further. Concerns that every part u
 (logging, security, monitoring) belong in a cross-cutting band or, as a rule for all \
 parts, in the arc42 crosscutting concepts (section 8) rather than as more boxes. \
 Leave mouseholes on automatic: a line goes under by itself when it would run over \
-more than two boxes or cross more than two other lines, and a branch of a fanned-out \
+more than two boxes or where going under saves about three crossings, and a branch of a fanned-out \
 relation first gets a frame point of its own; set always or never only when the user \
 asks for it. \
 5. Finish with export_docs into the repository's documentation folder; the user is \
