@@ -15,8 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Mousehole arches always point up, whichever way the line runs, so they read as holes everywhere.
 - In a whitebox with cross-cutting bands, a relation entering it no longer takes the bottom frame side on its own, so its line does not run through the bands; a side set to bottom by hand goes under them through a pair of mouseholes at the band edges.
 - The MCP server instructions tell the AI to leave mouseholes on automatic and what the automatic rule does, so it stops forcing lines under.
-- Routes, lanes, mouseholes and the frame points of fanned-out relations are chosen together by one measure over the whole picture, so a fan-out over a whole row no longer turns into a tangle. A line on automatic mouseholes goes under only where that saves about three crossings; a branch of a fanned-out relation gets a frame point of its own, in line with its box, before that.
-- A line's label sits where it has room: on a stretch of the line clear of boxes, of other lines, of the pictures at line ends, of the labels at mouseholes and of other labels, on either side of the line; with no such place it shows its legend number and the text goes to the legend.
+- Routes, lanes, the order of the lines on each side, mouseholes and the frame points of fanned-out relations are chosen together by one measure over the whole picture, so a fan-out over a whole row no longer turns into a tangle. A line on automatic mouseholes goes under only where that saves about three crossings; a branch of a fanned-out relation gets a frame point of its own, in line with its box, before that.
+- A line's label sits where it has room: on a stretch of the line clear of boxes, of the title and the bands, of other lines, of the pictures at line ends, of the labels at mouseholes and of other labels, on either side of the line; with no such place it shows its legend number and the text goes to the legend.
 
 ### Fixed
 

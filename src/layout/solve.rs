@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{Chan, Lanes, Route};
+use super::{Chan, Lanes, Route, SideOrder};
 use crate::model::End;
 
 /// What a drawing costs, worst first: the readability measures (crossings,
@@ -25,6 +25,11 @@ pub struct Choice {
     pub route: Vec<Option<Route>>,
     /// The order of the lines along each channel; lines missing here join at the end.
     pub lanes: Lanes,
+    /// The order of the ports along each side of a box or the frame; ports missing
+    /// here join where their wish puts them.
+    pub order: SideOrder,
+    /// Ports moved half a lane along their side, off the spot the spacing gave them.
+    pub shift: BTreeMap<(usize, End), f32>,
     /// Lines through mouseholes.
     pub hidden: BTreeSet<usize>,
     /// Frame ends that left the frame point shared by the branches of their relation.
@@ -88,27 +93,32 @@ pub fn reconcile(kept: &Lanes, wanted: &Lanes) -> Lanes {
     out
 }
 
-/// Keeps the search from stalling on a channel order it has already seen when
-/// moving one line: a move is only offered where it changes the order.
-pub fn lane_moves(lanes: &Lanes) -> Vec<(Chan, Vec<usize>)> {
-    let mut out = Vec::new();
-    for (chan, list) in lanes {
-        let k = list.len();
-        for from in 0..k {
-            for to in 0..k {
-                if from == to {
-                    continue;
-                }
-                let mut order = list.clone();
-                let moved = order.remove(from);
-                order.insert(to, moved);
-                if order != *list {
-                    out.push((*chan, order));
-                }
+/// Every order that moving one item of `list` to another place gives, each once.
+pub fn insertion_moves<T: Clone + PartialEq>(list: &[T]) -> Vec<Vec<T>> {
+    let mut out: Vec<Vec<T>> = Vec::new();
+    let k = list.len();
+    for from in 0..k {
+        for to in 0..k {
+            if from == to {
+                continue;
+            }
+            let mut order = list.to_vec();
+            let moved = order.remove(from);
+            order.insert(to, moved);
+            if order != list && !out.contains(&order) {
+                out.push(order);
             }
         }
     }
     out
+}
+
+/// The lane orders one move away from `lanes`, per channel.
+pub fn lane_moves(lanes: &Lanes) -> Vec<(Chan, Vec<usize>)> {
+    lanes
+        .iter()
+        .flat_map(|(chan, list)| insertion_moves(list).into_iter().map(|o| (*chan, o)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -122,6 +132,8 @@ mod tests {
         let start = Choice {
             route: Vec::new(),
             lanes: Lanes::new(),
+            order: SideOrder::new(),
+            shift: BTreeMap::new(),
             hidden: [0, 1, 2].into_iter().collect(),
             unshared: BTreeSet::new(),
         };
@@ -161,6 +173,9 @@ mod tests {
         let out = reconcile(&kept, &wanted);
         assert_eq!(out[&Chan::V(1)], vec![5, 3, 7]);
         assert_eq!(out[&Chan::H(0)], vec![1]);
-        assert_eq!(lane_moves(&out).len(), 6);
+        // Three lines: four orders are one move away (two moves are swaps that
+        // another move gives as well).
+        assert_eq!(lane_moves(&out).len(), 4);
+        assert_eq!(insertion_moves(&[1, 2]).len(), 1);
     }
 }

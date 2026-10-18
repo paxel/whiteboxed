@@ -261,15 +261,14 @@ There is nothing to position by pixel.
   their sides allow. Boxes that lie diagonally are joined with one bend through free
   cells, from the middle of one side into the middle of the other; where that would
   run through a box, or cross more lines than the gaps do, the line takes the gaps.
-- Routes, lanes, mouseholes and the frame points of fanned-out relations are chosen
-  together, by one measure over the whole picture: crossings, lines running along
-  each other, holes and lines through the title or a band count most, then bends,
-  short steps and length. A line goes under only where that saves about three
-  crossings; a branch gets a frame point of its own before that. The lines on one
-  side of a box take the order they arrive in, so none crosses another on its way
-  in. Where two lines still cross, the horizontal one jumps over the other in a
-  small arc. No line runs along another relation's line: where two would share a
-  stretch, one of them moves half a lane along its box.
+- Routes, lanes, the order of the lines on each side, mouseholes and the frame
+  points of fanned-out relations are chosen together, by one measure over the whole
+  picture: crossings, lines running along each other, holes and lines through the
+  title or a band count most, then bends, short steps and length. A line goes under
+  only where that saves about three crossings; a branch gets a frame point of its
+  own before that. Where two lines still cross, the horizontal one jumps over the
+  other in a small arc. No line runs along another relation's line: where two would
+  share a stretch, one of them moves half a lane along its box.
 - A label sits on a stretch of its line with room for it, clear of boxes and of other
   lines: above or below a horizontal stretch, right or left of a vertical one. A label
   with no such place shows its legend number instead, with the text in the legend

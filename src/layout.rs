@@ -461,8 +461,15 @@ fn tangles(p: &[Pos], q: &[Pos]) -> usize {
 /// keeps a slot to itself).
 type PortSlot = (f32, RelationId, Vec<(usize, End)>, bool);
 
+/// The order of the port slots along each side: a slot named by its line end, the
+/// shared slot of a fanned-out relation by the relation (`usize::MAX` less its id).
+pub(crate) type SideOrder = BTreeMap<(Owner, Side), Vec<(usize, End)>>;
+
+/// The coordinate of every port along its side, and the slot order of every side.
+type Placed = (BTreeMap<(usize, End), f32>, SideOrder);
+
 /// Where a box was put: its rect, and the grid columns and rows it covers.
-type Placed = (Rect, (usize, usize), (usize, usize));
+type BoxPlace = (Rect, (usize, usize), (usize, usize));
 
 /// A group on the page: its id, its box and its rectangle of cells.
 type GroupRef<'a> = (
@@ -475,7 +482,7 @@ type GroupRef<'a> = (
 type PortRef = (i64, RelationId, usize, End);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Owner {
+pub(crate) enum Owner {
     Block(BlockId),
     Frame,
 }
@@ -694,7 +701,7 @@ fn build(
 
     // Box rects, with the columns and rows each covers.
     let mut blocks = Vec::new();
-    let mut rects: BTreeMap<BlockId, Placed> = BTreeMap::new();
+    let mut rects: BTreeMap<BlockId, BoxPlace> = BTreeMap::new();
     // Group frames first, so they lie behind the shapes. A frame sits in the gaps
     // around its cells, further out the more groups it holds.
     for (id, b, (near, far)) in &groups {
@@ -934,13 +941,17 @@ fn build(
             Some(middle)
         }
     };
-    // Place every side's ports for given wishes, in the order of `order` where given
-    // (else of the wishes); returns the coordinate along the side.
+    // Places every side's ports for given wishes: the slots of a side in the order
+    // `order` has them, slots it does not know where their wish puts them; then a
+    // port's `shift` moves it half a lane off that. Returns the coordinate along
+    // the side and the slot order of every side as placed.
     let place = |wish: &BTreeMap<(usize, End), f32>,
-                 order: Option<&BTreeMap<(usize, End), OrderKey>>,
+                 order: &SideOrder,
+                 shift: &BTreeMap<(usize, End), f32>,
                  unshared: &BTreeSet<(usize, End)>|
-     -> BTreeMap<(usize, End), f32> {
+     -> Placed {
         let mut out = BTreeMap::new();
+        let mut orders = SideOrder::new();
         for ((owner, side), list) in &ports {
             let Some(rect) = port_rect(*owner, *side) else {
                 continue;
@@ -955,56 +966,59 @@ fn build(
             // one frame port: its ends there share a slot, at the mean of their wishes.
             // Except the branches that go under (`unshared`): each needs a hole pair
             // of its own, so each gets its own frame point.
-            let mut wanted: Vec<(OrderKey, PortSlot)> = Vec::new();
+            let mut wanted: Vec<PortSlot> = Vec::new();
             for (_, rel, li, end) in list {
                 let at = wish.get(&(*li, *end)).copied().unwrap_or((lo + hi) / 2.0);
-                let key = order.and_then(|o| o.get(&(*li, *end)).copied()).unwrap_or((
-                    0,
-                    0,
-                    (at * 10.0).round() as i64,
-                ));
                 let shared = *owner == Owner::Frame && !unshared.contains(&(*li, *end));
-                match wanted
-                    .iter_mut()
-                    .find(|(_, w)| shared && w.3 && w.1 == *rel)
-                {
-                    Some((k, w)) => {
+                match wanted.iter_mut().find(|w| shared && w.3 && w.1 == *rel) {
+                    Some(w) => {
                         let n = w.2.len() as f32;
                         w.0 = (w.0 * n + at) / (n + 1.0);
-                        *k = (*k).min(key);
                         w.2.push((*li, *end));
                     }
-                    None => wanted.push((key, (at, *rel, vec![(*li, *end)], shared))),
+                    None => wanted.push((at, *rel, vec![(*li, *end)], shared)),
                 }
             }
-            // In the order of their wishes; only slots that would collide take the
-            // order their lines arrive in, so a slot far from the rest stays where
-            // its box is instead of being dragged next to them.
-            wanted.sort_by(|(_, a), (_, b)| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-            let mut start = 0;
-            while start < wanted.len() {
-                let mut end = start + 1;
-                while end < wanted.len() && wanted[end].1.0 - wanted[end - 1].1.0 < PORT_SPACING {
-                    end += 1;
-                }
-                wanted[start..end].sort_by(|(ka, a), (kb, b)| {
-                    ka.cmp(kb)
-                        .then(a.0.total_cmp(&b.0))
-                        .then(a.1.cmp(&b.1))
-                        .then(a.2.cmp(&b.2))
-                });
-                start = end;
+            wanted.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            // A slot is named by its line end; the shared slot of a relation by the
+            // relation, so that a branch leaving it is new to the order.
+            let names: Vec<(usize, End)> = wanted
+                .iter()
+                .map(|w| match w.2.as_slice() {
+                    [one] => *one,
+                    _ => (usize::MAX - w.1.0 as usize, End::A),
+                })
+                .collect();
+            // Slots the order knows take the ranks they hold among the wishes, in
+            // the order's sequence; a slot it does not know keeps its wish rank.
+            let known: Vec<usize> = order
+                .get(&(*owner, *side))
+                .into_iter()
+                .flatten()
+                .filter_map(|name| names.iter().position(|n| n == name))
+                .collect();
+            let mut sequence: Vec<usize> = (0..wanted.len()).collect();
+            let mut ranks: Vec<usize> = (0..wanted.len()).filter(|i| known.contains(i)).collect();
+            ranks.sort_unstable();
+            for (rank, i) in ranks.into_iter().zip(known) {
+                sequence[rank] = i;
             }
-            let at: Vec<f32> = wanted.iter().map(|(_, w)| w.0).collect();
+            let at: Vec<f32> = sequence.iter().map(|i| wanted[*i].0).collect();
             let gaps = vec![PORT_SPACING; wanted.len()];
-            let placed = spread_by(&at, lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0, &gaps);
-            for ((_, (_, _, members, _)), v) in wanted.iter().zip(placed) {
-                for (li, end) in members {
-                    out.insert((*li, *end), v);
+            let (min, max) = (lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0);
+            let placed = spread_by(&at, min, max, &gaps);
+            for (i, v) in sequence.iter().zip(placed) {
+                for member in &wanted[*i].2 {
+                    let shifted = v + shift.get(member).copied().unwrap_or(0.0);
+                    out.insert(*member, shifted.clamp(min.min(max), max));
                 }
             }
+            orders.insert(
+                (*owner, *side),
+                sequence.iter().map(|i| names[*i]).collect(),
+            );
         }
-        out
+        (out, orders)
     };
     let busy = |owner: Owner, side: Side| ports.get(&(owner, side)).map_or(0, Vec::len);
     // Places every port: where it wants to be, then facing ends agree so the line
@@ -1012,16 +1026,21 @@ fn build(
     // busier side keeps its place. Where the spacing on the frame then pushed a
     // frame end a little off its box, the box end follows it back, so no line ends
     // in a step of a few pixels.
-    let settle = |order: Option<&BTreeMap<(usize, End), OrderKey>>,
+    let settle = |order: &SideOrder,
+                  shift: &BTreeMap<(usize, End), f32>,
                   unshared: &BTreeSet<(usize, End)>|
-     -> BTreeMap<(usize, End), f32> {
+     -> Placed {
+        let no_shift = BTreeMap::new();
         let first_wish: BTreeMap<(usize, End), f32> = ends
             .iter()
             .filter_map(|(&(li, end), &(owner, side))| {
                 ideal(li, end, owner, side).map(|v| ((li, end), v))
             })
             .collect();
-        let first = place(&first_wish, order, unshared);
+        let (first, _) = place(&first_wish, order, &no_shift, unshared);
+        // A port that follows its partner is placed where the partner is, not
+        // where the side's order would put it: the order names the other ports.
+        let mut followers: BTreeSet<(usize, End)> = BTreeSet::new();
         let second_wish: BTreeMap<(usize, End), f32> = first
             .iter()
             .map(|(&(li, end), &v)| {
@@ -1033,6 +1052,7 @@ fn build(
                             && (o1 == Owner::Frame
                                 || (o2 != Owner::Frame && busy(o2, s2) > busy(o1, s1))) =>
                     {
+                        followers.insert((li, end));
                         Some(w)
                     }
                     _ => None,
@@ -1040,7 +1060,19 @@ fn build(
                 ((li, end), follow.unwrap_or(v))
             })
             .collect();
-        let second = place(&second_wish, order, unshared);
+        let order: SideOrder = order
+            .iter()
+            .map(|(side, names)| {
+                let kept = names
+                    .iter()
+                    .copied()
+                    .filter(|name| !followers.contains(name))
+                    .collect();
+                (*side, kept)
+            })
+            .collect();
+        let order = &order;
+        let (second, _) = place(&second_wish, order, &no_shift, unshared);
         let third_wish: BTreeMap<(usize, End), f32> = second
             .iter()
             .map(|(&(li, end), &v)| {
@@ -1068,7 +1100,7 @@ fn build(
                 ((li, end), follow.unwrap_or(v))
             })
             .collect();
-        place(&third_wish, order, unshared)
+        place(&third_wish, order, shift, unshared)
     };
     // The ports as points on their sides, with the channel each line leaves into.
     let ports_at = |along: &BTreeMap<(usize, End), f32>| -> PortAt {
@@ -1127,7 +1159,7 @@ fn build(
     // Route every line that has two ports, each against all the others. Then the
     // ports of a side take the order their lines arrive in, so no line crosses
     // another on its way in, and the lines are routed again from there.
-    let mut port_at = ports_at(&settle(None, &BTreeSet::new()));
+    let mut port_at = ports_at(&settle(&SideOrder::new(), &BTreeMap::new(), &BTreeSet::new()).0);
     // Lines through mouseholes: as told, or when a straight line from end to end
     // would run over more than HOLE_OVER boxes. Their route is not drawn, so the
     // other lines neither avoid it nor leave it a lane.
@@ -1208,7 +1240,7 @@ fn build(
             return p.clone();
         }
         let hidden = &none;
-        let mut port_at = ports_at(&settle(None, &apart));
+        let port_at = ports_at(&settle(&SideOrder::new(), &BTreeMap::new(), &apart).0);
         let mut routes: BTreeMap<usize, Route> = BTreeMap::new();
         let mut segments: Segments = BTreeMap::new();
         route_lines(
@@ -1222,37 +1254,64 @@ fn build(
             &mut routes,
             &mut segments,
         );
-        // The ports of a side take the order their lines arrive in, twice over.
-        for _ in 0..2 {
-            let lanes = lane_order(&grid, &routes, &port_at, hidden);
-            let offsets = lane_offsets(&lanes, &grid);
-            let drawn = points_of(&grid, &offsets, &port_at, &routes);
-            let order = arrival_keys(&drawn, &ends);
-            port_at = ports_at(&settle(Some(&order), &apart));
-            route_lines(
-                &grid,
-                &boxes,
-                &port_at,
-                &heading,
-                n,
-                1,
-                hidden,
-                &mut routes,
-                &mut segments,
-            );
-        }
         let candidates: Vec<Vec<Route>> = (0..n)
             .map(|li| alternatives(&grid, &boxes, &heading, &port_at, li, &segments))
             .collect();
-        let p = Rc::new(Prepared {
-            port_at,
-            candidates,
-        });
+        let p = Rc::new(Prepared { candidates });
         prepared.insert(key, p.clone());
         p
     };
+    // A candidate route for the ports as they stand now: a straight line or an
+    // elbow only while the ports still allow it, else the channel run.
+    let resolve = |li: usize, route: &Route, port_at: &PortAt, fallback: &[Route]| -> Route {
+        let (Some(a), Some(b)) = (port_at.get(&(li, End::A)), port_at.get(&(li, End::B))) else {
+            return route.clone();
+        };
+        let fa = (a.0, heading(li, End::A, a.1));
+        let fb = (b.0, heading(li, End::B, b.1));
+        let chans = || {
+            fallback
+                .iter()
+                .find(|r| matches!(r, Route::Chans(_)))
+                .cloned()
+                .unwrap_or_else(|| route.clone())
+        };
+        match route {
+            Route::Straight if straight(fa, fb, &boxes) => Route::Straight,
+            Route::Straight => chans(),
+            Route::Elbow(_) => elbow(fa, fb, &boxes).map_or_else(chans, Route::Elbow),
+            Route::Chans(_) => route.clone(),
+        }
+    };
+    let mut ports_cache: PortsCache = BTreeMap::new();
     let mut evaluate = |choice: &solve::Choice| -> (solve::Cost, Drawing) {
         let prepared = prepare(&choice.hidden, &choice.unshared);
+        let mut apart = choice.unshared.clone();
+        for ((li, end), (owner, _)) in &ends {
+            if *owner == Owner::Frame && choice.hidden.contains(li) {
+                apart.insert((*li, *end));
+            }
+        }
+        // Ports change only with the order, the shifts or the frame points; a
+        // route or lane move reuses them.
+        let ports_key = (
+            choice.order.clone(),
+            choice
+                .shift
+                .iter()
+                .map(|(k, v)| (*k, (*v * 10.0) as i64))
+                .collect::<Vec<_>>(),
+            apart.iter().copied().collect::<Vec<_>>(),
+        );
+        let (port_at, order) = match ports_cache.get(&ports_key) {
+            Some(p) => p.clone(),
+            None => {
+                let (along, order) = settle(&choice.order, &choice.shift, &apart);
+                let placed = (ports_at(&along), order);
+                ports_cache.insert(ports_key, placed.clone());
+                placed
+            }
+        };
         let routes: BTreeMap<usize, Route> = prepared
             .candidates
             .iter()
@@ -1263,30 +1322,31 @@ fn build(
                 let pick = wanted
                     .and_then(|r| c.iter().position(|k| k == r))
                     .unwrap_or(0);
-                (li, c[pick].clone())
+                (li, resolve(li, &c[pick], &port_at, c))
             })
             .collect();
         let lanes = solve::reconcile(
             &choice.lanes,
-            &lane_order(&grid, &routes, &prepared.port_at, &choice.hidden),
+            &lane_order(&grid, &routes, &port_at, &choice.hidden),
         );
         let offsets = lane_offsets(&lanes, &grid);
-        let points = points_of(&grid, &offsets, &prepared.port_at, &routes);
+        let points = points_of(&grid, &offsets, &port_at, &routes);
         // What is drawn: whole lines, and of a line under only the pieces to its
         // holes, which can still cross something.
-        let mut drawn: Vec<(RelationId, Vec<Pos>)> = Vec::new();
+        let mut drawn: Vec<(usize, RelationId, Vec<Pos>)> = Vec::new();
         for (li, p) in &points {
             let rel = view.lines[*li].relation;
             if choice.hidden.contains(li) {
                 let hole = mousehole_of(p, String::new());
-                drawn.push((rel, hole.piece_a));
-                drawn.push((rel, hole.piece_b));
+                drawn.push((*li, rel, hole.piece_a));
+                drawn.push((*li, rel, hole.piece_b));
             } else {
-                drawn.push((rel, p.clone()));
+                drawn.push((*li, rel, p.clone()));
             }
         }
         let whole: Vec<&[Pos]> = points.values().map(Vec::as_slice).collect();
-        let mut cost = drawing_cost(&drawn, &whole, choice.hidden.len(), &keep_off);
+        let (mut cost, troubled, overlapping) =
+            drawing_cost(&drawn, &whole, choice.hidden.len(), &keep_off);
         cost.cosmetic += choice.unshared.len() as i64 * OWN_FRAME_POINT_COST;
         (
             cost,
@@ -1294,22 +1354,28 @@ fn build(
                 routes,
                 lanes,
                 offsets,
-                points,
+                port_at,
+                order,
+                troubled,
+                overlapping,
                 prepared,
             },
         )
     };
     // The neighbours of a choice, cheapest remedies first: a branch on a frame point
-    // of its own, another route, another lane, and last a line under or back up.
+    // of its own, another route, another lane, another order of the ports on a
+    // side, a port half a lane along its side, and last a line under or back up.
     let moves = |choice: &solve::Choice, drawing: &Drawing| -> Vec<solve::Choice> {
         let base = solve::Choice {
             lanes: drawing.lanes.clone(),
+            order: drawing.order.clone(),
             ..choice.clone()
         };
         let mut out = Vec::new();
-        for li in 0..n {
-            if !base.hidden.contains(&li)
-                && let Some(end) = shared_end(li, &base.unshared)
+        let troubled = &drawing.troubled;
+        for li in troubled {
+            if !base.hidden.contains(li)
+                && let Some(end) = shared_end(*li, &base.unshared)
             {
                 let mut c = base.clone();
                 c.unshared.insert(end);
@@ -1329,12 +1395,54 @@ fn build(
                 }
             }
         }
-        for (chan, order) in solve::lane_moves(&drawing.lanes) {
+        // Lanes, side orders and port shifts only where a line is in trouble:
+        // elsewhere they could only change looks for the worse.
+        let lanes_in_trouble: Lanes = drawing
+            .lanes
+            .iter()
+            .filter(|(_, users)| users.iter().any(|u| troubled.contains(u)))
+            .map(|(c, u)| (*c, u.clone()))
+            .collect();
+        for (chan, order) in solve::lane_moves(&lanes_in_trouble) {
             let mut c = base.clone();
             c.lanes.insert(chan, order);
             out.push(c);
         }
+        for (side, slots) in &drawing.order {
+            if !slots.iter().any(|(li, _)| troubled.contains(li)) {
+                continue;
+            }
+            for order in solve::insertion_moves(slots) {
+                let mut c = base.clone();
+                c.order.insert(*side, order);
+                out.push(c);
+            }
+        }
+        for (&(li, end), &(owner, _)) in &ends {
+            if owner == Owner::Frame
+                || base.hidden.contains(&li)
+                || !(drawing.overlapping.contains(&li) || base.shift.contains_key(&(li, end)))
+            {
+                continue;
+            }
+            let shifts: Vec<f32> = match base.shift.get(&(li, end)) {
+                Some(_) => vec![0.0],
+                None => vec![-PORT_SPACING / 2.0, PORT_SPACING / 2.0],
+            };
+            for by in shifts {
+                let mut c = base.clone();
+                if by == 0.0 {
+                    c.shift.remove(&(li, end));
+                } else {
+                    c.shift.insert((li, end), by);
+                }
+                out.push(c);
+            }
+        }
         for li in &automatic {
+            if !base.hidden.contains(li) && !troubled.contains(li) {
+                continue;
+            }
             let mut c = base.clone();
             if !c.hidden.remove(li) {
                 c.hidden.insert(*li);
@@ -1346,95 +1454,16 @@ fn build(
     let start = solve::Choice {
         route: vec![None; n],
         lanes: Lanes::new(),
+        order: SideOrder::new(),
+        shift: BTreeMap::new(),
         hidden: hidden.clone(),
         unshared: BTreeSet::new(),
     };
     let (choice, drawing) = solve::local_search(start, &mut evaluate, &moves, solve::BUDGET);
     hidden = choice.hidden;
-    port_at = drawing.prepared.port_at.clone();
+    port_at = drawing.port_at;
     let routes = drawing.routes;
     let offsets = drawing.offsets;
-    let drawn = drawing.points;
-    // Two lines of different relations that leave facing sides at one height toward
-    // different lanes would run along each other between the boxes and the lanes:
-    // the port of one of them moves half a lane along its side (where it has the
-    // most room), and the lines are routed again from there.
-    let mut nudged = BTreeSet::new();
-    let indices: Vec<usize> = drawn
-        .keys()
-        .copied()
-        .filter(|li| !hidden.contains(li))
-        .collect();
-    for (i, &li) in indices.iter().enumerate() {
-        for &lj in &indices[i + 1..] {
-            if view.lines[li].relation == view.lines[lj].relation {
-                continue;
-            }
-            let (p, q) = (&drawn[&li], &drawn[&lj]);
-            for (from, to) in overlap_stretches(p, q) {
-                let on_stem = |pts: &[Pos], line: usize| -> Option<(usize, End)> {
-                    let n = pts.len();
-                    let holds =
-                        |a: Pos, b: Pos| !overlap_stretches(&[a, b], &[from, to]).is_empty();
-                    if n >= 2 && holds(pts[0], pts[1]) {
-                        Some((line, End::A))
-                    } else if n >= 2 && holds(pts[n - 2], pts[n - 1]) {
-                        Some((line, End::B))
-                    } else {
-                        None
-                    }
-                };
-                let Some((line, end)) = on_stem(p, li).or_else(|| on_stem(q, lj)) else {
-                    continue;
-                };
-                let Some(&(owner, side)) = ends.get(&(line, end)) else {
-                    continue;
-                };
-                // A frame port is shared by the branches of a fanned-out relation.
-                if owner == Owner::Frame || !nudged.insert((line, end)) {
-                    continue;
-                }
-                let (Some(&(pos, s, chan)), Some(rect)) =
-                    (port_at.get(&(line, end)), port_rect(owner, side))
-                else {
-                    continue;
-                };
-                let (lo, hi) = range(rect, side);
-                let coord = |p: Pos| if side.is_horizontal() { p.y } else { p.x };
-                let others: Vec<f32> = ports
-                    .get(&(owner, side))
-                    .into_iter()
-                    .flatten()
-                    .filter(|(_, _, l, e)| (*l, *e) != (line, end))
-                    .filter_map(|(_, _, l, e)| port_at.get(&(*l, *e)))
-                    .map(|(p, _, _)| coord(*p))
-                    .collect();
-                let room = |v: f32| {
-                    v >= lo + PORT_SPACING / 2.0 - 0.01 && v <= hi - PORT_SPACING / 2.0 + 0.01
-                };
-                let space = |v: f32| {
-                    others
-                        .iter()
-                        .map(|o| (o - v).abs())
-                        .fold(f32::MAX, f32::min)
-                };
-                let at = coord(pos);
-                let best = [at - PORT_SPACING / 2.0, at + PORT_SPACING / 2.0]
-                    .into_iter()
-                    .filter(|v| room(*v))
-                    .max_by(|a, b| space(*a).total_cmp(&space(*b)).then(b.total_cmp(a)));
-                if let Some(v) = best {
-                    let p = if side.is_horizontal() {
-                        Pos::new(pos.x, v)
-                    } else {
-                        Pos::new(v, pos.y)
-                    };
-                    port_at.insert((line, end), (p, s, chan));
-                }
-            }
-        }
-    }
-
     let mut lines = Vec::new();
     let (shown, mut legend_keys, hole_labels) =
         shown_labels(project, view, project.label_limit, &hidden);
@@ -1705,7 +1734,14 @@ fn build(
         }
     }
     let area = frame.unwrap_or(bounds).expand(-8.0);
-    place_labels(&mut lines, &boxes, area, number_labels, &mut legend_keys);
+    place_labels(
+        &mut lines,
+        &boxes,
+        &keep_off,
+        area,
+        number_labels,
+        &mut legend_keys,
+    );
     // The legend goes below everything, as wide as the diagram (or a readable
     // minimum), with long texts wrapped.
     let legend_width = bounds.width().max(LEGEND_MIN_WIDTH) - 2.0 * PAD;
@@ -2424,25 +2460,35 @@ fn crossings_with(segs: &[(Pos, Pos)], segments: &Segments, skip: usize) -> usiz
     n
 }
 
-/// Ports, candidate routes and a first lane order for one set of hidden lines and
-/// branches on their own frame point.
+/// The candidate routes of every line for one set of branches on their own frame
+/// point.
 struct Prepared {
-    port_at: PortAt,
     candidates: Vec<Vec<Route>>,
 }
 
 /// What was prepared for each set of frame ends on a frame point of their own.
 type PreparedFor = BTreeMap<Vec<(usize, End)>, Rc<Prepared>>;
 
-/// A choice as drawn: the routes taken, the lanes, their offsets and every line's
-/// points, with what they were prepared from.
+/// A choice as drawn: the routes taken, the lanes and their offsets, the ports and
+/// the slot order of every side, with what they were prepared from.
 struct Drawing {
     routes: BTreeMap<usize, Route>,
     lanes: Lanes,
     offsets: BTreeMap<(usize, Chan), f32>,
-    points: BTreeMap<usize, Vec<Pos>>,
+    port_at: PortAt,
+    order: SideOrder,
+    /// The lines in a crossing, an overlap, a run through title or band, or a
+    /// step: the ones a move may still help.
+    troubled: BTreeSet<usize>,
+    /// The lines running along another one: what a port moved half a lane cures.
+    overlapping: BTreeSet<usize>,
     prepared: Rc<Prepared>,
 }
+
+/// Ports and side orders by what they depend on: the side orders, the shifts and
+/// the frame ends on a point of their own.
+type PortsCache =
+    BTreeMap<(SideOrder, Vec<((usize, End), i64)>, Vec<(usize, End)>), (PortAt, SideOrder)>;
 
 /// Every routed line's points for the given routes and lane offsets.
 fn points_of(
@@ -2464,9 +2510,9 @@ fn points_of(
 /// How many candidate routes a line gets at most.
 const ROUTE_CHOICES: usize = 4;
 
-/// The routes a line may take: straight across empty cells when it can (then
-/// nothing else), else one bend where its headings meet, the cheapest run through
-/// the channels, and runs that each avoid one channel of that.
+/// The routes a line may take: straight across empty cells when it can, else one
+/// bend where its headings meet, the cheapest run through the channels, and runs
+/// that each avoid one channel of that.
 fn alternatives(
     grid: &Grid,
     boxes: &[Rect],
@@ -2483,11 +2529,13 @@ fn alternatives(
     };
     let fa = (a.0, heading(li, End::A, a.1));
     let fb = (b.0, heading(li, End::B, b.1));
-    if straight(fa, fb, boxes) {
-        return vec![Route::Straight];
-    }
     let others = obstacles(grid, segments, li);
     let best = route(grid, (a.0, a.2), (b.0, b.2), &others, None);
+    // Facing ports: the straight line, and the channel run for when the ports
+    // move apart.
+    if straight(fa, fb, boxes) {
+        return vec![Route::Straight, Route::Chans(best)];
+    }
     let mut out = Vec::new();
     if let Some(corner) = elbow(fa, fb, boxes) {
         out.push(Route::Elbow(corner));
@@ -2514,13 +2562,15 @@ fn alternatives(
 /// length the second, counted on the whole routes, so that going under earns a
 /// line nothing on looks.
 fn drawing_cost(
-    drawn: &[(RelationId, Vec<Pos>)],
+    drawn: &[(usize, RelationId, Vec<Pos>)],
     whole: &[&[Pos]],
     holes: usize,
     keep_off: &[Rect],
-) -> solve::Cost {
+) -> (solve::Cost, BTreeSet<usize>, BTreeSet<usize>) {
     let mut tangle = holes as i64 * HOLE_COST;
     let mut cosmetic = 0i64;
+    let mut troubled = BTreeSet::new();
+    let mut overlapping = BTreeSet::new();
     for p in whole {
         cosmetic += p.len().saturating_sub(2) as i64 * 10;
         cosmetic += (p.windows(2).map(|w| w[0].dist(w[1])).sum::<f32>() / 20.0) as i64;
@@ -2531,14 +2581,23 @@ fn drawing_cost(
             .count();
         cosmetic += steps as i64 * 50;
     }
-    for (i, (ra, p)) in drawn.iter().enumerate() {
-        for (rb, q) in &drawn[i + 1..] {
+    for (i, (la, ra, p)) in drawn.iter().enumerate() {
+        for (lb, rb, q) in &drawn[i + 1..] {
             if ra == rb {
                 continue;
             }
             let crossings = cross_points(p, q).len() + cross_points(q, p).len();
+            let overlaps = overlap_stretches(p, q).len();
+            if crossings + overlaps > 0 {
+                troubled.insert(*la);
+                troubled.insert(*lb);
+            }
+            if overlaps > 0 {
+                overlapping.insert(*la);
+                overlapping.insert(*lb);
+            }
             tangle += crossings as i64 * CROSSING_COST;
-            tangle += overlap_stretches(p, q).len() as i64 * OVERLAP_COST;
+            tangle += overlaps as i64 * OVERLAP_COST;
         }
         let through = p
             .windows(2)
@@ -2548,9 +2607,12 @@ fn drawing_cost(
                     .any(|r| segment_meets(w[0], w[1], &r.expand(-0.5)))
             })
             .count();
+        if through > 0 {
+            troubled.insert(*la);
+        }
         tangle += through as i64 * THROUGH_COST;
     }
-    solve::Cost { tangle, cosmetic }
+    (solve::Cost { tangle, cosmetic }, troubled, overlapping)
 }
 
 /// Routes every line with two ports, `passes` times over all of them: a line starts
@@ -2612,43 +2674,6 @@ fn route_lines(
             routes.insert(li, route);
         }
     }
-}
-
-/// The order of a port along its side: from which direction its line comes (before
-/// the side, straight, after it), then how near the side the line's lane runs (of
-/// lines from the same direction the nearest lane turns in first), then where it
-/// comes from. Ports in this order never cross on their way in.
-type OrderKey = (i8, i64, i64);
-
-/// The order key of every port, from the lines as drawn.
-fn arrival_keys(
-    drawn: &BTreeMap<usize, Vec<Pos>>,
-    ends: &BTreeMap<(usize, End), (Owner, Side)>,
-) -> BTreeMap<(usize, End), OrderKey> {
-    let mut out = BTreeMap::new();
-    for (&(li, end), &(_, side)) in ends {
-        let Some(points) = drawn.get(&li) else {
-            continue;
-        };
-        let along = |p: &Pos| if side.is_horizontal() { p.y } else { p.x };
-        let across = |p: &Pos| if side.is_horizontal() { p.x } else { p.y };
-        let tenths = |v: f32| (v * 10.0).round() as i64;
-        let seq: Vec<&Pos> = match end {
-            End::A => points.iter().collect(),
-            End::B => points.iter().rev().collect(),
-        };
-        let key = match seq[..] {
-            [port, turn, far, ..] => {
-                let class = (along(far) - along(port)).signum() as i8;
-                let stem = tenths((across(turn) - across(port)).abs());
-                (class, -i64::from(class) * stem, tenths(along(far)))
-            }
-            [_, other] => (0, 0, tenths(along(other))),
-            _ => continue,
-        };
-        out.insert((li, end), key);
-    }
-    out
 }
 
 /// Shortest path with few bends and few crossings over the lattice of gap channels.
@@ -3051,9 +3076,9 @@ struct LabelSpot {
 }
 
 /// Puts every label of a routed line where it fits: on a stretch of the line
-/// between crossings, inside `area`, that holds the text clear of boxes, of other
-/// lines, of the pictures at line ends, of the labels at mouseholes and of the
-/// labels placed before it; a stretch with room before one
+/// between crossings, inside `area`, that holds the text clear of boxes, of the
+/// title and the bands (`keep_off`), of other lines, of the pictures at line ends,
+/// of the labels at mouseholes and of the labels placed before it; a stretch with room before one
 /// without, a horizontal one before a vertical one, the middle of the stretch
 /// before a spot slid toward one end, the usual side of the line before the other,
 /// the longest first. When `number`, a label with no clear place takes a legend
@@ -3062,6 +3087,7 @@ struct LabelSpot {
 fn place_labels(
     lines: &mut [LineGeom],
     boxes: &[Rect],
+    keep_off: &[Rect],
     area: Rect,
     number: bool,
     legend: &mut Vec<(String, String)>,
@@ -3078,16 +3104,14 @@ fn place_labels(
             (g.relation, segs)
         })
         .collect();
-    // The pictures at the ends of lines with a look and the labels at mouseholes
-    // take room like boxes do.
-    let mut placed: Vec<Rect> = lines
-        .iter()
-        .flat_map(|g| {
-            let mut taken = crate::scene::end_picture_rects(g);
-            taken.extend(crate::scene::hole_label_rects(g));
-            taken
-        })
-        .collect();
+    // The title and the bands, the pictures at the ends of lines with a look and
+    // the labels at mouseholes take room like boxes do.
+    let mut placed: Vec<Rect> = keep_off.to_vec();
+    placed.extend(lines.iter().flat_map(|g| {
+        let mut taken = crate::scene::end_picture_rects(g);
+        taken.extend(crate::scene::hole_label_rects(g));
+        taken
+    }));
     for (li, geom) in lines.iter_mut().enumerate() {
         if geom.tip.is_some() || geom.mousehole.is_some() || geom.text.is_empty() {
             continue;
@@ -3282,13 +3306,13 @@ mod tests {
         let (mut lines, boxes) = boxed_in("dashboard");
         let area = Rect::from_min_size(Pos::new(-100.0, -100.0), 400.0, 400.0);
         let mut legend = Vec::new();
-        place_labels(&mut lines, &boxes, area, true, &mut legend);
+        place_labels(&mut lines, &boxes, &[], area, true, &mut legend);
         assert_eq!(lines[0].text, "[1]");
         assert_eq!(legend, vec![("[1]".to_owned(), "dashboard".to_owned())]);
         // With shortening off the text stays, at the best place there is.
         let (mut lines, boxes) = boxed_in("dashboard");
         let mut legend = Vec::new();
-        place_labels(&mut lines, &boxes, area, false, &mut legend);
+        place_labels(&mut lines, &boxes, &[], area, false, &mut legend);
         assert_eq!(lines[0].text, "dashboard");
         assert!(legend.is_empty());
         // A label that already has a legend entry under its short text keeps the
@@ -3296,7 +3320,7 @@ mod tests {
         let (mut lines, boxes) = boxed_in("dash");
         lines[0].full_text = "dashboard of everything".to_owned();
         let mut legend = vec![("dash".to_owned(), "dashboard of everything".to_owned())];
-        place_labels(&mut lines, &boxes, area, true, &mut legend);
+        place_labels(&mut lines, &boxes, &[], area, true, &mut legend);
         assert_eq!(lines[0].text, "[1]");
         assert_eq!(
             legend,
