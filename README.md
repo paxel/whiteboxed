@@ -1,5 +1,13 @@
 # whiteboxed
 
+[![CI](https://github.com/paxel/whiteboxed/actions/workflows/ci.yml/badge.svg?branch=summer)](https://github.com/paxel/whiteboxed/actions/workflows/ci.yml)
+[![Security](https://github.com/paxel/whiteboxed/actions/workflows/security.yml/badge.svg?branch=summer)](https://github.com/paxel/whiteboxed/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/paxel/whiteboxed)](https://github.com/paxel/whiteboxed/releases/latest)
+[![crates.io](https://img.shields.io/crates/v/whiteboxed.svg)](https://crates.io/crates/whiteboxed)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success)](https://github.com/paxel/whiteboxed/blob/summer/src/lib.rs)
+[![panic-free](https://img.shields.io/badge/panic--free-linted-success)](https://github.com/paxel/whiteboxed/blob/summer/src/lib.rs)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A WYSIWYG editor for [arc42](https://arc42.org) building-block views — draw.io for
 architects who don't want to push pixels.
 
