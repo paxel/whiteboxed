@@ -375,12 +375,16 @@ fn cross_points(h: &[Pos], v: &[Pos]) -> Vec<Pos> {
     let inside = |c: f32, a: f32, b: f32| c > a.min(b) + 0.5 && c < a.max(b) - 0.5;
     let mut out = Vec::new();
     for hw in h.windows(2) {
-        let (hp, hq) = (hw[0], hw[1]);
+        let &[hp, hq] = hw else {
+            continue;
+        };
         if (hp.y - hq.y).abs() >= 0.01 {
             continue;
         }
         for vw in v.windows(2) {
-            let (vp, vq) = (vw[0], vw[1]);
+            let &[vp, vq] = vw else {
+                continue;
+            };
             if (vp.x - vq.x).abs() >= 0.01 {
                 continue;
             }
@@ -412,7 +416,7 @@ pub fn overlaps(layout: &Layout) -> Vec<Overlap> {
 fn line_overlaps(lines: &[LineGeom]) -> Vec<Overlap> {
     let mut out = Vec::new();
     for (a, p) in lines.iter().enumerate() {
-        for (b, q) in lines.iter().enumerate().skip(a + 1) {
+        for (b, q) in lines.iter().enumerate().skip(a.saturating_add(1)) {
             if p.relation == q.relation {
                 continue;
             }
@@ -431,8 +435,8 @@ fn line_overlaps(lines: &[LineGeom]) -> Vec<Overlap> {
 /// The stretches where a segment of `p` and a segment of `q` lie on one line and
 /// share more than a point.
 fn overlap_stretches(p: &[Pos], q: &[Pos]) -> Vec<(Pos, Pos)> {
-    let horizontal = |w: &[Pos]| (w[0].y - w[1].y).abs() < 0.01;
-    let vertical = |w: &[Pos]| (w[0].x - w[1].x).abs() < 0.01;
+    let horizontal = |a: Pos, b: Pos| (a.y - b.y).abs() < 0.01;
+    let vertical = |a: Pos, b: Pos| (a.x - b.x).abs() < 0.01;
     let shared = |a0: f32, a1: f32, b0: f32, b1: f32| {
         let lo = a0.min(a1).max(b0.min(b1));
         let hi = a0.max(a1).min(b0.max(b1));
@@ -440,17 +444,23 @@ fn overlap_stretches(p: &[Pos], q: &[Pos]) -> Vec<(Pos, Pos)> {
     };
     let mut out = Vec::new();
     for pw in p.windows(2) {
+        let &[p0, p1] = pw else {
+            continue;
+        };
         for qw in q.windows(2) {
-            if horizontal(pw) && horizontal(qw) && (pw[0].y - qw[0].y).abs() < 0.5 {
-                if let Some((lo, hi)) = shared(pw[0].x, pw[1].x, qw[0].x, qw[1].x) {
-                    out.push((Pos::new(lo, pw[0].y), Pos::new(hi, pw[0].y)));
+            let &[q0, q1] = qw else {
+                continue;
+            };
+            if horizontal(p0, p1) && horizontal(q0, q1) && (p0.y - q0.y).abs() < 0.5 {
+                if let Some((lo, hi)) = shared(p0.x, p1.x, q0.x, q1.x) {
+                    out.push((Pos::new(lo, p0.y), Pos::new(hi, p0.y)));
                 }
-            } else if vertical(pw)
-                && vertical(qw)
-                && (pw[0].x - qw[0].x).abs() < 0.5
-                && let Some((lo, hi)) = shared(pw[0].y, pw[1].y, qw[0].y, qw[1].y)
+            } else if vertical(p0, p1)
+                && vertical(q0, q1)
+                && (p0.x - q0.x).abs() < 0.5
+                && let Some((lo, hi)) = shared(p0.y, p1.y, q0.y, q1.y)
             {
-                out.push((Pos::new(pw[0].x, lo), Pos::new(pw[0].x, hi)));
+                out.push((Pos::new(p0.x, lo), Pos::new(p0.x, hi)));
             }
         }
     }
@@ -460,7 +470,10 @@ fn overlap_stretches(p: &[Pos], q: &[Pos]) -> Vec<(Pos, Pos)> {
 /// What two polylines cost each other: a crossing counts once, a stretch they share
 /// twice.
 fn tangles(p: &[Pos], q: &[Pos]) -> usize {
-    cross_points(p, q).len() + cross_points(q, p).len() + 2 * overlap_stretches(p, q).len()
+    cross_points(p, q)
+        .len()
+        .saturating_add(cross_points(q, p).len())
+        .saturating_add(overlap_stretches(p, q).len().saturating_mul(2))
 }
 
 /// Where a relation wants its port on a side, the line ends that share it, and
@@ -517,6 +530,18 @@ struct Grid {
     height: f32,
 }
 
+impl Grid {
+    /// The left edge and the width of column `c`.
+    fn col(&self, c: usize) -> Option<(f32, f32)> {
+        Some((*self.col_x.get(c)?, *self.col_w.get(c)?))
+    }
+
+    /// The top edge and the height of row `r`.
+    fn row(&self, r: usize) -> Option<(f32, f32)> {
+        Some((*self.row_y.get(r)?, *self.row_h.get(r)?))
+    }
+}
+
 pub fn layout(project: &Project, view: &DiagramView) -> Layout {
     let bundled;
     let view = if project.bundle {
@@ -558,30 +583,34 @@ fn widened_gaps(layout: &Layout, grid: &Grid) -> (Vec<f32>, Vec<f32>) {
             continue;
         }
         for w in line.points.windows(2) {
-            if (w[0].x - w[1].x).abs() < 0.01 {
-                if let Some(v) = within(&grid.vspan, w[0].x) {
-                    along_v[v].insert(li);
+            let &[p, q] = w else {
+                continue;
+            };
+            if (p.x - q.x).abs() < 0.01 {
+                if let Some(along) = within(&grid.vspan, p.x).and_then(|v| along_v.get_mut(v)) {
+                    along.insert(li);
                 }
-            } else if (w[0].y - w[1].y).abs() < 0.01
-                && let Some(h) = within(&grid.hspan, w[0].y)
+            } else if (p.y - q.y).abs() < 0.01
+                && let Some(along) = within(&grid.hspan, p.y).and_then(|h| along_h.get_mut(h))
             {
-                along_h[h].insert(li);
+                along.insert(li);
             }
         }
     }
-    for (v, lines) in along_v.iter().enumerate() {
-        gaps[v] = gaps[v].max((lines.len() as f32 + 1.0) * LANE);
+    for (gap, lines) in gaps.iter_mut().zip(&along_v) {
+        *gap = gap.max((lines.len() as f32 + 1.0) * LANE);
     }
-    for (h, lines) in along_h.iter().enumerate() {
-        hgaps[h] = hgaps[h].max((lines.len() as f32 + 1.0) * LANE);
+    for (gap, lines) in hgaps.iter_mut().zip(&along_h) {
+        *gap = gap.max((lines.len() as f32 + 1.0) * LANE);
     }
     let mut need = |x: f32, width: f32| {
-        if let Some(v) = grid
+        if let Some(gap) = grid
             .vspan
             .iter()
             .position(|(a, b)| x >= *a - 0.5 && x <= *b + 0.5)
+            .and_then(|v| gaps.get_mut(v))
         {
-            gaps[v] = gaps[v].max(width);
+            *gap = gap.max(width);
         }
     };
     for line in &layout.lines {
@@ -695,12 +724,15 @@ fn build(
         .collect();
     // Outer groups first, so the inner ones are drawn on top of them.
     groups.sort_by_key(|(_, _, (near, far))| {
-        std::cmp::Reverse((far.col - near.col + 1) * (far.row - near.row + 1))
+        let cols = far.col.saturating_sub(near.col).saturating_add(1);
+        let rows = far.row.saturating_sub(near.row).saturating_add(1);
+        std::cmp::Reverse(cols.saturating_mul(rows))
     });
     let mut grid_cells = sizes.clone();
     for (k, (_, _, (near, far))) in groups.iter().enumerate() {
         for (j, corner) in [near, far].into_iter().enumerate() {
-            let phantom = BlockId(u64::MAX - (2 * k + j) as u64);
+            let index = k.saturating_mul(2).saturating_add(j) as u64;
+            let phantom = BlockId(u64::MAX.saturating_sub(index));
             grid_cells.insert(phantom, (*corner, 0.0, 0.0));
         }
     }
@@ -712,8 +744,19 @@ fn build(
     // Group frames first, so they lie behind the shapes. A frame sits in the gaps
     // around its cells, further out the more groups it holds.
     for (id, b, (near, far)) in &groups {
-        let (c0, c1) = (grid.cols[&near.col], grid.cols[&far.col]);
-        let (r0, r1) = (grid.rows[&near.row], grid.rows[&far.row]);
+        let (Some(&c0), Some(&c1), Some(&r0), Some(&r1)) = (
+            grid.cols.get(&near.col),
+            grid.cols.get(&far.col),
+            grid.rows.get(&near.row),
+            grid.rows.get(&far.row),
+        ) else {
+            continue;
+        };
+        let (Some((x0, _)), Some((x1, w1)), Some((y0, _)), Some((y1, h1))) =
+            (grid.col(c0), grid.col(c1), grid.row(r0), grid.row(r1))
+        else {
+            continue;
+        };
         let holds = groups
             .iter()
             .filter(|(o, _, cells)| {
@@ -724,11 +767,8 @@ fn build(
             .count() as f32;
         let inset = (GROUP_INSET + holds * GROUP_STEP).min(GAP / 2.0 - 6.0);
         let rect = Rect {
-            min: Pos::new(grid.col_x[c0] - inset, grid.row_y[r0] - inset),
-            max: Pos::new(
-                grid.col_x[c1] + grid.col_w[c1] + inset,
-                grid.row_y[r1] + grid.row_h[r1] + inset,
-            ),
+            min: Pos::new(x0 - inset, y0 - inset),
+            max: Pos::new(x1 + w1 + inset, y1 + h1 + inset),
         };
         rects.insert(*id, (rect, (c0, c1), (r0, r1)));
         blocks.push(BlockGeom {
@@ -751,11 +791,13 @@ fn build(
         let (Some(b), Some((cell, w, h))) = (project.blocks.get(id), sizes.get(id)) else {
             continue;
         };
-        let (ci, ri) = (grid.cols[&cell.col], grid.rows[&cell.row]);
-        let center = Pos::new(
-            grid.col_x[ci] + grid.col_w[ci] / 2.0,
-            grid.row_y[ri] + grid.row_h[ri] / 2.0,
-        );
+        let (Some(&ci), Some(&ri)) = (grid.cols.get(&cell.col), grid.rows.get(&cell.row)) else {
+            continue;
+        };
+        let (Some((x, w_col)), Some((y, h_row))) = (grid.col(ci), grid.row(ri)) else {
+            continue;
+        };
+        let center = Pos::new(x + w_col / 2.0, y + h_row / 2.0);
         let rect = Rect::from_center(center, *w, *h);
         rects.insert(*id, (rect, (ci, ci), (ri, ri)));
         let (picture, caption) = match look_parts.get(id) {
@@ -849,18 +891,20 @@ fn build(
         let look = project.looks.get(own?.look.as_ref()?)?.clone();
         let (pw, ph) = look.size();
         let scale = MIN_H / ph;
-        let parts = [0.0, 0.25, 0.75, 1.0];
-        let slices = (0..3)
-            .flat_map(|row| (0..3).map(move |col| (row, col)))
-            .map(|(row, col)| {
-                let part = (
-                    parts[col],
-                    parts[row],
-                    parts[col + 1] - parts[col],
-                    parts[row + 1] - parts[row],
-                );
-                crate::look::slice(look.svg(), part).into()
+        let parts: [f32; 4] = [0.0, 0.25, 0.75, 1.0];
+        // Start and size of each of the three slices along a side.
+        let spans: Vec<(f32, f32)> = parts
+            .windows(2)
+            .filter_map(|w| match *w {
+                [a, b] => Some((a, b - a)),
+                _ => None,
             })
+            .collect();
+        let spans = &spans;
+        let slices = spans
+            .iter()
+            .flat_map(|&(y, h)| spans.iter().map(move |&(x, w)| (x, y, w, h)))
+            .map(|part| crate::look::slice(look.svg(), part).into())
             .collect();
         Some(FrameLook {
             corner: (pw * scale / 4.0, ph * scale / 4.0),
@@ -993,7 +1037,7 @@ fn build(
                 .iter()
                 .map(|w| match w.2.as_slice() {
                     [one] => *one,
-                    _ => (usize::MAX - w.1.0 as usize, End::A),
+                    _ => (usize::MAX.saturating_sub(w.1.0 as usize), End::A),
                 })
                 .collect();
             // Slots the order knows take the ranks they hold among the wishes, in
@@ -1008,21 +1052,33 @@ fn build(
             let mut ranks: Vec<usize> = (0..wanted.len()).filter(|i| known.contains(i)).collect();
             ranks.sort_unstable();
             for (rank, i) in ranks.into_iter().zip(known) {
-                sequence[rank] = i;
+                if let Some(slot) = sequence.get_mut(rank) {
+                    *slot = i;
+                }
             }
-            let at: Vec<f32> = sequence.iter().map(|i| wanted[*i].0).collect();
+            let at: Vec<f32> = sequence
+                .iter()
+                .filter_map(|i| wanted.get(*i))
+                .map(|w| w.0)
+                .collect();
             let gaps = vec![PORT_SPACING; wanted.len()];
             let (min, max) = (lo + PORT_SPACING / 2.0, hi - PORT_SPACING / 2.0);
             let placed = spread_by(&at, min, max, &gaps);
             for (i, v) in sequence.iter().zip(placed) {
-                for member in &wanted[*i].2 {
+                let Some(slot) = wanted.get(*i) else {
+                    continue;
+                };
+                for member in &slot.2 {
                     let shifted = v + shift.get(member).copied().unwrap_or(0.0);
                     out.insert(*member, shifted.clamp(min.min(max), max));
                 }
             }
             orders.insert(
                 (*owner, *side),
-                sequence.iter().map(|i| names[*i]).collect(),
+                sequence
+                    .iter()
+                    .filter_map(|i| names.get(*i).copied())
+                    .collect(),
             );
         }
         (out, orders)
@@ -1119,19 +1175,19 @@ fn build(
                         continue;
                     };
                     let chan = match side {
-                        Side::Right => Chan::V(c1 + 1),
+                        Side::Right => Chan::V(c1.saturating_add(1)),
                         Side::Left => Chan::V(*c0),
                         Side::Top => Chan::H(*r0),
-                        Side::Bottom => Chan::H(r1 + 1),
+                        Side::Bottom => Chan::H(r1.saturating_add(1)),
                     };
                     (port_rect(*owner, *side).unwrap_or(*rect), chan)
                 }
                 Owner::Frame => {
                     let chan = match side {
                         Side::Left => Chan::V(0),
-                        Side::Right => Chan::V(grid.vx.len() - 1),
+                        Side::Right => Chan::V(grid.vx.len().saturating_sub(1)),
                         Side::Top => Chan::H(0),
-                        Side::Bottom => Chan::H(grid.hy.len() - 1),
+                        Side::Bottom => Chan::H(grid.hy.len().saturating_sub(1)),
                     };
                     (bounds, chan)
                 }
@@ -1170,13 +1226,16 @@ fn build(
     // Lines through mouseholes: as told, or when a straight line from end to end
     // would run over more than HOLE_OVER boxes. Their route is not drawn, so the
     // other lines neither avoid it nor leave it a lane.
-    let mut hidden: BTreeSet<usize> = (0..view.lines.len())
-        .filter(|li| {
+    let mut hidden: BTreeSet<usize> = view
+        .lines
+        .iter()
+        .enumerate()
+        .filter(|(li, line)| {
             let (Some(a), Some(b)) = (port_at.get(&(*li, End::A)), port_at.get(&(*li, End::B)))
             else {
                 return false;
             };
-            match view.lines[*li].mousehole {
+            match line.mousehole {
                 crate::model::MouseholeMode::Always => true,
                 crate::model::MouseholeMode::Never => false,
                 crate::model::MouseholeMode::Automatic => {
@@ -1184,6 +1243,7 @@ fn build(
                 }
             }
         })
+        .map(|(li, _)| li)
         .collect();
     let n = view.lines.len();
     // Settled: lines told to go under, and lines whose straight line runs over too
@@ -1193,13 +1253,17 @@ fn build(
     // branches of a fanned-out relation leave the shared frame point for one of
     // their own, in line with their box.
     let forced = hidden.clone();
-    let automatic: BTreeSet<usize> = (0..n)
-        .filter(|li| {
+    let automatic: BTreeSet<usize> = view
+        .lines
+        .iter()
+        .enumerate()
+        .filter(|(li, line)| {
             !forced.contains(li)
-                && view.lines[*li].mousehole == crate::model::MouseholeMode::Automatic
+                && line.mousehole == crate::model::MouseholeMode::Automatic
                 && port_at.contains_key(&(*li, End::A))
                 && port_at.contains_key(&(*li, End::B))
         })
+        .map(|(li, _)| li)
         .collect();
     // The frame end of a branch that still shares its frame point with another
     // branch of its relation.
@@ -1208,16 +1272,17 @@ fn build(
             .iter()
             .find(|((l, _), (owner, _))| *l == li && *owner == Owner::Frame)
             .map(|(key, _)| *key)?;
-        let ViewEnd::Frame { side, .. } = view.lines[li].end(end) else {
+        let line = view.lines.get(li)?;
+        let ViewEnd::Frame { side, .. } = line.end(end) else {
             return None;
         };
-        let rel = view.lines[li].relation;
+        let rel = line.relation;
         let shares = !unshared.contains(&(l, end))
             && ends.iter().any(|((lj, ej), (owner, sj))| {
                 *lj != li
                     && *owner == Owner::Frame
                     && sj == side
-                    && view.lines[*lj].relation == rel
+                    && view.lines.get(*lj).is_some_and(|l| l.relation == rel)
                     && !unshared.contains(&(*lj, *ej))
             });
         shares.then_some((l, end))
@@ -1324,12 +1389,12 @@ fn build(
             .iter()
             .enumerate()
             .filter(|(_, c)| !c.is_empty())
-            .map(|(li, c)| {
+            .filter_map(|(li, c)| {
                 let wanted = choice.route.get(li).and_then(|r| r.as_ref());
                 let pick = wanted
-                    .and_then(|r| c.iter().position(|k| k == r))
-                    .unwrap_or(0);
-                (li, resolve(li, &c[pick], &port_at, c))
+                    .and_then(|r| c.iter().find(|k| *k == r))
+                    .or_else(|| c.first())?;
+                Some((li, resolve(li, pick, &port_at, c)))
             })
             .collect();
         let lanes = solve::reconcile(
@@ -1342,7 +1407,9 @@ fn build(
         // holes, which can still cross something.
         let mut drawn: Vec<(usize, RelationId, Vec<Pos>)> = Vec::new();
         for (li, p) in &points {
-            let rel = view.lines[*li].relation;
+            let Some(rel) = view.lines.get(*li).map(|l| l.relation) else {
+                continue;
+            };
             if choice.hidden.contains(li) {
                 let hole = mousehole_of(p, String::new());
                 drawn.push((*li, rel, hole.piece_a));
@@ -1354,7 +1421,9 @@ fn build(
         let whole: Vec<&[Pos]> = points.values().map(Vec::as_slice).collect();
         let (mut cost, troubled, overlapping) =
             drawing_cost(&drawn, &whole, choice.hidden.len(), &keep_off);
-        cost.cosmetic += choice.unshared.len() as i64 * OWN_FRAME_POINT_COST;
+        cost.cosmetic = cost
+            .cosmetic
+            .saturating_add((choice.unshared.len() as i64).saturating_mul(OWN_FRAME_POINT_COST));
         (
             cost,
             Drawing {
@@ -1397,8 +1466,10 @@ fn build(
             for candidate in candidates {
                 if Some(candidate) != now {
                     let mut c = base.clone();
-                    c.route[li] = Some(candidate.clone());
-                    out.push(c);
+                    if let Some(route) = c.route.get_mut(li) {
+                        *route = Some(candidate.clone());
+                        out.push(c);
+                    }
                 }
             }
         }
@@ -1482,10 +1553,12 @@ fn build(
         let Some((p, _, _)) = port_at.get(&(li, end)) else {
             continue;
         };
-        if owner == Owner::Frame {
+        if owner == Owner::Frame
+            && let Some(line) = view.lines.get(li)
+        {
             let along = if side.is_horizontal() { p.y } else { p.x };
             groups
-                .entry((view.lines[li].relation, side))
+                .entry((line.relation, side))
                 .or_default()
                 .push((li, (along * 10.0).round() as i64));
         }
@@ -1498,7 +1571,11 @@ fn build(
             continue;
         }
         for (li, along) in members {
-            let k = spots.iter().position(|s| s == along).unwrap_or(0) + 1;
+            let k = spots
+                .iter()
+                .position(|s| s == along)
+                .unwrap_or(0)
+                .saturating_add(1);
             multiplied.insert(*li, (k, spots.len()));
         }
     }
@@ -1535,7 +1612,8 @@ fn build(
                 }
                 let mut geom = build_line(line, LineKind::Routed, points, None, None, look);
                 if hidden.contains(&li) {
-                    let mut hole = mousehole_of(&geom.points, hole_labels[li].clone());
+                    let label = hole_labels.get(li).cloned().unwrap_or_default();
+                    let mut hole = mousehole_of(&geom.points, label);
                     (hole.portal_a, hole.portal_b) = portals(project, line);
                     geom.mousehole = Some(hole);
                     geom.label_at = geom.mousehole.as_ref().map_or(geom.label_at, |m| m.a);
@@ -1593,10 +1671,16 @@ fn build(
             if geom.mousehole.is_some() || geom.tip.is_some() {
                 continue;
             }
+            let Some(view_line) = view.lines.get(li) else {
+                continue;
+            };
             let (mut along, mut entry, mut exit) = (0.0, None, None);
             for w in geom.points.windows(2) {
-                let len = w[0].dist(w[1]);
-                if let Some((t0, t1)) = clip_params(w[0], w[1], &span) {
+                let &[p, q] = w else {
+                    continue;
+                };
+                let len = p.dist(q);
+                if let Some((t0, t1)) = clip_params(p, q, &span) {
                     entry.get_or_insert(along + t0 * len);
                     exit = Some(along + t1 * len);
                 }
@@ -1617,11 +1701,11 @@ fn build(
                 .filter(|(k, _)| k.starts_with('['))
                 .count();
             let full = geom.full_text.trim().to_owned();
-            let short = view.lines[li].short.clone();
+            let short = view_line.short.clone();
             let key = band_numbers
                 .entry(geom.relation)
                 .or_insert_with(|| {
-                    let key = format!("[{}]", numbered + 1);
+                    let key = format!("[{}]", numbered.saturating_add(1));
                     // A short label's entry explains the number from now on.
                     let under_short = legend_keys
                         .iter_mut()
@@ -1630,7 +1714,7 @@ fn build(
                         Some(entry) => entry.0 = key.clone(),
                         None => {
                             let entry = if full.is_empty() {
-                                ends_of(project, &view.lines[li])
+                                ends_of(project, view_line)
                             } else {
                                 full
                             };
@@ -1649,9 +1733,9 @@ fn build(
                 portal_a: None,
                 portal_b: None,
             };
-            (hole.portal_a, hole.portal_b) = portals(project, &view.lines[li]);
+            (hole.portal_a, hole.portal_b) = portals(project, view_line);
             geom.label_at = hole.a;
-            geom.text = view.lines[li].short.clone();
+            geom.text = view_line.short.clone();
             geom.mousehole = Some(hole);
         }
     }
@@ -1682,8 +1766,8 @@ fn build(
                 .filter(|(_, v)| (v * 10.0).round() as i64 == spot)
                 .map(|(li, _)| *li)
                 .min();
-            if let Some(li) = first {
-                lines[li].frame_named = true;
+            if let Some(g) = first.and_then(|li| lines.get_mut(li)) {
+                g.frame_named = true;
             }
         }
     }
@@ -1700,7 +1784,12 @@ fn build(
         .flat_map(|(li, g)| {
             g.drawn()
                 .into_iter()
-                .flat_map(|piece| piece.windows(2).map(|w| (li, w[0], w[1])))
+                .flat_map(|piece| {
+                    piece.windows(2).filter_map(move |w| match *w {
+                        [a, b] => Some((li, a, b)),
+                        _ => None,
+                    })
+                })
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -1736,8 +1825,9 @@ fn build(
             let room = |rows: &Vec<Vec<(f32, f32)>>, row: usize, n: usize, walls: bool| {
                 let band = crate::scene::name_rows_rect(p, side, row, n, lo, hi);
                 let mut blocked: Vec<(f32, f32)> = rows
-                    [row.min(rows.len())..(row + n).min(rows.len())]
                     .iter()
+                    .skip(row)
+                    .take(n)
                     .flatten()
                     .map(|(a, b)| (a - NAME_GAP, b + NAME_GAP))
                     .collect();
@@ -1792,8 +1882,11 @@ fn build(
             let mut found = fit(&rows, &name, NAME_ROWS, true);
             if found.is_none() && number_labels && !tagged.contains(&li) {
                 // The legend number of the partner: the one it has, else a new one.
-                let partner = [&view.lines[li].a, &view.lines[li].b]
+                let partner = view
+                    .lines
+                    .get(li)
                     .into_iter()
+                    .flat_map(|l| [&l.a, &l.b])
                     .find_map(|end| match end {
                         ViewEnd::Frame { partner, .. } => Some(partner.clone()),
                         _ => None,
@@ -1809,7 +1902,7 @@ fn build(
                             .iter()
                             .filter(|(k, _)| k.starts_with('['))
                             .count();
-                        let key = format!("[{}]", numbered + 1);
+                        let key = format!("[{}]", numbered.saturating_add(1));
                         legend_keys.push((key.clone(), partner));
                         key
                     }
@@ -1834,15 +1927,18 @@ fn build(
             } else {
                 (x + 8.0, x + 8.0 + shown_w)
             };
-            if rows.len() < row + shown.len() {
-                rows.resize_with(row + shown.len(), Vec::new);
+            let rows_needed = row.saturating_add(shown.len());
+            if rows.len() < rows_needed {
+                rows.resize_with(rows_needed, Vec::new);
             }
             for r in rows.iter_mut().skip(row).take(shown.len()) {
                 r.push(extent);
             }
-            lines[li].frame_name = (left, row, width);
-            if let Some(port) = lines[li].frame_port.as_mut() {
-                port.2 = name;
+            if let Some(g) = lines.get_mut(li) {
+                g.frame_name = (left, row, width);
+                if let Some(port) = g.frame_port.as_mut() {
+                    port.2 = name;
+                }
             }
         }
     }
@@ -1850,13 +1946,12 @@ fn build(
     let mut cells = Vec::new();
     for (col, ci) in &grid.cols {
         for (row, ri) in &grid.rows {
+            let (Some((x, w)), Some((y, h))) = (grid.col(*ci), grid.row(*ri)) else {
+                continue;
+            };
             cells.push((
                 crate::model::Cell::new(*col, *row),
-                Rect::from_min_size(
-                    Pos::new(grid.col_x[*ci], grid.row_y[*ri]),
-                    grid.col_w[*ci],
-                    grid.row_h[*ri],
-                ),
+                Rect::from_min_size(Pos::new(x, y), w, h),
             ));
         }
     }
@@ -1918,8 +2013,11 @@ fn build(
     let (bounds, legend_at) = if legend.is_empty() && legend_looks.is_empty() {
         (bounds, None)
     } else {
-        let rows: usize =
-            legend.iter().map(|e| e.lines.len().max(1)).sum::<usize>() + legend_looks.len();
+        let rows: usize = legend
+            .iter()
+            .map(|e| e.lines.len().max(1))
+            .sum::<usize>()
+            .saturating_add(legend_looks.len());
         let at = Pos::new(PAD, bounds.max.y + LEGEND_GAP);
         let height = LEGEND_GAP + LEGEND_LINE * (rows as f32 + 1.0) + LEGEND_GAP;
         (
@@ -1982,7 +2080,7 @@ fn short_partners(
                 continue;
             };
             let numbered = legend.iter().filter(|(k, _)| k.starts_with('[')).count();
-            let key = format!("[{}]", numbered + 1);
+            let key = format!("[{}]", numbered.saturating_add(1));
             legend.push((key.clone(), partner.clone()));
             out.insert(partner.clone(), format!("{root}{sep}{key}"));
         }
@@ -2036,7 +2134,7 @@ fn shown_labels(
             let key = numbers
                 .entry(line.relation)
                 .or_insert_with(|| {
-                    issued += 1;
+                    issued = issued.saturating_add(1);
                     format!("[{issued}]")
                 })
                 .clone();
@@ -2066,7 +2164,7 @@ fn shown_labels(
                 let key = numbers
                     .entry(rel)
                     .or_insert_with(|| {
-                        issued += 1;
+                        issued = issued.saturating_add(1);
                         format!("[{issued}]")
                     })
                     .clone();
@@ -2096,7 +2194,7 @@ fn shown_labels(
             let key = numbers
                 .entry(line.relation)
                 .or_insert_with(|| {
-                    issued += 1;
+                    issued = issued.saturating_add(1);
                     format!("[{issued}]")
                 })
                 .clone();
@@ -2135,10 +2233,10 @@ fn ends_of(project: &Project, line: &ViewLine) -> String {
 /// Where a line through mouseholes goes under: the hole `HOLE_IN` from each port
 /// (closer on a short line), with the drawn pieces up to them.
 fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
-    let length: f32 = points.windows(2).map(|w| w[0].dist(w[1])).sum();
+    let length: f32 = pairs(points).map(|(p, q)| p.dist(q)).sum();
     let in_by = HOLE_IN.min(length / 3.0);
     let (piece_a, rest) = cut_at(points, in_by);
-    let rest_len: f32 = rest.windows(2).map(|w| w[0].dist(w[1])).sum();
+    let rest_len: f32 = pairs(&rest).map(|(p, q)| p.dist(q)).sum();
     let (_, piece_b) = cut_at(&rest, rest_len - in_by);
     Mousehole {
         a: piece_a.last().copied().unwrap_or_default(),
@@ -2151,23 +2249,28 @@ fn mousehole_of(points: &[Pos], label: String) -> Mousehole {
     }
 }
 
+/// The segments of a polyline, as pairs of consecutive points.
+fn pairs(points: &[Pos]) -> impl Iterator<Item = (Pos, Pos)> + '_ {
+    points.windows(2).filter_map(|w| match *w {
+        [p, q] => Some((p, q)),
+        _ => None,
+    })
+}
+
 /// Cuts a polyline `at` from its start: the part before the cut, ending at the cut
 /// point, and the part after it, starting there.
 fn cut_at(points: &[Pos], at: f32) -> (Vec<Pos>, Vec<Pos>) {
     let mut before = Vec::new();
     let mut left = at.max(0.0);
-    for (i, w) in points.windows(2).enumerate() {
-        let len = w[0].dist(w[1]);
-        before.push(w[0]);
+    for (i, (p, q)) in pairs(points).enumerate() {
+        let len = p.dist(q);
+        before.push(p);
         if len >= left {
             let t = if len > 0.0 { left / len } else { 0.0 };
-            let cut = Pos::new(
-                w[0].x + (w[1].x - w[0].x) * t,
-                w[0].y + (w[1].y - w[0].y) * t,
-            );
+            let cut = Pos::new(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t);
             before.push(cut);
             let mut after = vec![cut];
-            after.extend_from_slice(&points[i + 1..]);
+            after.extend(points.iter().skip(i.saturating_add(1)));
             return (before, after);
         }
         left -= len;
@@ -2378,32 +2481,36 @@ fn spread_by(wanted: &[f32], lo: f32, hi: f32, gaps: &[f32]) -> Vec<f32> {
     }
     // Clusters of items that touch: (first item, count, where the first one goes).
     // Each item's place relative to its cluster's first item is the sum of the gaps.
-    let rel = |i: usize, first: usize| (first + 1..=i).map(gap).sum::<f32>();
+    let rel = |i: usize, first: usize| (first.saturating_add(1)..=i).map(gap).sum::<f32>();
     let mut clusters: Vec<(usize, usize, f32)> = Vec::new();
     for (i, w) in wanted.iter().enumerate() {
         clusters.push((i, 1, w.clamp(lo, hi)));
         // Merge with the cluster before while they overlap: the merged cluster sits
         // at the mean of its members' wishes, kept inside the range.
         while let [.., (f0, n0, start0), (f1, n1, start1)] = clusters[..] {
-            let last0 = start0 + rel(f0 + n0 - 1, f0);
+            let last0 = start0 + rel(f0.saturating_add(n0).saturating_sub(1), f0);
             if start1 >= last0 + gap(f1) - 0.01 {
                 break;
             }
-            let count = n0 + n1;
-            let mean = (f0..f0 + count)
-                .map(|j| wanted[j].clamp(lo, hi) - rel(j, f0))
+            let count = n0.saturating_add(n1);
+            let mean = wanted
+                .iter()
+                .enumerate()
+                .skip(f0)
+                .take(count)
+                .map(|(j, w)| w.clamp(lo, hi) - rel(j, f0))
                 .sum::<f32>()
                 / count as f32;
-            let width = rel(f0 + count - 1, f0);
+            let width = rel(f0.saturating_add(count).saturating_sub(1), f0);
             let start = mean.clamp(lo, hi - width);
-            clusters.truncate(clusters.len() - 2);
+            clusters.truncate(clusters.len().saturating_sub(2));
             clusters.push((f0, count, start));
         }
     }
     let mut out = vec![0.0; n];
     for (first, count, start) in clusters {
-        for (k, slot) in out[first..first + count].iter_mut().enumerate() {
-            *slot = start + rel(first + k, first);
+        for (j, slot) in out.iter_mut().enumerate().skip(first).take(count) {
+            *slot = start + rel(j, first);
         }
     }
     out
@@ -2416,8 +2523,9 @@ fn sort_key(
     cell_of: &impl Fn(BlockId) -> Option<crate::model::Cell>,
 ) -> i64 {
     const FAR: i64 = 1_000_000;
-    let along =
-        |c: crate::model::Cell| i64::from(if side.is_horizontal() { c.row } else { c.col }) * 1000;
+    let along = |c: crate::model::Cell| {
+        i64::from(if side.is_horizontal() { c.row } else { c.col }).saturating_mul(1000)
+    };
     match partner {
         ViewEnd::Block { block, .. } => cell_of(*block).map_or(0, along),
         ViewEnd::Frame { side: fs, .. } => match (side.is_horizontal(), fs) {
@@ -2441,10 +2549,12 @@ fn grid(
     let mut col_w = vec![0.0f32; cols.len()];
     let mut row_h = vec![0.0f32; rows.len()];
     for (cell, w, h) in sizes.values() {
-        let ci = cols[&cell.col];
-        let ri = rows[&cell.row];
-        col_w[ci] = col_w[ci].max(*w);
-        row_h[ri] = row_h[ri].max(*h);
+        if let Some(cw) = cols.get(&cell.col).and_then(|ci| col_w.get_mut(*ci)) {
+            *cw = cw.max(*w);
+        }
+        if let Some(rh) = rows.get(&cell.row).and_then(|ri| row_h.get_mut(*ri)) {
+            *rh = rh.max(*h);
+        }
     }
     let (col_x, vspan, width) = axis(&col_w, vgaps, EMPTY_W);
     let (row_y, hspan, height) = axis(&row_h, hgaps, EMPTY_H);
@@ -2479,7 +2589,7 @@ fn axis(sizes: &[f32], gaps: &[f32], empty: f32) -> (Vec<f32>, Vec<(f32, f32)>, 
     for (i, s) in sizes.iter().enumerate() {
         starts.push(x);
         x += s;
-        let g = gap(i + 1);
+        let g = gap(i.saturating_add(1));
         spans.push((x, x + g));
         x += g;
     }
@@ -2542,22 +2652,32 @@ fn obstacles(grid: &Grid, segments: &Segments, skip: usize) -> Obstacles {
         }
         for (p, q) in list {
             if (p.y - q.y).abs() < 0.01 {
-                for (v, x) in grid.vx.iter().enumerate() {
+                for (x, on) in grid.vx.iter().zip(out.on_v.iter_mut()) {
                     if spans(*x, p.x, q.x) {
-                        out.on_v[v].push(p.y);
+                        on.push(p.y);
                     }
                 }
-                if let Some(h) = grid.hy.iter().position(|y| (y - p.y).abs() < 0.5) {
-                    out.along_h[h].push(stretch(p.x, q.x));
+                if let Some(along) = grid
+                    .hy
+                    .iter()
+                    .position(|y| (y - p.y).abs() < 0.5)
+                    .and_then(|h| out.along_h.get_mut(h))
+                {
+                    along.push(stretch(p.x, q.x));
                 }
             } else if (p.x - q.x).abs() < 0.01 {
-                for (h, y) in grid.hy.iter().enumerate() {
+                for (y, on) in grid.hy.iter().zip(out.on_h.iter_mut()) {
                     if spans(*y, p.y, q.y) {
-                        out.on_h[h].push(p.x);
+                        on.push(p.x);
                     }
                 }
-                if let Some(v) = grid.vx.iter().position(|x| (x - p.x).abs() < 0.5) {
-                    out.along_v[v].push(stretch(p.y, q.y));
+                if let Some(along) = grid
+                    .vx
+                    .iter()
+                    .position(|x| (x - p.x).abs() < 0.5)
+                    .and_then(|v| out.along_v.get_mut(v))
+                {
+                    along.push(stretch(p.y, q.y));
                 }
             }
         }
@@ -2606,14 +2726,14 @@ fn elbow(a: (Pos, Side), b: (Pos, Side), boxes: &[Rect]) -> Option<Pos> {
 
 /// How often `segs` cross the segments of every line but `skip`.
 fn crossings_with(segs: &[(Pos, Pos)], segments: &Segments, skip: usize) -> usize {
-    let mut n = 0;
+    let mut n = 0usize;
     for (li, list) in segments {
         if *li == skip {
             continue;
         }
         for (p, q) in segs {
             for (r, s) in list {
-                n += tangles(&[*p, *q], &[*r, *s]);
+                n = n.saturating_add(tangles(&[*p, *q], &[*r, *s]));
             }
         }
     }
@@ -2727,28 +2847,32 @@ fn drawing_cost(
     holes: usize,
     keep_off: &[Rect],
 ) -> (solve::Cost, BTreeSet<usize>, BTreeSet<usize>) {
-    let mut tangle = holes as i64 * HOLE_COST;
+    let mut tangle = (holes as i64).saturating_mul(HOLE_COST);
     let mut cosmetic = 0i64;
     let mut troubled = BTreeSet::new();
     let mut overlapping = BTreeSet::new();
     for p in whole {
-        cosmetic += p.len().saturating_sub(2) as i64 * 10;
-        cosmetic += (p.windows(2).map(|w| w[0].dist(w[1])).sum::<f32>() / 20.0) as i64;
-        let steps = p
-            .windows(2)
+        cosmetic = cosmetic.saturating_add((p.len().saturating_sub(2) as i64).saturating_mul(10));
+        let length: f32 = pairs(p).map(|(a, b)| a.dist(b)).sum();
+        cosmetic = cosmetic.saturating_add((length / 20.0) as i64);
+        let steps = pairs(p)
             .enumerate()
-            .filter(|(i, w)| *i > 0 && *i + 2 < p.len() && w[0].dist(w[1]) < LANE / 2.0)
+            .filter(|(i, (a, b))| {
+                *i > 0 && i.saturating_add(2) < p.len() && a.dist(*b) < LANE / 2.0
+            })
             .count();
-        cosmetic += steps as i64 * 50;
+        cosmetic = cosmetic.saturating_add((steps as i64).saturating_mul(50));
     }
     for (i, (la, ra, p)) in drawn.iter().enumerate() {
-        for (lb, rb, q) in &drawn[i + 1..] {
+        for (lb, rb, q) in drawn.iter().skip(i.saturating_add(1)) {
             if ra == rb {
                 continue;
             }
-            let crossings = cross_points(p, q).len() + cross_points(q, p).len();
+            let crossings = cross_points(p, q)
+                .len()
+                .saturating_add(cross_points(q, p).len());
             let overlaps = overlap_stretches(p, q).len();
-            if crossings + overlaps > 0 {
+            if crossings > 0 || overlaps > 0 {
                 troubled.insert(*la);
                 troubled.insert(*lb);
             }
@@ -2756,21 +2880,20 @@ fn drawing_cost(
                 overlapping.insert(*la);
                 overlapping.insert(*lb);
             }
-            tangle += crossings as i64 * CROSSING_COST;
-            tangle += overlaps as i64 * OVERLAP_COST;
+            tangle = tangle.saturating_add((crossings as i64).saturating_mul(CROSSING_COST));
+            tangle = tangle.saturating_add((overlaps as i64).saturating_mul(OVERLAP_COST));
         }
-        let through = p
-            .windows(2)
-            .filter(|w| {
+        let through = pairs(p)
+            .filter(|(a, b)| {
                 keep_off
                     .iter()
-                    .any(|r| segment_meets(w[0], w[1], &r.expand(-0.5)))
+                    .any(|r| segment_meets(*a, *b, &r.expand(-0.5)))
             })
             .count();
         if through > 0 {
             troubled.insert(*la);
         }
-        tangle += through as i64 * THROUGH_COST;
+        tangle = tangle.saturating_add((through as i64).saturating_mul(THROUGH_COST));
     }
     (solve::Cost { tangle, cosmetic }, troubled, overlapping)
 }
@@ -2791,17 +2914,17 @@ fn route_lines(
 ) {
     let both = |li: usize| Some((*port_at.get(&(li, End::A))?, *port_at.get(&(li, End::B))?));
     let stem = |(p, _, chan): (Pos, Side, Chan)| match chan {
-        Chan::V(v) => (p, Pos::new(grid.vx[v], p.y)),
-        Chan::H(h) => (p, Pos::new(p.x, grid.hy[h])),
+        Chan::V(v) => Some((p, Pos::new(*grid.vx.get(v)?, p.y))),
+        Chan::H(h) => Some((p, Pos::new(p.x, *grid.hy.get(h)?))),
     };
     segments.clear();
     for li in (0..n).filter(|li| !hidden.contains(li)) {
-        if let Some((a, b)) = both(li) {
-            segments.insert(li, vec![stem(a), stem(b)]);
+        if let Some((a, b)) = both(li)
+            && let (Some(sa), Some(sb)) = (stem(a), stem(b))
+        {
+            segments.insert(li, vec![sa, sb]);
         }
     }
-    let pairs =
-        |points: &[Pos]| -> Vec<(Pos, Pos)> { points.windows(2).map(|w| (w[0], w[1])).collect() };
     for _ in 0..passes {
         for li in 0..n {
             let Some((a, b)) = both(li) else { continue };
@@ -2818,7 +2941,8 @@ fn route_lines(
                     Some(corner) => {
                         let bent = crossings_with(&[(a.0, corner), (corner, b.0)], segments, li);
                         let routed = route_points(grid, &BTreeMap::new(), li, a.0, b.0, &chans);
-                        if bent <= crossings_with(&pairs(&routed), segments, li) {
+                        let routed: Vec<(Pos, Pos)> = pairs(&routed).collect();
+                        if bent <= crossings_with(&routed, segments, li) {
                             Route::Elbow(corner)
                         } else {
                             chans
@@ -2829,7 +2953,7 @@ fn route_lines(
             };
             let points = route_points(grid, &BTreeMap::new(), li, a.0, b.0, &route);
             if !hidden.contains(&li) {
-                segments.insert(li, pairs(&points));
+                segments.insert(li, pairs(&points).collect());
             }
             routes.insert(li, route);
         }
@@ -2846,9 +2970,11 @@ fn route(
 ) -> Vec<Chan> {
     let nv = grid.vx.len();
     let nh = grid.hy.len();
-    let s = nv * nh;
-    let t = s + 1;
-    let node_count = s + 2;
+    let s = nv.saturating_mul(nh);
+    let t = s.saturating_add(1);
+    let node_count = s.saturating_add(2);
+    // The node at vertical channel `v` and horizontal channel `h`.
+    let node_at = |v: usize, h: usize| v.saturating_mul(nh).saturating_add(h);
     let coord = |chan: Chan, p: Pos| match chan {
         Chan::V(_) => p.y,
         Chan::H(_) => p.x,
@@ -2858,9 +2984,11 @@ fn route(
     // `from`, up to and including `to`.
     let crossed = |chan: Chan, from: f32, to: f32| -> i64 {
         let list = match chan {
-            Chan::V(v) => &others.on_v[v],
-            Chan::H(h) => &others.on_h[h],
-        };
+            Chan::V(v) => others.on_v.get(v),
+            Chan::H(h) => others.on_h.get(h),
+        }
+        .map(Vec::as_slice)
+        .unwrap_or_default();
         let met = |c: &&f32| {
             if to >= from {
                 **c > from + 0.01 && **c <= to + 0.01
@@ -2868,36 +2996,45 @@ fn route(
                 **c < from - 0.01 && **c >= to - 0.01
             }
         };
-        list.iter().filter(met).count() as i64 * CROSS
+        (list.iter().filter(met).count() as i64).saturating_mul(CROSS)
     };
     // Other lines already running along `chan` between `from` and `to`.
     let shared = |chan: Chan, from: f32, to: f32| -> i64 {
         let list = match chan {
-            Chan::V(v) => &others.along_v[v],
-            Chan::H(h) => &others.along_h[h],
-        };
+            Chan::V(v) => others.along_v.get(v),
+            Chan::H(h) => others.along_h.get(h),
+        }
+        .map(Vec::as_slice)
+        .unwrap_or_default();
         let (lo, hi) = (from.min(to), from.max(to));
-        list.iter()
+        (list
+            .iter()
             .filter(|(a, b)| *a < hi - 0.5 && *b > lo + 0.5)
-            .count() as i64
-            * SHARE
+            .count() as i64)
+            .saturating_mul(SHARE)
     };
-    let penalty = |chan: Chan, from: f32, to: f32| crossed(chan, from, to) + shared(chan, from, to);
+    let penalty = |chan: Chan, from: f32, to: f32| {
+        crossed(chan, from, to).saturating_add(shared(chan, from, to))
+    };
 
     // state = node * 2 + axis (0: moved along H, 1: moved along V)
-    let mut dist = vec![i64::MAX; node_count * 2];
-    let mut prev: Vec<Option<(usize, Chan)>> = vec![None; node_count * 2];
+    let state_of = |node: usize, axis: usize| node.saturating_mul(2).saturating_add(axis);
+    let mut dist = vec![i64::MAX; node_count.saturating_mul(2)];
+    let mut prev: Vec<Option<(usize, Chan)>> = vec![None; node_count.saturating_mul(2)];
     let mut heap = BinaryHeap::new();
     let start_axis = match a.1 {
         Chan::V(_) => 0,
         Chan::H(_) => 1,
     };
-    dist[s * 2 + start_axis] = 0;
-    heap.push(Reverse((0i64, s * 2 + start_axis)));
+    let start = state_of(s, start_axis);
+    if let Some(d) = dist.get_mut(start) {
+        *d = 0;
+    }
+    heap.push(Reverse((0i64, start)));
 
     let mut target_state = None;
     while let Some(Reverse((d, state))) = heap.pop() {
-        if d > dist[state] {
+        if dist.get(state).is_none_or(|best| d > *best) {
             continue;
         }
         let (node, axis) = (state / 2, state % 2);
@@ -2910,22 +3047,25 @@ fn route(
         let here = if node == s {
             None
         } else {
-            Some((node / nh, node % nh))
+            let (Some(v), Some(h)) = (node.checked_div(nh), node.checked_rem(nh)) else {
+                continue;
+            };
+            Some((v, h))
         };
         match here {
             None => {
                 let along = coord(a.1, a.0);
                 match a.1 {
                     Chan::V(v) => {
-                        for h in 0..nh {
-                            let x = penalty(a.1, along, grid.hy[h]);
-                            edges.push((v * nh + h, a.1, grid.hy[h] - along, x));
+                        for (h, hy) in grid.hy.iter().enumerate() {
+                            let x = penalty(a.1, along, *hy);
+                            edges.push((node_at(v, h), a.1, hy - along, x));
                         }
                     }
                     Chan::H(h) => {
-                        for v in 0..nv {
-                            let x = penalty(a.1, along, grid.vx[v]);
-                            edges.push((v * nh + h, a.1, grid.vx[v] - along, x));
+                        for (v, vx) in grid.vx.iter().enumerate() {
+                            let x = penalty(a.1, along, *vx);
+                            edges.push((node_at(v, h), a.1, vx - along, x));
                         }
                     }
                 }
@@ -2935,31 +3075,38 @@ fn route(
                 }
             }
             Some((v, h)) => {
-                let (y, x) = (grid.hy[h], grid.vx[v]);
-                if h + 1 < nh {
-                    let c = penalty(Chan::V(v), y, grid.hy[h + 1]);
-                    edges.push((node + 1, Chan::V(v), grid.hy[h + 1] - y, c));
+                let (Some(&y), Some(&x)) = (grid.hy.get(h), grid.vx.get(v)) else {
+                    continue;
+                };
+                let (next_h, next_v) = (h.saturating_add(1), v.saturating_add(1));
+                if let Some(&to) = grid.hy.get(next_h) {
+                    let c = penalty(Chan::V(v), y, to);
+                    edges.push((node_at(v, next_h), Chan::V(v), to - y, c));
                 }
-                if h > 0 {
-                    let c = penalty(Chan::V(v), y, grid.hy[h - 1]);
-                    edges.push((node - 1, Chan::V(v), y - grid.hy[h - 1], c));
+                if let Some(prev_h) = h.checked_sub(1)
+                    && let Some(&to) = grid.hy.get(prev_h)
+                {
+                    let c = penalty(Chan::V(v), y, to);
+                    edges.push((node_at(v, prev_h), Chan::V(v), y - to, c));
                 }
-                if v + 1 < nv {
-                    let c = penalty(Chan::H(h), x, grid.vx[v + 1]);
-                    edges.push((node + nh, Chan::H(h), grid.vx[v + 1] - x, c));
+                if let Some(&to) = grid.vx.get(next_v) {
+                    let c = penalty(Chan::H(h), x, to);
+                    edges.push((node_at(next_v, h), Chan::H(h), to - x, c));
                 }
-                if v > 0 {
-                    let c = penalty(Chan::H(h), x, grid.vx[v - 1]);
-                    edges.push((node - nh, Chan::H(h), x - grid.vx[v - 1], c));
+                if let Some(prev_v) = v.checked_sub(1)
+                    && let Some(&to) = grid.vx.get(prev_v)
+                {
+                    let c = penalty(Chan::H(h), x, to);
+                    edges.push((node_at(prev_v, h), Chan::H(h), x - to, c));
                 }
                 match b.1 {
                     Chan::V(bv) if bv == v => {
-                        let x = penalty(b.1, grid.hy[h], b.0.y);
-                        edges.push((t, b.1, b.0.y - grid.hy[h], x));
+                        let c = penalty(b.1, y, b.0.y);
+                        edges.push((t, b.1, b.0.y - y, c));
                     }
                     Chan::H(bh) if bh == h => {
-                        let x = penalty(b.1, grid.vx[v], b.0.x);
-                        edges.push((t, b.1, b.0.x - grid.vx[v], x));
+                        let c = penalty(b.1, x, b.0.x);
+                        edges.push((t, b.1, b.0.x - x, c));
                     }
                     _ => {}
                 }
@@ -2974,11 +3121,19 @@ fn route(
                 Chan::H(_) => 0,
             };
             let bend = if next_axis == axis { 0 } else { BEND };
-            let nd = d + cost(len) + bend + cross;
-            let ns = next * 2 + next_axis;
-            if nd < dist[ns] {
-                dist[ns] = nd;
-                prev[ns] = Some((state, chan));
+            let nd = d
+                .saturating_add(cost(len))
+                .saturating_add(bend)
+                .saturating_add(cross);
+            let ns = state_of(next, next_axis);
+            let Some(best) = dist.get_mut(ns) else {
+                continue;
+            };
+            if nd < *best {
+                *best = nd;
+                if let Some(p) = prev.get_mut(ns) {
+                    *p = Some((state, chan));
+                }
                 heap.push(Reverse((nd, ns)));
             }
         }
@@ -2988,7 +3143,7 @@ fn route(
         return vec![a.1];
     };
     let mut chans = Vec::new();
-    while let Some((p, chan)) = prev[state] {
+    while let Some(&Some((p, chan))) = prev.get(state) {
         chans.push(chan);
         state = p;
     }
@@ -3020,17 +3175,13 @@ fn lane_order(
         };
         let points = route_points(grid, &no_offsets, *li, a.0, b.0, route);
         let runs_along = |chan: Chan| {
-            points.windows(2).any(|w| match chan {
-                Chan::H(h) => {
-                    (w[0].y - grid.hy[h]).abs() < 0.5
-                        && (w[1].y - grid.hy[h]).abs() < 0.5
-                        && (w[0].x - w[1].x).abs() > 0.5
-                }
-                Chan::V(v) => {
-                    (w[0].x - grid.vx[v]).abs() < 0.5
-                        && (w[1].x - grid.vx[v]).abs() < 0.5
-                        && (w[0].y - w[1].y).abs() > 0.5
-                }
+            pairs(&points).any(|(p, q)| match chan {
+                Chan::H(h) => grid.hy.get(h).is_some_and(|&y| {
+                    (p.y - y).abs() < 0.5 && (q.y - y).abs() < 0.5 && (p.x - q.x).abs() > 0.5
+                }),
+                Chan::V(v) => grid.vx.get(v).is_some_and(|&x| {
+                    (p.x - x).abs() < 0.5 && (q.x - x).abs() < 0.5 && (p.y - q.y).abs() > 0.5
+                }),
             })
         };
         for chan in chans {
@@ -3051,9 +3202,11 @@ fn lane_order(
 fn lane_offsets(lanes: &Lanes, grid: &Grid) -> BTreeMap<(usize, Chan), f32> {
     let mut out = BTreeMap::new();
     for (chan, list) in lanes {
-        let (lo, hi) = match chan {
-            Chan::V(v) => grid.vspan[*v],
-            Chan::H(h) => grid.hspan[*h],
+        let Some(&(lo, hi)) = (match chan {
+            Chan::V(v) => grid.vspan.get(*v),
+            Chan::H(h) => grid.hspan.get(*h),
+        }) else {
+            continue;
         };
         let limit = ((hi - lo) / 2.0 - LANE / 2.0).max(0.0);
         let n = list.len() as f32;
@@ -3088,8 +3241,8 @@ fn route_points(
     route: &Route,
 ) -> Vec<Pos> {
     let off = |c: Chan| offsets.get(&(li, c)).copied().unwrap_or(0.0);
-    let x = |v: usize| grid.vx[v] + off(Chan::V(v));
-    let y = |h: usize| grid.hy[h] + off(Chan::H(h));
+    let x = |v: usize| Some(grid.vx.get(v)? + off(Chan::V(v)));
+    let y = |h: usize| Some(grid.hy.get(h)? + off(Chan::H(h)));
     let mut pts = vec![pa];
     let chans = match route {
         Route::Straight => &Vec::new(),
@@ -3100,24 +3253,32 @@ fn route_points(
         }
         Route::Chans(chans) => chans,
     };
-    let (Some(first), Some(last)) = (chans.first(), chans.last()) else {
+    // The corners along the channels; none for a channel the grid does not have.
+    let run = || -> Option<Vec<Pos>> {
+        let (first, last) = (chans.first()?, chans.last()?);
+        let mut corners = vec![match *first {
+            Chan::V(v) => Pos::new(x(v)?, pa.y),
+            Chan::H(h) => Pos::new(pa.x, y(h)?),
+        }];
+        for w in chans.windows(2) {
+            match *w {
+                [Chan::V(v), Chan::H(h)] | [Chan::H(h), Chan::V(v)] => {
+                    corners.push(Pos::new(x(v)?, y(h)?));
+                }
+                _ => {}
+            }
+        }
+        corners.push(match *last {
+            Chan::V(v) => Pos::new(x(v)?, pb.y),
+            Chan::H(h) => Pos::new(pb.x, y(h)?),
+        });
+        Some(corners)
+    };
+    let Some(run) = run() else {
         pts.push(pb);
         return pts;
     };
-    pts.push(match *first {
-        Chan::V(v) => Pos::new(x(v), pa.y),
-        Chan::H(h) => Pos::new(pa.x, y(h)),
-    });
-    for w in chans.windows(2) {
-        match (w[0], w[1]) {
-            (Chan::V(v), Chan::H(h)) | (Chan::H(h), Chan::V(v)) => pts.push(Pos::new(x(v), y(h))),
-            _ => {}
-        }
-    }
-    pts.push(match *last {
-        Chan::V(v) => Pos::new(x(v), pb.y),
-        Chan::H(h) => Pos::new(pb.x, y(h)),
-    });
+    pts.extend(run);
     pts.push(pb);
     simplify(unjog(pts))
 }
@@ -3131,28 +3292,33 @@ const JOG: f32 = LANE / 2.0;
 /// coordinate instead (the frame port of a fanned-out relation sits at the mean of
 /// its branches, a few pixels off the lane of the branch that goes straight).
 fn unjog(mut pts: Vec<Pos>) -> Vec<Pos> {
-    let n = pts.len();
-    if n < 5 {
+    if pts.len() < 5 {
         return pts;
     }
     let vertical = |a: Pos, b: Pos| (a.x - b.x).abs() < 0.01 && (a.y - b.y).abs() >= 0.01;
     let horizontal = |a: Pos, b: Pos| (a.y - b.y).abs() < 0.01 && (a.x - b.x).abs() >= 0.01;
-    // From each end: the port, the turn, the step and the next corner.
-    for idx in [[0, 1, 2, 3], [n - 1, n - 2, n - 3, n - 4]] {
-        let [p0, p1, p2, p3] = idx.map(|i| pts[i]);
+    // From one end: the port, the turn, the step and the next corner.
+    let unjog_end = |[q0, q1, q2, q3]: [&mut Pos; 4]| {
+        let (p0, p1, p2, p3) = (*q0, *q1, *q2, *q3);
         if vertical(p0, p1) && horizontal(p1, p2) && (p1.x - p2.x).abs() < JOG && vertical(p2, p3) {
-            for i in &idx[1..] {
-                pts[*i].x = p0.x;
+            for q in [q1, q2, q3] {
+                q.x = p0.x;
             }
         } else if horizontal(p0, p1)
             && vertical(p1, p2)
             && (p1.y - p2.y).abs() < JOG
             && horizontal(p2, p3)
         {
-            for i in &idx[1..] {
-                pts[*i].y = p0.y;
+            for q in [q1, q2, q3] {
+                q.y = p0.y;
             }
         }
+    };
+    if let [q0, q1, q2, q3, ..] = pts.as_mut_slice() {
+        unjog_end([q0, q1, q2, q3]);
+    }
+    if let [.., q3, q2, q1, q0] = pts.as_mut_slice() {
+        unjog_end([q0, q1, q2, q3]);
     }
     pts
 }
@@ -3164,9 +3330,7 @@ fn simplify(points: Vec<Pos>) -> Vec<Pos> {
         if out.last().is_some_and(|q| q.dist(p) < 0.01) {
             continue;
         }
-        if out.len() >= 2 {
-            let a = out[out.len() - 2];
-            let b = out[out.len() - 1];
+        if let &[.., a, b] = out.as_slice() {
             let straight = ((a.x - b.x).abs() < 0.01 && (b.x - p.x).abs() < 0.01)
                 || ((a.y - b.y).abs() < 0.01 && (b.y - p.y).abs() < 0.01);
             if straight {
@@ -3256,11 +3420,7 @@ fn place_labels(
     let others: Vec<(RelationId, Vec<(Pos, Pos)>)> = lines
         .iter()
         .map(|g| {
-            let segs = g
-                .drawn()
-                .into_iter()
-                .flat_map(|piece| piece.windows(2).map(|w| (w[0], w[1])))
-                .collect();
+            let segs = g.drawn().into_iter().flat_map(pairs).collect();
             (g.relation, segs)
         })
         .collect();
@@ -3283,22 +3443,16 @@ fn place_labels(
             .collect();
         let spots = |text: &str| -> Vec<LabelSpot> {
             let mut out = Vec::new();
-            for w in geom.points.windows(2) {
-                let horizontal = (w[0].y - w[1].y).abs() < 0.01;
+            for (w0, w1) in pairs(&geom.points) {
+                let horizontal = (w0.y - w1.y).abs() < 0.01;
                 let along = |p: Pos| if horizontal { p.x } else { p.y };
-                let (lo, hi) = (along(w[0]).min(along(w[1])), along(w[0]).max(along(w[1])));
+                let (lo, hi) = (along(w0).min(along(w1)), along(w0).max(along(w1)));
                 let mut cuts = vec![lo];
                 cuts.extend(
                     marks
                         .iter()
                         .filter(|m| {
-                            (if horizontal {
-                                m.y - w[0].y
-                            } else {
-                                m.x - w[0].x
-                            })
-                            .abs()
-                                < 0.01
+                            (if horizontal { m.y - w0.y } else { m.x - w0.x }).abs() < 0.01
                                 && along(**m) > lo
                                 && along(**m) < hi
                         })
@@ -3306,13 +3460,17 @@ fn place_labels(
                 );
                 cuts.push(hi);
                 cuts.sort_by(f32::total_cmp);
-                for (c, flipped) in cuts.windows(2).flat_map(|c| [(c, false), (c, true)]) {
-                    let mid = (c[0] + c[1]) / 2.0;
+                let stretches = cuts.windows(2).filter_map(|c| match *c {
+                    [c0, c1] => Some((c0, c1)),
+                    _ => None,
+                });
+                for ((c0, c1), flipped) in stretches.flat_map(|c| [(c, false), (c, true)]) {
+                    let mid = (c0 + c1) / 2.0;
                     let spot_at = |v: f32| {
                         if horizontal {
-                            Pos::new(v, w[0].y)
+                            Pos::new(v, w0.y)
                         } else {
-                            Pos::new(w[0].x, v)
+                            Pos::new(w0.x, v)
                         }
                     };
                     let rect = crate::scene::label_rect(spot_at(mid), horizontal, flipped, text);
@@ -3323,7 +3481,7 @@ fn place_labels(
                     };
                     // The middle of the stretch, then spots slid toward either end
                     // by half the label at a time, as long as the label stays on it.
-                    let room = ((c[1] - c[0] - need) / 2.0).max(0.0);
+                    let room = ((c1 - c0 - need) / 2.0).max(0.0);
                     let steps = (room / (need / 2.0)).floor().min(8.0) as i32;
                     let mut slid: Vec<(f32, bool)> = vec![(mid, true)];
                     for k in 1..=steps {
@@ -3348,9 +3506,9 @@ fn place_labels(
                             flipped,
                             inside: area.holds(&rect),
                             clear,
-                            fits: c[1] - c[0] >= need,
+                            fits: c1 - c0 >= need,
                             centered,
-                            length: c[1] - c[0],
+                            length: c1 - c0,
                         });
                     }
                 }
@@ -3389,7 +3547,7 @@ fn place_labels(
                 geom.full_text.trim().to_owned()
             };
             let numbered = legend.iter().filter(|(k, _)| k.starts_with('[')).count();
-            let key = format!("[{}]", numbered + 1);
+            let key = format!("[{}]", numbered.saturating_add(1));
             match legend.iter_mut().find(|(k, _)| *k == text) {
                 Some(entry) => entry.0 = key.clone(),
                 None => legend.push((key.clone(), full)),
@@ -3415,15 +3573,14 @@ fn place_labels(
 /// Middle of the longest horizontal segment, else of the longest vertical one.
 fn label_position(points: &[Pos]) -> (Pos, bool) {
     let longest = |horizontal: bool| {
-        points
-            .windows(2)
-            .filter(|w| ((w[0].y - w[1].y).abs() < 0.01) == horizontal)
-            .max_by(|p, q| {
-                p[0].dist(p[1])
-                    .partial_cmp(&q[0].dist(q[1]))
+        pairs(points)
+            .filter(|(a, b)| ((a.y - b.y).abs() < 0.01) == horizontal)
+            .max_by(|(p0, p1), (q0, q1)| {
+                p0.dist(*p1)
+                    .partial_cmp(&q0.dist(*q1))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|w| Pos::new((w[0].x + w[1].x) / 2.0, (w[0].y + w[1].y) / 2.0))
+            .map(|(a, b)| Pos::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0))
     };
     match longest(true) {
         Some(p) => (p, true),

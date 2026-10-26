@@ -58,7 +58,7 @@ pub fn local_search<D>(
             if left == 0 {
                 return (current, drawing);
             }
-            left -= 1;
+            left = left.saturating_sub(1);
             let (cost, d) = evaluate(&candidate);
             if cost < best {
                 best = cost;

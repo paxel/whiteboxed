@@ -282,7 +282,8 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 for (r, (_, name)) in form.rows.iter().enumerate() {
                     ui.label(RichText::new(name).strong());
                     for c in 0..n {
-                        if let Some(pair) = form.pairs.get_mut(r * n + c) {
+                        let k = r.saturating_mul(n).saturating_add(c);
+                        if let Some(pair) = form.pairs.get_mut(k) {
                             ui.checkbox(&mut pair.on, "");
                         }
                     }
@@ -290,8 +291,14 @@ fn body(ui: &mut Ui, editor: &Editor, popup: &mut Popup, focus: &mut bool) -> Op
                 }
             });
             for (i, pair) in form.pairs.iter_mut().enumerate().filter(|(_, p)| p.on) {
-                let from = form.rows.get(i / n.max(1)).map_or("", |r| r.1.as_str());
-                let to = form.cols.get(i % n.max(1)).map_or("", |c| c.1.as_str());
+                let from = i
+                    .checked_div(n.max(1))
+                    .and_then(|k| form.rows.get(k))
+                    .map_or("", |r| r.1.as_str());
+                let to = i
+                    .checked_rem(n.max(1))
+                    .and_then(|k| form.cols.get(k))
+                    .map_or("", |c| c.1.as_str());
                 ui.separator();
                 ui.label(RichText::new(format!("{from} \u{2013} {to}")).strong());
                 ui.push_id(i, |ui| {

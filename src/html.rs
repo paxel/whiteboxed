@@ -391,10 +391,11 @@ fn clickable_svg(project: &Project, l: &Layout) -> String {
         }
     }
     hits.push_str("</g>\n");
-    match svg.rfind("</svg>") {
-        Some(end) => format!("{}{hits}{}", &svg[..end], &svg[end..]),
-        None => svg,
-    }
+    let spliced = svg
+        .rfind("</svg>")
+        .and_then(|end| svg.split_at_checked(end))
+        .map(|(head, tail)| format!("{head}{hits}{tail}"));
+    spliced.unwrap_or(svg)
 }
 
 /// Text for HTML, with line breaks kept.

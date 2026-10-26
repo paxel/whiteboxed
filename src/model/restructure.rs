@@ -145,7 +145,13 @@ impl Project {
                 return Err(ModelError::DuplicateName(child.name.clone()));
             }
         }
-        if self.blocks_in(up).count() - 1 + children.len() > super::MAX_BLOCKS_PER_DIAGRAM {
+        if self
+            .blocks_in(up)
+            .count()
+            .saturating_sub(1)
+            .saturating_add(children.len())
+            > super::MAX_BLOCKS_PER_DIAGRAM
+        {
             return Err(ModelError::DiagramFull);
         }
         // The children's block in the grid, and how far the others move aside.
@@ -157,8 +163,16 @@ impl Project {
             .collect();
         let col0 = cells.iter().map(|c| c.col).min().unwrap_or(0);
         let row0 = cells.iter().map(|c| c.row).min().unwrap_or(0);
-        let wide = cells.iter().map(|c| c.col - col0 + 1).max().unwrap_or(1);
-        let high = cells.iter().map(|c| c.row - row0 + 1).max().unwrap_or(1);
+        let wide = cells
+            .iter()
+            .map(|c| c.col.saturating_sub(col0).saturating_add(1))
+            .max()
+            .unwrap_or(1);
+        let high = cells
+            .iter()
+            .map(|c| c.row.saturating_sub(row0).saturating_add(1))
+            .max()
+            .unwrap_or(1);
         let at = block.cell;
         let others: Vec<BlockId> = self
             .blocks_in(up)
@@ -172,10 +186,10 @@ impl Project {
             for o in &others {
                 if let Some(b) = p.blocks.get_mut(o) {
                     if b.cell.col > at.col {
-                        b.cell.col += wide - 1;
+                        b.cell.col = b.cell.col.saturating_add(wide.saturating_sub(1));
                     }
                     if b.cell.row > at.row {
-                        b.cell.row += high - 1;
+                        b.cell.row = b.cell.row.saturating_add(high.saturating_sub(1));
                     }
                 }
             }
@@ -183,7 +197,10 @@ impl Project {
                 if let Some(b) = p.blocks.get_mut(c) {
                     b.parent = up;
                     if !b.band {
-                        b.cell = Cell::new(at.col + b.cell.col - col0, at.row + b.cell.row - row0);
+                        b.cell = Cell::new(
+                            at.col.saturating_add(b.cell.col.saturating_sub(col0)),
+                            at.row.saturating_add(b.cell.row.saturating_sub(row0)),
+                        );
                     }
                 }
             }
@@ -235,13 +252,13 @@ impl Project {
             let text = super::edit::check_text(&part.text)?;
             // An end: its owner-level box, then the chosen box and what lies inside it.
             let end = |e: &Endpoint, pick: BlockId| -> Endpoint {
-                let root = e.anchors[0];
+                let root = e.anchors.first().map(|x| x.block);
                 Endpoint {
                     anchors: e
                         .anchors
                         .iter()
                         .copied()
-                        .filter(|x| x.block == root.block || self.within(x.block, pick))
+                        .filter(|x| Some(x.block) == root || self.within(x.block, pick))
                         .collect(),
                 }
             };
@@ -275,11 +292,15 @@ impl Project {
             let (Some(a), Some(b)) = (r.a.anchors.first(), r.b.anchors.first()) else {
                 continue;
             };
-            if a.block == id {
-                *count.entry(b.block).or_default() += 1;
+            let partner = if a.block == id {
+                b.block
             } else if b.block == id {
-                *count.entry(a.block).or_default() += 1;
-            }
+                a.block
+            } else {
+                continue;
+            };
+            let n = count.entry(partner).or_default();
+            *n = n.saturating_add(1);
         }
         count
             .into_iter()
@@ -298,7 +319,8 @@ impl Project {
                     && a.block == id
                     && !r.end(end.other()).is_open()
                 {
-                    *count.entry(a.side.opposite()).or_default() += 1;
+                    let n = count.entry(a.side.opposite()).or_default();
+                    *n = n.saturating_add(1);
                 }
             }
         }
@@ -310,7 +332,7 @@ impl Project {
 
     /// Fails if `diagram` cannot take `more` boxes.
     pub(super) fn check_room(&self, diagram: DiagramId, more: usize) -> ModelResult<()> {
-        if self.blocks_in(diagram).count() + more > super::MAX_BLOCKS_PER_DIAGRAM {
+        if self.blocks_in(diagram).count().saturating_add(more) > super::MAX_BLOCKS_PER_DIAGRAM {
             return Err(ModelError::DiagramFull);
         }
         Ok(())
@@ -386,19 +408,13 @@ impl Project {
         }
         let all: Vec<Vec<BlockId>> = a.iter().chain(&b).map(|x| path(self, x.block)).collect();
         // Both ends: below their deepest common box. One end: a stub from the top.
-        let k = if a.is_empty() || b.is_empty() {
-            0
-        } else {
-            let first = &all[0];
-            (0..first.len())
+        let k = match all.first() {
+            Some(first) if !a.is_empty() && !b.is_empty() => (0..first.len())
                 .take_while(|i| all.iter().all(|p| p.get(*i) == first.get(*i)))
-                .count()
+                .count(),
+            _ => 0,
         };
-        let owner = if k == 0 {
-            None
-        } else {
-            all[0].get(k - 1).copied()
-        };
+        let owner = k.checked_sub(1).and_then(|i| all.first()?.get(i).copied());
         let sides: BTreeMap<(End, BlockId), Side> = [End::A, End::B]
             .into_iter()
             .flat_map(|e| {
@@ -412,10 +428,13 @@ impl Project {
             let mut groups: Vec<(BlockId, Vec<Anchor>)> = Vec::new();
             for leaf in leaves {
                 let full = path(p, leaf.block);
-                let Some(root) = full.get(k).copied() else {
+                let Some(tail) = full.get(k..) else {
                     continue;
                 };
-                let chain: Vec<Anchor> = full[k..]
+                let Some(root) = tail.first().copied() else {
+                    continue;
+                };
+                let chain: Vec<Anchor> = tail
                     .iter()
                     .map(|blk| Anchor {
                         block: *blk,

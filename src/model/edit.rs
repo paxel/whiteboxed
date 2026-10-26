@@ -83,7 +83,7 @@ impl Project {
             .map(|(_, b)| b.cell.col)
             .max()
         {
-            Some(max_col) => Cell::new(max_col + 1, 0),
+            Some(max_col) => Cell::new(max_col.saturating_add(1), 0),
             None => Cell::new(0, 0),
         }
     }
@@ -828,7 +828,12 @@ impl Project {
         if let Some(id) = self.tag_by_name(name) {
             return Some(id);
         }
-        let color = PALETTE[self.tags.len() % PALETTE.len()];
+        let color = PALETTE
+            .iter()
+            .cycle()
+            .nth(self.tags.len())
+            .copied()
+            .unwrap_or(PALETTE[0]);
         let id = TagId(self.allocate());
         self.tags.insert(
             id,
@@ -1014,13 +1019,19 @@ impl Project {
         let at = |across: i32, depth: i32| {
             let (dc, dr) = match side {
                 Side::Right => (depth, across),
-                Side::Left => (-depth, across),
+                Side::Left => (depth.saturating_neg(), across),
                 Side::Bottom => (across, depth),
-                Side::Top => (across, -depth),
+                Side::Top => (across, depth.saturating_neg()),
             };
-            Cell::new(target.col + dc, target.row + dr)
+            Cell::new(target.col.saturating_add(dc), target.row.saturating_add(dr))
         };
-        let across = |k: i32| if k % 2 == 1 { (k + 1) / 2 } else { -(k / 2) };
+        let across = |k: i32| {
+            if k % 2 == 1 {
+                k.saturating_add(1) / 2
+            } else {
+                (k / 2).saturating_neg()
+            }
+        };
         let (mut wide, mut deep) = (1, 1);
         loop {
             for depth in 0..deep {
@@ -1032,9 +1043,9 @@ impl Project {
                 }
             }
             if wide > deep {
-                deep += 1;
+                deep = deep.saturating_add(1);
             } else {
-                wide += 1;
+                wide = wide.saturating_add(1);
             }
         }
     }

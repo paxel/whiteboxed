@@ -508,7 +508,7 @@ fn check(project: &Project) -> Result<(), PersistError> {
             return invalid(format!("box {} lies outside the grid", id.0));
         }
         let count = per_diagram.entry(b.parent).or_default();
-        *count += 1;
+        *count = count.saturating_add(1);
         if *count > MAX_BLOCKS_PER_DIAGRAM {
             return invalid(format!(
                 "more than {MAX_BLOCKS_PER_DIAGRAM} boxes in one diagram"
@@ -559,7 +559,7 @@ fn check(project: &Project) -> Result<(), PersistError> {
     let mut per_owner: BTreeMap<Option<BlockId>, usize> = BTreeMap::new();
     for r in project.relations.values() {
         let count = per_owner.entry(r.owner).or_default();
-        *count += 1;
+        *count = count.saturating_add(1);
         if *count > MAX_RELATIONS_PER_DIAGRAM {
             return invalid(format!(
                 "more than {MAX_RELATIONS_PER_DIAGRAM} relations in one diagram"

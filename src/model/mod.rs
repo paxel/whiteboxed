@@ -235,10 +235,10 @@ impl Cell {
 
     pub fn toward(self, side: Side) -> Cell {
         match side {
-            Side::Top => Cell::new(self.col, self.row - 1),
-            Side::Right => Cell::new(self.col + 1, self.row),
-            Side::Bottom => Cell::new(self.col, self.row + 1),
-            Side::Left => Cell::new(self.col - 1, self.row),
+            Side::Top => Cell::new(self.col, self.row.saturating_sub(1)),
+            Side::Right => Cell::new(self.col.saturating_add(1), self.row),
+            Side::Bottom => Cell::new(self.col, self.row.saturating_add(1)),
+            Side::Left => Cell::new(self.col.saturating_sub(1), self.row),
         }
     }
 
@@ -262,7 +262,7 @@ impl Cell {
         }
         let between = |a: i32, b: i32| {
             let (lo, hi) = (a.min(b), a.max(b));
-            (lo + 1)..hi
+            lo.saturating_add(1)..hi
         };
         let (corner, legs_free, arrives) = if side.is_horizontal() {
             let corner = Cell::new(to.col, self.row);
@@ -289,8 +289,8 @@ impl Cell {
     }
 
     pub fn side_facing(self, other: Cell) -> Side {
-        let dc = other.col - self.col;
-        let dr = other.row - self.row;
+        let dc = other.col.saturating_sub(self.col);
+        let dr = other.row.saturating_sub(self.row);
         if dc.abs() >= dr.abs() && dc != 0 {
             if dc > 0 { Side::Right } else { Side::Left }
         } else if dr < 0 {
@@ -316,7 +316,7 @@ impl Rgb {
         if hex.len() != 6 || !hex.is_ascii() {
             return None;
         }
-        let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+        let byte = |i: usize| u8::from_str_radix(hex.get(i..i.saturating_add(2))?, 16).ok();
         Some(Rgb(byte(0)?, byte(2)?, byte(4)?))
     }
 }
@@ -962,14 +962,14 @@ impl Project {
         let mut out = vec![block];
         let mut i = 0;
         while i < out.len() {
-            let current = out[i];
+            let Some(&current) = out.get(i) else { break };
             out.extend(
                 self.blocks
                     .iter()
                     .filter(|(_, b)| b.parent == Some(current))
                     .map(|(id, _)| *id),
             );
-            i += 1;
+            i = i.saturating_add(1);
         }
         out
     }
@@ -991,7 +991,7 @@ impl Project {
     }
 
     fn allocate(&mut self) -> u64 {
-        self.next_id += 1;
+        self.next_id = self.next_id.saturating_add(1);
         self.next_id
     }
 }

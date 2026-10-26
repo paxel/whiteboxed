@@ -172,11 +172,14 @@ pub fn bundle(view: &DiagramView) -> DiagramView {
         let (at_a, at_b) = (line.direction.arrow_at_a(), line.direction.arrow_at_b());
         match found {
             Some(i) => {
-                let same_way = key(&lines[i].a) == ka;
+                // `i` came from `lines`, and `arrows` grows with it.
+                let (Some(merged), Some(arrow)) = (lines.get_mut(i), arrows.get_mut(i)) else {
+                    continue;
+                };
+                let same_way = key(&merged.a) == ka;
                 let (to_a, to_b) = if same_way { (at_a, at_b) } else { (at_b, at_a) };
-                arrows[i].0 |= to_a;
-                arrows[i].1 |= to_b;
-                let merged = &mut lines[i];
+                arrow.0 |= to_a;
+                arrow.1 |= to_b;
                 merged.bundle.push(line.relation);
                 if !line.text.trim().is_empty() {
                     merged.text = if merged.text.trim().is_empty() {
@@ -229,9 +232,9 @@ fn partner_name(project: &Project, far: &crate::model::Endpoint, diagram: Diagra
             .map_or_else(|| "?".to_owned(), |x| x.name.clone())
     };
     // Boxes in `diagram` lie one level below it.
-    let limit = project.path(diagram).len() + 1;
+    let limit = project.path(diagram).len().saturating_add(1);
     let mut parts = vec![name(root.block)];
-    for d in depth(root.block) + 1..=limit {
+    for d in depth(root.block).saturating_add(1)..=limit {
         let names: Vec<String> = far
             .anchors
             .iter()

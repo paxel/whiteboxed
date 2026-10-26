@@ -52,7 +52,9 @@ pub fn width(text: &str, size: f32) -> f32 {
         .map(|c| {
             m.advances
                 .binary_search_by(|(k, _)| k.cmp(&c))
-                .map_or(m.fallback, |i| m.advances[i].1)
+                .ok()
+                .and_then(|i| m.advances.get(i))
+                .map_or(m.fallback, |a| a.1)
         })
         .sum();
     units * size / m.units_per_em

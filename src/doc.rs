@@ -76,8 +76,10 @@ impl Writer {
             DocFormat::AsciiDoc => "=",
             DocFormat::Markdown => "#",
         };
-        self.out
-            .push_str(&format!("{} {text}\n\n", mark.repeat(level + 1)));
+        self.out.push_str(&format!(
+            "{} {text}\n\n",
+            mark.repeat(level.saturating_add(1))
+        ));
     }
 
     fn paragraph(&mut self, text: &str) {
@@ -149,7 +151,7 @@ impl Writer {
                     body.iter()
                         .filter_map(|r| r.get(i))
                         .map(|c| c.chars().count())
-                        .chain(std::iter::once(header[i].chars().count()))
+                        .chain(header.get(i).map(|h| h.chars().count()))
                         .max()
                         .unwrap_or(3)
                         .max(3)
@@ -159,13 +161,18 @@ impl Writer {
                     let padded: Vec<String> = cells
                         .iter()
                         .zip(&widths)
-                        .map(|(c, w)| format!("{c}{}", " ".repeat(w - c.chars().count())))
+                        .map(|(c, w)| {
+                            format!("{c}{}", " ".repeat(w.saturating_sub(c.chars().count())))
+                        })
                         .collect();
                     format!("| {} |\n", padded.join(" | "))
                 };
                 self.out
                     .push_str(&line(header.iter().map(|h| (*h).to_owned()).collect()));
-                let rule: Vec<String> = widths.iter().map(|w| "-".repeat(*w + 2)).collect();
+                let rule: Vec<String> = widths
+                    .iter()
+                    .map(|w| "-".repeat(w.saturating_add(2)))
+                    .collect();
                 self.out.push_str(&format!("|{}|\n", rule.join("|")));
                 for row in body {
                     self.out.push_str(&line(row));

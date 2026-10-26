@@ -227,7 +227,7 @@ impl Look {
 
     pub fn rename(&mut self, name: &str) -> Result<(), LookError> {
         self.name = check_name(name)?;
-        self.revision += 1;
+        self.revision = self.revision.saturating_add(1);
         Ok(())
     }
 }
@@ -275,7 +275,7 @@ impl Picture {
 
     pub fn rename(&mut self, name: &str) -> Result<(), LookError> {
         self.name = check_name(name)?;
-        self.revision += 1;
+        self.revision = self.revision.saturating_add(1);
         Ok(())
     }
 }
@@ -369,7 +369,7 @@ impl LineLook {
 
     pub fn rename(&mut self, name: &str) -> Result<(), LookError> {
         self.name = check_name(name)?;
-        self.revision += 1;
+        self.revision = self.revision.saturating_add(1);
         Ok(())
     }
 
@@ -379,13 +379,13 @@ impl LineLook {
         self.dash = spec.dash;
         self.head = spec.head;
         self.tail = spec.tail;
-        self.revision += 1;
+        self.revision = self.revision.saturating_add(1);
         Ok(())
     }
 
     /// Marks a change made from outside, so copies take it.
     pub fn bump(&mut self) {
-        self.revision += 1;
+        self.revision = self.revision.saturating_add(1);
     }
 
     /// Forgets the pictures `missing` says are gone; those ends are then plain.
@@ -721,10 +721,9 @@ fn check_value(key: &str, value: &str) -> Result<(), LookError> {
         return Err(refused());
     }
     let mut rest = lower.as_str();
-    while let Some(at) = rest.find("url(") {
-        let inner = &rest[at + 4..];
-        let end = inner.find(')').ok_or_else(refused)?;
-        let target = inner[..end].trim();
+    while let Some((_, inner)) = rest.split_once("url(") {
+        let (target, after) = inner.split_once(')').ok_or_else(refused)?;
+        let target = target.trim();
         let local = target.strip_prefix('#').is_some_and(|id| {
             !id.is_empty()
                 && id
@@ -734,7 +733,7 @@ fn check_value(key: &str, value: &str) -> Result<(), LookError> {
         if !local {
             return Err(refused());
         }
-        rest = &inner[end..];
+        rest = after;
     }
     Ok(())
 }

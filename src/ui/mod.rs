@@ -142,8 +142,14 @@ pub fn off_screen_fix(
     if seen || monitors.is_empty() {
         return None;
     }
-    let free = (main.size() - window.size()).max(egui::Vec2::ZERO);
-    Some(main.min + free / 2.0)
+    let free = vec2(
+        (main.width() - window.width()).max(0.0),
+        (main.height() - window.height()).max(0.0),
+    );
+    Some(Pos2::new(
+        main.min.x + free.x / 2.0,
+        main.min.y + free.y / 2.0,
+    ))
 }
 
 /// The file to open on start: the one named on the command line, or else the last
@@ -680,7 +686,7 @@ impl App {
                 .button(label)
                 .on_hover_text("Add a box to this diagram, in the next free cell");
             if add.clicked() {
-                self.anchor = add.rect.left_bottom() + vec2(0.0, 8.0);
+                self.anchor = Pos2::new(add.rect.left(), add.rect.bottom() + 8.0);
                 self.focus = true;
                 self.editor.start_add_block();
             }
@@ -766,7 +772,7 @@ impl App {
 
     fn breadcrumb(&mut self, ui: &mut Ui) {
         let crumbs = self.editor.breadcrumb();
-        let last = crumbs.len() - 1;
+        let last = crumbs.len().saturating_sub(1);
         let mut go = None;
         ui.horizontal(|ui| {
             for (i, (diagram, name)) in crumbs.into_iter().enumerate() {
@@ -951,7 +957,7 @@ impl App {
                     }
                 });
                 if editor.project.has_content(id) {
-                    tree(ui, editor, scores, Some(id), depth + 1, on);
+                    tree(ui, editor, scores, Some(id), depth.saturating_add(1), on);
                 }
             }
         }
@@ -980,10 +986,11 @@ impl App {
             Some(shown) if shown.diagram == diagram => {
                 let mut v = shown.view;
                 let d = drift(&shown.blocks, &layout);
-                v.origin -= vec2(d.x, d.y) * v.zoom;
+                v.origin = Pos2::new(v.origin.x - d.x * v.zoom, v.origin.y - d.y * v.zoom);
                 for b in &layout.blocks {
                     if !shown.blocks.iter().any(|(id, _)| *id == b.id) {
-                        v.origin += into_view(rect, v.rect(b.rect));
+                        let shift = into_view(rect, v.rect(b.rect));
+                        v.origin = Pos2::new(v.origin.x + shift.x, v.origin.y + shift.y);
                     }
                 }
                 v
@@ -1010,7 +1017,7 @@ impl App {
             {
                 view = zoomed(view, p, view.zoom * zoom);
             }
-            view.origin += scroll;
+            view.origin = egui::pos2(view.origin.x + scroll.x, view.origin.y + scroll.y);
         }
 
         let project = &self.editor.project;
@@ -1043,7 +1050,8 @@ impl App {
             };
         }
         if self.drag.is_none() && self.drag_end.is_none() && resp.dragged() {
-            view.origin += resp.drag_delta();
+            let drag = resp.drag_delta();
+            view.origin = egui::pos2(view.origin.x + drag.x, view.origin.y + drag.y);
         }
         let pointer = resp.interact_pointer_pos().or(resp.hover_pos());
         let mut moved = None;
@@ -1144,7 +1152,7 @@ impl App {
             let button = egui::Rect::from_center_size(rect.center(), vec2(150.0, 40.0));
             let add = ui.put(button, Button::new(RichText::new("+ add box").size(16.0)));
             if add.clicked() {
-                self.anchor = rect.center() + vec2(-120.0, 40.0);
+                self.anchor = Pos2::new(rect.center().x - 120.0, rect.center().y + 40.0);
                 self.focus = true;
                 self.editor.start_add_block();
             }
@@ -1154,7 +1162,13 @@ impl App {
     /// −, the zoom level (click: 100 %), + and Fit in the lower right corner.
     fn zoom_buttons(&mut self, ui: &mut Ui, canvas: egui::Rect, zoom: f32) {
         let size = vec2(196.0, 30.0);
-        let at = egui::Rect::from_min_size(canvas.right_bottom() - size - vec2(12.0, 12.0), size);
+        let at = egui::Rect::from_min_size(
+            Pos2::new(
+                canvas.right() - size.x - 12.0,
+                canvas.bottom() - size.y - 12.0,
+            ),
+            size,
+        );
         let mut step = None;
         let mut fit = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(at), |ui| {
@@ -1342,7 +1356,7 @@ impl App {
     }
 
     fn click(&mut self, p: Pos2, h: Hit, ctrl: bool) {
-        self.anchor = p + vec2(16.0, 16.0);
+        self.anchor = Pos2::new(p.x + 16.0, p.y + 16.0);
         if ctrl
             && !self.picks()
             && let Hit::Block(b) | Hit::Side(b, _) = h
@@ -1562,7 +1576,7 @@ impl App {
         };
         let shown = (std::mem::discriminant(&popup), self.anchor);
         if self.shown_popup != Some(shown) {
-            self.popup_serial += 1;
+            self.popup_serial = self.popup_serial.saturating_add(1);
         }
         self.shown_popup = Some(shown);
         let action = popups::show(
@@ -1857,7 +1871,7 @@ fn zoomed(view: View, center: Pos2, zoom: f32) -> View {
     let d = view.diagram(center);
     let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
     View {
-        origin: center - vec2(d.x, d.y) * zoom,
+        origin: Pos2::new(center.x - d.x * zoom, center.y - d.y * zoom),
         zoom,
     }
 }
@@ -1874,7 +1888,7 @@ fn drift(old: &[(BlockId, geom::Rect)], layout: &Layout) -> geom::Pos {
                 (b.rect.min.y - r.min.y).round() as i32,
             );
             match votes.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, n)) => *n += 1,
+                Some((_, n)) => *n = n.saturating_add(1),
                 None => votes.push((key, 1)),
             }
         }
@@ -1882,7 +1896,7 @@ fn drift(old: &[(BlockId, geom::Rect)], layout: &Layout) -> geom::Pos {
     let shared: usize = votes.iter().map(|(_, n)| n).sum();
     votes
         .into_iter()
-        .find(|(_, n)| 2 * n > shared)
+        .find(|(_, n)| n.saturating_mul(2) > shared)
         .map_or(geom::Pos::new(0.0, 0.0), |((x, y), _)| {
             geom::Pos::new(x as f32, y as f32)
         })
@@ -1914,7 +1928,7 @@ fn fit(rect: egui::Rect, layout: &Layout) -> View {
         .clamp(MIN_ZOOM, 1.0);
     let c = b.center();
     View {
-        origin: rect.center() - vec2(c.x, c.y) * zoom,
+        origin: Pos2::new(rect.center().x - c.x * zoom, rect.center().y - c.y * zoom),
         zoom,
     }
 }

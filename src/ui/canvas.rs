@@ -73,7 +73,9 @@ impl LookTextures {
     pub fn get(&mut self, ctx: &egui::Context, svg: &Arc<str>, pixels: f32) -> Option<TextureId> {
         // Widths in steps of 16 pixels: sharp at every zoom without rendering anew
         // on every frame of a zoom.
-        let width = ((pixels / 16.0).ceil().max(1.0) as u32 * 16).min(MAX_LOOK_PIXELS);
+        let width = ((pixels / 16.0).ceil().max(1.0) as u32)
+            .saturating_mul(16)
+            .min(MAX_LOOK_PIXELS);
         // Tinted end pictures are made anew with every scene: the same text counts.
         if let Some(e) = self
             .entries

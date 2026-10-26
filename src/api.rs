@@ -963,7 +963,9 @@ fn connect_new(editor: &mut Editor, a: ConnectNewArgs) -> ApiResult<Output> {
         Ok((id, rel))
     })?;
     let mut out = box_json(&editor.project, id);
-    out["relation"] = json!(rel.0);
+    if let Some(m) = out.as_object_mut() {
+        m.insert("relation".to_owned(), json!(rel.0));
+    }
     let summary = format!(
         "added {} next to {}",
         name(&editor.project, id),
@@ -1177,7 +1179,7 @@ fn line_color(text: &str) -> ApiResult<Option<crate::model::Rgb>> {
 
 fn delete_box(editor: &mut Editor, a: DeleteBoxArgs) -> ApiResult<Output> {
     let id = resolve(&editor.project, &a.target)?;
-    let inside = editor.project.subtree(id).len() - 1;
+    let inside = editor.project.subtree(id).len().saturating_sub(1);
     if inside > 0 && !a.recursive {
         return rejected(format!(
             "{} contains {inside} boxes; pass recursive: true to delete them too",
@@ -1248,8 +1250,10 @@ fn export_docs(editor: &mut Editor, a: ExportArgs) -> ApiResult<Output> {
         block: None,
     });
     let mut out = json!({"diagrams": n, "folder": dir.display().to_string(), "index": format!("index.{}", format.extension())});
-    if a.html {
-        out["html"] = json!(editor.html_file_name());
+    if a.html
+        && let Some(m) = out.as_object_mut()
+    {
+        m.insert("html".to_owned(), json!(editor.html_file_name()));
     }
     Ok(Output::Json(out))
 }
@@ -1288,7 +1292,11 @@ fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
                 | "add_line_look"
         )
     }) {
-        return rejected(format!("step {} ({}) cannot run in a batch", i + 1, s.tool));
+        return rejected(format!(
+            "step {} ({}) cannot run in a batch",
+            i.saturating_add(1),
+            s.tool
+        ));
     }
     let mark = editor.batch_start();
     let mut results = Vec::new();
@@ -1300,7 +1308,7 @@ fn batch(editor: &mut Editor, a: BatchArgs) -> ApiResult<Output> {
                 editor.batch_rollback(mark);
                 return rejected(format!(
                     "step {} ({}) failed, nothing was changed: {e}",
-                    i + 1,
+                    i.saturating_add(1),
                     step.tool
                 ));
             }
@@ -1385,7 +1393,7 @@ fn match_text(project: &Project, diagram: DiagramId, rest: &str, hits: &mut Vec<
             hits.push(id);
         }
         for &i in &splits {
-            if let (Some(head), Some(tail)) = (rest.get(..i), rest.get(i + 1..))
+            if let (Some(head), Some(tail)) = (rest.get(..i), rest.get(i.saturating_add(1)..))
                 && head.to_lowercase() == name
             {
                 match_text(project, Some(id), tail, hits);
@@ -1483,22 +1491,28 @@ fn box_json(project: &Project, id: BlockId) -> Value {
         "level": project.level(b.parent),
         "has_whitebox_content": project.has_content(id),
     });
+    let Some(m) = v.as_object_mut() else {
+        return v;
+    };
     if b.band {
-        v["band"] = json!(true);
+        m.insert("band".to_owned(), json!(true));
     } else {
-        v["cell"] = json!({"col": b.cell.col, "row": b.cell.row});
+        m.insert(
+            "cell".to_owned(),
+            json!({"col": b.cell.col, "row": b.cell.row}),
+        );
     }
     if let Some(tag) = b.tag.and_then(|t| project.tags.get(&t)) {
-        v["tag"] = json!(tag.name);
+        m.insert("tag".to_owned(), json!(tag.name));
     }
     if let Some(look) = b.look.as_ref().and_then(|l| project.looks.get(l)) {
-        v["look"] = json!(look.name());
+        m.insert("look".to_owned(), json!(look.name()));
     }
     if !b.responsibility.is_empty() {
-        v["responsibility"] = json!(b.responsibility);
+        m.insert("responsibility".to_owned(), json!(b.responsibility));
     }
     if !b.motivation.is_empty() {
-        v["motivation"] = json!(b.motivation);
+        m.insert("motivation".to_owned(), json!(b.motivation));
     }
     v
 }
@@ -1632,7 +1646,7 @@ fn problems(l: &layout::Layout) -> Value {
     let labels = scene::label_rects(l);
     let mut overlapping = Vec::new();
     for (i, (a, ra)) in labels.iter().enumerate() {
-        for (b, rb) in &labels[i + 1..] {
+        for (b, rb) in labels.iter().skip(i.saturating_add(1)) {
             if rel(*a) != rel(*b) && ra.overlaps(rb) {
                 overlapping.push(json!({"relations": [rel(*a), rel(*b)]}));
             }
@@ -1650,7 +1664,7 @@ fn problems(l: &layout::Layout) -> Value {
             let runs_through = other.drawn().into_iter().any(|piece| {
                 piece
                     .windows(2)
-                    .any(|w| layout::segment_meets(w[0], w[1], r))
+                    .any(|w| matches!(w, [a, b] if layout::segment_meets(*a, *b, r)))
             });
             if rel(lj) != rel(*li) && runs_through {
                 over_lines.insert((rel(*li), rel(lj)));

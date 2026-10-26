@@ -179,7 +179,7 @@ impl Settings {
                                 ui.label("red from");
                                 ui.add(egui::DragValue::new(&mut pair.1).range(1..=100));
                             });
-                            pair.1 = pair.1.max(pair.0 + 1);
+                            pair.1 = pair.1.max(pair.0.saturating_add(1));
                             ui.end_row();
                         }
                     });

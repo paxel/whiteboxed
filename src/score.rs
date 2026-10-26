@@ -233,7 +233,8 @@ pub fn score(project: &Project, l: &Layout) -> Score {
     for line in &v.lines {
         for end in [&line.a, &line.b] {
             if let ViewEnd::Block { block, .. } = end {
-                *per_box.entry(*block).or_default() += 1;
+                let n = per_box.entry(*block).or_default();
+                *n = n.saturating_add(1);
             }
         }
     }
@@ -252,7 +253,7 @@ pub fn score(project: &Project, l: &Layout) -> Score {
         crossings,
         overlaps,
         boxes_level: judge(boxes, limits.boxes),
-        crossings_level: judge(crossings + overlaps, limits.crossings),
+        crossings_level: judge(crossings.saturating_add(overlaps), limits.crossings),
         lines_level: judge(busiest.as_ref().map_or(0, |b| b.2), limits.lines),
         mouseholes,
         mouseholes_level: judge(mouseholes, limits.mouseholes),

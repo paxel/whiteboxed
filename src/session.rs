@@ -106,7 +106,13 @@ impl Session {
 
     /// Remembers what a file showed; the oldest are forgotten beyond [`MAX_VIEWS`].
     pub fn remember_view(&mut self, path: &Path, diagram: Option<BlockId>, zoom: f32) {
-        let seen = self.views.values().map(|v| v.seen).max().unwrap_or(0) + 1;
+        let seen = self
+            .views
+            .values()
+            .map(|v| v.seen)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
         self.views.insert(
             absolute(path),
             FileView {

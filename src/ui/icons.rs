@@ -39,7 +39,7 @@ pub fn history_button(ui: &mut Ui, which: History, enabled: bool) -> Response {
         ui.painter()
             .rect_filled(rect, 4.0, visuals.widgets.hovered.weak_bg_fill);
     }
-    let c = rect.center() + vec2(0.0, 2.5);
+    let c = Pos2::new(rect.center().x, rect.center().y + 2.5);
     let r = 6.0;
     // Screen angles: 0 = right, -90 = up. The arc runs over the top.
     let (from, to) = match which {
@@ -56,11 +56,15 @@ pub fn history_button(ui: &mut Ui, which: History, enabled: bool) -> Response {
     let stroke = Stroke::new(1.8, color);
     ui.painter().add(Shape::line(points.clone(), stroke));
     if let [.., before, tip] = points.as_slice() {
-        let dir = (*tip - *before).normalized();
+        let dir = vec2(tip.x - before.x, tip.y - before.y).normalized();
         let side = vec2(-dir.y, dir.x);
-        let base = *tip - dir * 1.0;
+        let base = Pos2::new(tip.x - dir.x, tip.y - dir.y);
         ui.painter().add(Shape::convex_polygon(
-            vec![*tip + dir * 3.5, base + side * 3.5, base - side * 3.5],
+            vec![
+                Pos2::new(tip.x + dir.x * 3.5, tip.y + dir.y * 3.5),
+                Pos2::new(base.x + side.x * 3.5, base.y + side.y * 3.5),
+                Pos2::new(base.x - side.x * 3.5, base.y - side.y * 3.5),
+            ],
             color,
             Stroke::NONE,
         ));

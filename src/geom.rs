@@ -96,6 +96,9 @@ pub fn segment_dist(p: Pos, a: Pos, b: Pos) -> f32 {
 pub fn polyline_dist(p: Pos, points: &[Pos]) -> f32 {
     points
         .windows(2)
-        .map(|w| segment_dist(p, w[0], w[1]))
+        .filter_map(|w| match w {
+            [a, b] => Some(segment_dist(p, *a, *b)),
+            _ => None,
+        })
         .fold(f32::INFINITY, f32::min)
 }

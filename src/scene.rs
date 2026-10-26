@@ -231,7 +231,7 @@ pub fn scene(layout: &Layout) -> Scene {
             line,
             &jumps,
             &crossed,
-            LINE_KEYS + 4 * li as u64,
+            LINE_KEYS.saturating_add((li as u64).saturating_mul(4)),
         );
     }
     // Labels stay inside the frame of a whitebox, or inside the picture.
@@ -277,24 +277,27 @@ fn frame_shapes(shapes: &mut Vec<Shape>, layout: &Layout, frame: Rect) {
             let (cw, ch) = (cw.min(frame.width() / 2.0), ch.min(frame.height() / 2.0));
             let xs = [frame.min.x, frame.min.x + cw, frame.max.x - cw, frame.max.x];
             let ys = [frame.min.y, frame.min.y + ch, frame.max.y - ch, frame.max.y];
-            for row in 0..3 {
-                for col in 0..3 {
-                    let rect = Rect {
-                        min: Pos::new(xs[col], ys[row]),
-                        max: Pos::new(xs[col + 1], ys[row + 1]),
-                    };
-                    if rect.width() <= 0.0 || rect.height() <= 0.0 {
-                        continue;
-                    }
-                    shapes.push(Shape::Look {
-                        rect,
-                        svg: fl.slices[row * 3 + col].clone(),
-                        size: (rect.width(), rect.height()),
-                        key: FRAME_KEYS + (row * 3 + col) as u64,
-                        angle: 0.0,
-                        stretch: true,
-                    });
+            // The nine cells row by row, in the order of the slices.
+            let spans = |e: [f32; 4]| [(e[0], e[1]), (e[1], e[2]), (e[2], e[3])];
+            let cells = spans(ys)
+                .into_iter()
+                .flat_map(|(y0, y1)| spans(xs).into_iter().map(move |(x0, x1)| (x0, y0, x1, y1)));
+            for (i, ((x0, y0, x1, y1), svg)) in cells.zip(&fl.slices).enumerate() {
+                let rect = Rect {
+                    min: Pos::new(x0, y0),
+                    max: Pos::new(x1, y1),
+                };
+                if rect.width() <= 0.0 || rect.height() <= 0.0 {
+                    continue;
                 }
+                shapes.push(Shape::Look {
+                    rect,
+                    svg: svg.clone(),
+                    size: (rect.width(), rect.height()),
+                    key: FRAME_KEYS.saturating_add(i as u64),
+                    angle: 0.0,
+                    stretch: true,
+                });
             }
             if let Some(caption) = layout.frame_caption {
                 shapes.push(Shape::Rect {
@@ -693,10 +696,9 @@ pub fn end_picture_rects(line: &LineGeom) -> Vec<Rect> {
                 look.tail.as_ref()
             };
             let Some(picture) = picture else { continue };
-            let (from, tip) = if at_start {
-                (piece[1], piece[0])
-            } else {
-                (piece[n - 2], piece[n - 1])
+            let (from, tip) = match (at_start, piece) {
+                (true, [tip, from, ..]) | (false, [.., from, tip]) => (*from, *tip),
+                _ => continue,
             };
             let (dx, dy) = (tip.x - from.x, tip.y - from.y);
             let len = (dx * dx + dy * dy).sqrt().max(0.001);
@@ -737,11 +739,9 @@ fn end_shapes(
                 l.tail.as_ref()
             }
         });
-        let n = points.len();
-        let (from, tip) = if at_start {
-            (points[1], points[0])
-        } else {
-            (points[n - 2], points[n - 1])
+        let (from, tip) = match (at_start, &*points) {
+            (true, [tip, from, ..]) | (false, [.., from, tip]) => (*from, *tip),
+            _ => continue,
         };
         match picture {
             Some(picture) => {
@@ -751,17 +751,20 @@ fn end_shapes(
                 let width = END_H * picture.size.0 / picture.size.1;
                 let back = width.min(len);
                 let cut = Pos::new(tip.x - ux * back, tip.y - uy * back);
-                if at_start {
-                    points[0] = cut;
+                let end = if at_start {
+                    points.first_mut()
                 } else {
-                    points[n - 1] = cut;
+                    points.last_mut()
+                };
+                if let Some(end) = end {
+                    *end = cut;
                 }
                 let center = Pos::new(tip.x - ux * width / 2.0, tip.y - uy * width / 2.0);
                 shapes.push(Shape::Look {
                     rect: Rect::from_center(center, width, END_H),
                     svg: picture.svg.clone(),
                     size: picture.size,
-                    key: key + u64::from(!at_start),
+                    key: key.saturating_add(u64::from(!at_start)),
                     angle: uy.atan2(ux),
                     stretch: false,
                 });
@@ -814,7 +817,7 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             &label,
             color,
             m.portal_a.as_ref(),
-            key + 2,
+            key.saturating_add(2),
         );
         hole_shapes(
             shapes,
@@ -823,15 +826,14 @@ fn line_shapes(shapes: &mut Vec<Shape>, line: &LineGeom, jumps: &[Pos], crossed:
             &label,
             color,
             m.portal_b.as_ref(),
-            key + 3,
+            key.saturating_add(3),
         );
     } else {
         let mut points = line.points.clone();
-        let n = points.len();
-        let ends = (
-            n >= 2 && !marked(points[0]),
-            n >= 2 && !marked(points[n - 1]),
-        );
+        let ends = match points.as_slice() {
+            [first, .., last] => (!marked(*first), !marked(*last)),
+            _ => (false, false),
+        };
         end_shapes(
             shapes,
             &mut points,
@@ -1057,7 +1059,7 @@ fn frame_name(line: &LineGeom) -> Option<FrameName> {
 /// cover between `x0` and `x1`: the rect of a name as drawn, or of a placement
 /// the layout weighs against the lines.
 pub fn name_rows_rect(p: Pos, side: Side, row: usize, n: usize, x0: f32, x1: f32) -> Rect {
-    let depth = (row + n - 1) as f32 * NAME_ROW;
+    let depth = row.saturating_add(n).saturating_sub(1) as f32 * NAME_ROW;
     let top = if side == Side::Top {
         p.y + 16.0 + row as f32 * NAME_ROW
     } else {
@@ -1267,9 +1269,9 @@ pub fn shaped_around(points: &[Pos], style: LineStyle, crossed: &[Pos]) -> Vec<P
     if n < 3 {
         return points.to_vec();
     }
-    let mut out = vec![points[0]];
-    for i in 1..n - 1 {
-        let (prev, corner, next) = (points[i - 1], points[i], points[i + 1]);
+    let mut out: Vec<Pos> = points.first().copied().into_iter().collect();
+    for w in points.windows(3) {
+        let &[prev, corner, next] = w else { continue };
         let (d_in, d_out) = (prev.dist(corner), corner.dist(next));
         // Curves reach to the middle of each segment; rounded corners take at most
         // their radius, and never more than half a segment, so short steps stay steps.
@@ -1303,7 +1305,7 @@ pub fn shaped_around(points: &[Pos], style: LineStyle, crossed: &[Pos]) -> Vec<P
             ));
         }
     }
-    out.push(points[n - 1]);
+    out.extend(points.last().copied());
     out
 }
 
@@ -1329,7 +1331,9 @@ pub fn with_jumps(points: Vec<Pos>, jumps: &[Pos]) -> Vec<Pos> {
     let mut out = Vec::with_capacity(points.len());
     for (i, p) in points.iter().enumerate() {
         out.push(*p);
-        let Some(q) = points.get(i + 1) else { break };
+        let Some(q) = points.get(i.saturating_add(1)) else {
+            break;
+        };
         if (p.y - q.y).abs() > 0.01 {
             continue;
         }
@@ -1411,7 +1415,7 @@ fn legend_shapes(shapes: &mut Vec<Shape>, at: Pos, entries: &[LegendEntry], look
             (true, true),
             Some(&sample.look),
             LINE,
-            LINE_KEYS / 2 + 2 * i as u64,
+            (LINE_KEYS / 2).saturating_add((i as u64).saturating_mul(2)),
         );
         shapes.push(Shape::Polyline {
             points,

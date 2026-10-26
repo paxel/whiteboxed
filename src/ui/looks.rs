@@ -315,11 +315,11 @@ impl LooksDialog {
             self.specs.remove(&id);
         }
         if add_line {
-            let n = editor.library.line_looks.len() + 1;
+            let n = editor.library.line_looks.len().saturating_add(1);
             let mut name = format!("line look {n}");
             let mut k = n;
             while editor.library.find_line_look(&name).is_some() {
-                k += 1;
+                k = k.saturating_add(1);
                 name = format!("line look {k}");
             }
             self.error = editor.add_line_look(&name, LineLookSpec::default()).err();

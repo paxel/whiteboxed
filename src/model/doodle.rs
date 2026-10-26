@@ -208,10 +208,10 @@ impl Project {
             landed
                 .iter()
                 .map(|c| match side {
-                    Side::Left => c.col - min_col,
-                    Side::Right => max_col - c.col,
-                    Side::Top => c.row - min_row,
-                    Side::Bottom => max_row - c.row,
+                    Side::Left => c.col.saturating_sub(min_col),
+                    Side::Right => max_col.saturating_sub(c.col),
+                    Side::Top => c.row.saturating_sub(min_row),
+                    Side::Bottom => max_row.saturating_sub(c.row),
                 })
                 .sum()
         };

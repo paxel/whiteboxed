@@ -562,7 +562,7 @@ impl Editor {
     fn touched(&mut self) {
         self.dirty = true;
         self.message = None;
-        self.autosave_at = Some(Instant::now() + AUTOSAVE_DELAY);
+        self.autosave_at = Instant::now().checked_add(AUTOSAVE_DELAY);
         self.fix_view();
     }
 
@@ -738,7 +738,7 @@ impl Editor {
 
     /// Adds a page to the doodle and shows it.
     pub fn add_page(&mut self) {
-        let n = self.project.pages().len() + 1;
+        let n = self.project.pages().len().saturating_add(1);
         let name = (n..)
             .map(|i| format!("Page {i}"))
             .find(|name| {
@@ -949,8 +949,8 @@ impl Editor {
                     .filter(|(_, p)| p.on)
                     .filter_map(|(i, p)| {
                         Some(crate::model::SplitPart {
-                            a: form.rows.get(i / n.max(1))?.0,
-                            b: form.cols.get(i % n.max(1))?.0,
+                            a: form.rows.get(i.checked_div(n.max(1))?)?.0,
+                            b: form.cols.get(i.checked_rem(n.max(1))?)?.0,
                             text: p.text.clone(),
                             direction: p.direction,
                         })
@@ -1255,7 +1255,7 @@ impl Editor {
             text: r.text.clone(),
             direction: r.direction,
         };
-        let pairs = vec![pair; rows.len() * cols.len()];
+        let pairs = vec![pair; rows.len().saturating_mul(cols.len())];
         self.popup = Some(Popup::Split(SplitForm {
             rel,
             rows: named(&self.project, rows),
@@ -1450,7 +1450,7 @@ impl Editor {
         let revision = existing
             .as_ref()
             .and_then(|id| self.library.pictures.get(id))
-            .map_or(0, |p| p.revision() + 1);
+            .map_or(0, |p| p.revision().saturating_add(1));
         let picture = Picture::new(name, svg, revision).map_err(|e| e.to_string())?;
         let id = match existing {
             Some(id) => {
@@ -1514,7 +1514,7 @@ impl Editor {
         let revision = existing
             .as_ref()
             .and_then(|id| self.library.line_looks.get(id))
-            .map_or(0, |l| l.revision() + 1);
+            .map_or(0, |l| l.revision().saturating_add(1));
         let look = LineLook::new(name, spec, revision).map_err(|e| e.to_string())?;
         let id = match existing {
             Some(id) => {
@@ -1616,7 +1616,7 @@ impl Editor {
         let revision = existing
             .as_ref()
             .and_then(|id| self.library.looks.get(id))
-            .map_or(0, |l| l.revision() + 1);
+            .map_or(0, |l| l.revision().saturating_add(1));
         let look = Look::new(name, mode, svg, revision).map_err(|e| e.to_string())?;
         let id = match existing {
             Some(id) => {
@@ -1703,7 +1703,7 @@ impl Editor {
     pub fn tick(&mut self, now: Instant) -> Option<Duration> {
         let due = self.autosave_at?;
         if now < due {
-            return Some(due - now);
+            return Some(due.saturating_duration_since(now));
         }
         self.autosave_at = None;
         if self.dirty
@@ -1754,7 +1754,7 @@ impl Editor {
             text,
             ..choice.clone()
         };
-        let mut files = 0;
+        let mut files = 0usize;
         let mut entries = Vec::new();
         for diagram in &diagrams {
             let l = layout::layout(&self.project, &view::diagram_view(&self.project, *diagram));
@@ -1762,12 +1762,12 @@ impl Editor {
             let name = self.file_name_for(*diagram);
             if choice.svg {
                 write_file(&dir.join(format!("{name}.svg")), export::to_svg(&s))?;
-                files += 1;
+                files = files.saturating_add(1);
             }
             if choice.png {
                 let scale = f32::from(choice.png_scale.clamp(1, 3));
                 write_file(&dir.join(format!("{name}.png")), export::to_png(&s, scale)?)?;
-                files += 1;
+                files = files.saturating_add(1);
             }
             if let Some(format) = choice.text {
                 let image = match (choice.svg, choice.png) {
@@ -1777,7 +1777,7 @@ impl Editor {
                 };
                 let text = doc::diagram_doc(&self.project, *diagram, &image, format);
                 write_file(&dir.join(format!("{name}.{}", format.extension())), text)?;
-                files += 1;
+                files = files.saturating_add(1);
             }
             entries.push((*diagram, name));
         }
@@ -1785,12 +1785,12 @@ impl Editor {
         if choice.html {
             let page = crate::html::html_doc(&self.project, &title);
             write_file(&dir.join(self.html_file_name()), page)?;
-            files += 1;
+            files = files.saturating_add(1);
         }
         if let (Some(format), true) = (choice.text, choice.all) {
             let index = doc::index_doc(&self.project, &title, &entries, format);
             write_file(&dir.join(format!("index.{}", format.extension())), index)?;
-            files += 1;
+            files = files.saturating_add(1);
         }
         Ok(files)
     }
@@ -1885,10 +1885,10 @@ fn relative_path(from: &Path, to: &Path) -> Option<String> {
     if common == 0 {
         return None;
     }
-    let mut parts: Vec<String> = vec!["..".to_owned(); from.len() - common];
+    let mut parts: Vec<String> = vec!["..".to_owned(); from.len().saturating_sub(common)];
     parts.extend(
-        to[common..]
-            .iter()
+        to.iter()
+            .skip(common)
             .map(|c| c.as_os_str().to_string_lossy().into_owned()),
     );
     Some(if parts.is_empty() {

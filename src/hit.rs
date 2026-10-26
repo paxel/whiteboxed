@@ -127,8 +127,8 @@ pub fn cell_at(layout: &Layout, p: Pos) -> Option<Cell> {
     let extend = |list: &mut Vec<(i32, f32)>| {
         let step = GAP + 150.0;
         if let (Some(first), Some(last)) = (list.first().copied(), list.last().copied()) {
-            list.insert(0, (first.0 - 1, first.1 - step));
-            list.push((last.0 + 1, last.1 + step));
+            list.insert(0, (first.0.saturating_sub(1), first.1 - step));
+            list.push((last.0.saturating_add(1), last.1 + step));
         }
     };
     extend(&mut cols);
