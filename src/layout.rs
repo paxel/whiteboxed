@@ -1543,6 +1543,9 @@ fn build(
     let routes = drawing.routes;
     let offsets = drawing.offsets;
     let mut lines = Vec::new();
+    // The view line each drawn line comes from: a line with no port is not drawn,
+    // so positions in `lines` and in `view.lines` part ways after it.
+    let mut drawn_from: Vec<usize> = Vec::new();
     // A relation with more than one frame point on a side is multiplied: the same
     // text at every point would leave the reader guessing whether it is one thing
     // or several, so its points are numbered along the side (k of m) and the
@@ -1654,6 +1657,7 @@ fn build(
                 _ => None,
             });
         lines.push(LineGeom { frame_port, ..geom });
+        drawn_from.push(li);
     }
     // A line that still enters through the bottom, set so by hand, would cross the
     // cross-cutting bands on its way: it goes under them instead, a hole before it
@@ -1667,7 +1671,7 @@ fn build(
         .reduce(|a, b| a.union(b));
     if let Some(span) = band_span {
         let mut band_numbers: BTreeMap<RelationId, String> = BTreeMap::new();
-        for (li, geom) in lines.iter_mut().enumerate() {
+        for (geom, &li) in lines.iter_mut().zip(&drawn_from) {
             if geom.mousehole.is_some() || geom.tip.is_some() {
                 continue;
             }
@@ -1880,11 +1884,11 @@ fn build(
                 })
             };
             let mut found = fit(&rows, &name, NAME_ROWS, true);
-            if found.is_none() && number_labels && !tagged.contains(&li) {
+            let view_li = drawn_from.get(li).copied();
+            if found.is_none() && number_labels && !view_li.is_some_and(|v| tagged.contains(&v)) {
                 // The legend number of the partner: the one it has, else a new one.
-                let partner = view
-                    .lines
-                    .get(li)
+                let partner = view_li
+                    .and_then(|v| view.lines.get(v))
                     .into_iter()
                     .flat_map(|l| [&l.a, &l.b])
                     .find_map(|end| match end {
@@ -1960,7 +1964,7 @@ fn build(
     // branches that share one share the label, a branch with a frame point of
     // its own is a line of its own to the eye and carries the text too.
     let mut labelled = BTreeSet::new();
-    for (li, geom) in lines.iter_mut().enumerate() {
+    for (geom, &li) in lines.iter_mut().zip(&drawn_from) {
         if let Some(text) = shown.get(li) {
             let at = geom
                 .frame_port

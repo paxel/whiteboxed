@@ -2452,3 +2452,26 @@ fn a_partner_name_with_no_room_between_the_lines_becomes_its_number() -> TestRes
     );
     Ok(())
 }
+
+#[test]
+fn a_line_under_the_bands_keeps_its_own_label_after_a_line_that_is_not_drawn() -> TestResult {
+    // A view line with no port at either end is not drawn. The line set to enter
+    // through the bottom after it must still find its own short label at the holes
+    // under the band, not the undrawn line's.
+    let (mut p, a, _, rel) = fanned_in(&["b1"], &[0], "uses")?;
+    p.add_block(Some(a), &spec("Guards", BlockKind::Component).as_band())?;
+    p.set_relation_short(rel, "u")?;
+    p.set_frame_side(rel, a, Some(Side::Bottom))?;
+    let mut view = diagram_view(&p, Some(a));
+    let mut undrawn = view.lines.first().ok_or("line")?.clone();
+    undrawn.relation = RelationId(9999);
+    undrawn.a = ViewEnd::Open;
+    undrawn.b = ViewEnd::Open;
+    undrawn.short = "x".to_owned();
+    view.lines.insert(0, undrawn);
+    let l = layout::layout(&p, &view);
+    let line = l.lines.iter().find(|g| g.relation == rel).ok_or("line")?;
+    assert!(line.mousehole.is_some(), "no hole at the band");
+    assert_eq!(line.text, "u");
+    Ok(())
+}
