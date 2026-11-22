@@ -38,7 +38,7 @@ pub fn new_token() -> String {
 pub fn load_or_create(dir: &Path) -> io::Result<AiSettings> {
     let file = dir.join(FILE);
     if let Ok(text) = fs::read_to_string(&file)
-        && let Ok(settings) = serde_yaml_ng::from_str::<AiSettings>(&text)
+        && let Ok(settings) = serde_saphyr::from_str::<AiSettings>(&text)
         && !settings.token.is_empty()
     {
         return Ok(settings);
@@ -55,7 +55,7 @@ pub fn load_or_create(dir: &Path) -> io::Result<AiSettings> {
 /// Writes the settings; on Unix only the user can read the file.
 pub fn save(dir: &Path, settings: &AiSettings) -> io::Result<()> {
     fs::create_dir_all(dir)?;
-    let text = serde_yaml_ng::to_string(settings).map_err(io::Error::other)?;
+    let text = serde_saphyr::to_string(settings).map_err(io::Error::other)?;
     let file = dir.join(FILE);
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);

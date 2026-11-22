@@ -51,14 +51,12 @@ last, after the release, as before.
 `from_yaml` (project files) and `look_sanitize` (the SVG of a custom look), a quarter of an
 hour each, weekly ([wbx-1004](https://github.com/paxel/whiteboxed/issues/16)).
 
-**Unmaintained crates.** Six unmaintained notices are accepted in `osv-scanner.toml` until
+**Unmaintained crates.** Five unmaintained notices are accepted in `osv-scanner.toml` until
 2027-02-22, three months, because no update removes them
 ([wbx-1000](https://github.com/paxel/whiteboxed/issues/12)):
 
 - chrono (RUSTSEC-2026-0543), through rmcp and schemars; rmcp 3.11.0 still needs it.
-- unsafe-libyaml (RUSTSEC-2024-0449), the parser of serde_yaml_ng (audit finding S10).
-  Replacing the YAML crate is work of its own.
-- ttf-parser (RUSTSEC-2026-0192), for the embedded font only (audit finding S11).
+- ttf-parser (RUSTSEC-2026-0192), for the embedded font and winit's Wayland window decorations (audit finding S11).
 - zvariant, zbus_names and zvariant_derive (RUSTSEC-2026-0370, -0371, -0372), through
   eframe's accesskit feature, which makes the UI visible to screen readers. No release of
   accesskit_unix on zbus 6 exists; dropping the feature was rejected, as in pixpixpix.

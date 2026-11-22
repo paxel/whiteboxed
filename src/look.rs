@@ -880,12 +880,19 @@ struct LibraryDto {
     line_looks: Vec<LineLookDto>,
 }
 
-/// The library file as written before pictures and line looks: looks only.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum LibraryFile {
-    Current(LibraryDto),
-    Legacy(Vec<LookDto>),
+/// The library file, or the one written before pictures and line looks: looks only.
+/// Tried one after the other rather than as an untagged enum, whose buffering would
+/// guess the type of plain scalars such as a look named `on`.
+fn read_library(text: &str) -> Option<LibraryDto> {
+    serde_saphyr::from_str::<LibraryDto>(text).ok().or_else(|| {
+        serde_saphyr::from_str::<Vec<LookDto>>(text)
+            .ok()
+            .map(|looks| LibraryDto {
+                looks,
+                pictures: Vec::new(),
+                line_looks: Vec::new(),
+            })
+    })
 }
 
 pub(crate) fn to_dto(looks: &Looks) -> Vec<LookDto> {
@@ -914,22 +921,14 @@ impl Library {
     /// The stored library. A broken file gives an empty library; an entry that does
     /// not pass the check is left out.
     pub fn load(dir: &Path) -> Self {
-        let dto = match fs::read_to_string(dir.join(FILE))
+        let dto = fs::read_to_string(dir.join(FILE))
             .ok()
-            .and_then(|t| serde_yaml_ng::from_str::<LibraryFile>(&t).ok())
-        {
-            Some(LibraryFile::Current(dto)) => dto,
-            Some(LibraryFile::Legacy(looks)) => LibraryDto {
-                looks,
-                pictures: Vec::new(),
-                line_looks: Vec::new(),
-            },
-            None => LibraryDto {
+            .and_then(|t| read_library(&t))
+            .unwrap_or(LibraryDto {
                 looks: Vec::new(),
                 pictures: Vec::new(),
                 line_looks: Vec::new(),
-            },
-        };
+            });
         let looks = dto
             .looks
             .into_iter()
@@ -967,7 +966,7 @@ impl Library {
             pictures: pictures_to_dto(&self.pictures),
             line_looks: line_looks_to_dto(&self.line_looks),
         };
-        let text = serde_yaml_ng::to_string(&dto).map_err(io::Error::other)?;
+        let text = serde_saphyr::to_string(&dto).map_err(io::Error::other)?;
         fs::write(dir.join(FILE), text)
     }
 
@@ -1309,7 +1308,7 @@ mod tests {
             looks: lib.looks.clone(),
             ..Library::default()
         };
-        let legacy = serde_yaml_ng::to_string(&to_dto(&old.looks))?;
+        let legacy = serde_saphyr::to_string(&to_dto(&old.looks))?;
         fs::write(dir.path().join(FILE), legacy)?;
         assert_eq!(Library::load(dir.path()), old);
         Ok(())

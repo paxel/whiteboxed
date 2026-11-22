@@ -26,7 +26,7 @@ direct dependency; it was already in the tree through `resvg`, so no crate was a
 | S7  | Control characters broke SVG export and rendering              | Low      | Fixed      |
 | S8  | Menu entry temp file could be written through a symlink        | Low      | Fixed      |
 | S9  | Recovery files were readable by other local users              | Low      | Fixed      |
-| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Accepted   |
+| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Fixed      |
 | S11 | `ttf-parser` is unmaintained                                   | Low      | Accepted   |
 | S12 | The token can leak through the client side                     | Low      | Documented |
 | S13 | CI actions were pinned by tag, not by commit                   | Low      | Fixed      |
@@ -166,7 +166,7 @@ Unsaved work in `whiteboxed/recovery` was created with default permissions. The
 directory is now `0700` on Unix (`3cfd15e`). The token file `ai.yaml` was already
 `0600`. On Windows both rely on the per-user profile directory's ACL.
 
-### S10 Project files are parsed by a C-translated YAML parser — Low, accepted
+### S10 Project files are parsed by a C-translated YAML parser — Low, fixed
 
 `serde_yaml_ng` uses `unsafe-libyaml`, a mechanical translation of libyaml with about
 14,500 unsafe expressions (the largest share in the tree). It parses every project
@@ -176,11 +176,17 @@ checks every reference after loading. An AI cannot make whiteboxed open a file.
 Recommendation: move to a parser without unsafe code when one with comparable
 stability is available.
 
+Fixed in 0.6.3: whiteboxed reads and writes YAML with `serde-saphyr`, a parser that
+forbids unsafe code and limits nesting depth and aliases by default
+([wbx-1006](https://github.com/paxel/whiteboxed/issues/19)). Files written by
+earlier versions load unchanged.
+
 ### S11 `ttf-parser` is unmaintained — Low, accepted
 
 RUSTSEC-2026-0192 (informational, not a vulnerability). whiteboxed uses it only to
-measure its own embedded font; `resvg` depends on it too. Accepted in
-`osv-scanner.toml` with this reason and a review date; revisit when `resvg` moves on.
+measure its own embedded font; winit's Wayland window decorations (`sctk-adwaita`
+through `ab_glyph`) depend on it too. Accepted in `osv-scanner.toml` with this reason
+and a review date; revisit when winit moves on.
 
 ### S12 The token can leak through the client side — Low, documented
 

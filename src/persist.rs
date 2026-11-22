@@ -23,7 +23,9 @@ pub enum PersistError {
     #[error("cannot read or write the file: {0}")]
     Io(#[from] std::io::Error),
     #[error("not a valid project file: {0}")]
-    Yaml(#[from] serde_yaml_ng::Error),
+    Yaml(#[from] serde_saphyr::Error),
+    #[error("cannot write the project as YAML: {0}")]
+    YamlWrite(#[from] serde_saphyr::SerializeError),
     #[error("project file is inconsistent: {0}")]
     Invalid(String),
 }
@@ -354,11 +356,11 @@ pub fn to_yaml(project: &Project) -> Result<String, PersistError> {
         portal_in: project.portal_in.clone(),
         portal_out: project.portal_out.clone(),
     };
-    Ok(serde_yaml_ng::to_string(&dto)?)
+    Ok(serde_saphyr::to_string(&dto)?)
 }
 
 pub fn from_yaml(text: &str) -> Result<Project, PersistError> {
-    let dto: FileDto = serde_yaml_ng::from_str(text)?;
+    let dto: FileDto = serde_saphyr::from_str(text)?;
     if dto.format > FORMAT {
         return Err(PersistError::Invalid(format!(
             "file format {} is newer than this app understands ({FORMAT})",
