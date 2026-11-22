@@ -1,0 +1,24 @@
+# Dependency updates: one grouped pull request per ecosystem and week. A release is proposed
+# only after it has been out for 14 days (cooldown), so early fixes are in; security updates
+# are not held back. Keep github-actions and the ecosystems of the repository's stacks:
+# cargo, pub, gomod, npm, uv, maven, gradle. Renovate is not used.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      githubactions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      cargo:
+        patterns: ["*"]
