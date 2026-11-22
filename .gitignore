@@ -5,3 +5,4 @@ dist/
 
 # coverage of the gates ratchet
 /coverage
+/.claude_here/config.toml
