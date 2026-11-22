@@ -1,0 +1,23 @@
+name: Fuzz
+
+# The fuzz targets in fuzz/ (cargo-fuzz, libFuzzer), weekly and by hand, from paxel/gates: the
+# parsers that read files from someone else, project files and the SVG of a custom look. A
+# crash fails the job; `cargo +nightly fuzz run <target> <file>` replays its input.
+on:
+  schedule:
+    - cron: "29 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    uses: paxel/gates/.github/workflows/fuzz.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
+    with:
+      stack: rust
+      # A fuzzer finds more the longer it runs: a quarter of an hour per target.
+      seconds: 900
+      targets: |
+        from_yaml
+        look_sanitize
