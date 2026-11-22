@@ -26,7 +26,7 @@ direct dependency; it was already in the tree through `resvg`, so no crate was a
 | S7  | Control characters broke SVG export and rendering              | Low      | Fixed      |
 | S8  | Menu entry temp file could be written through a symlink        | Low      | Fixed      |
 | S9  | Recovery files were readable by other local users              | Low      | Fixed      |
-| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Accepted   |
+| S10 | Project files are parsed by a C-translated YAML parser         | Low      | Fixed      |
 | S11 | `ttf-parser` is unmaintained                                   | Low      | Accepted   |
 | S12 | The token can leak through the client side                     | Low      | Documented |
 | S13 | CI actions were pinned by tag, not by commit                   | Low      | Fixed      |
@@ -166,7 +166,7 @@ Unsaved work in `whiteboxed/recovery` was created with default permissions. The
 directory is now `0700` on Unix (`3cfd15e`). The token file `ai.yaml` was already
 `0600`. On Windows both rely on the per-user profile directory's ACL.
 
-### S10 Project files are parsed by a C-translated YAML parser — Low, accepted
+### S10 Project files are parsed by a C-translated YAML parser — Low, fixed
 
 `serde_yaml_ng` uses `unsafe-libyaml`, a mechanical translation of libyaml with about
 14,500 unsafe expressions (the largest share in the tree). It parses every project
@@ -176,11 +176,18 @@ checks every reference after loading. An AI cannot make whiteboxed open a file.
 Recommendation: move to a parser without unsafe code when one with comparable
 stability is available.
 
+Fixed in 0.6.3: whiteboxed reads and writes YAML with `serde-saphyr`, a parser that
+forbids unsafe code and limits nesting depth and aliases by default
+([wbx-1006](https://github.com/paxel/whiteboxed/issues/19)). Files written by
+earlier versions load unchanged.
+
 ### S11 `ttf-parser` is unmaintained — Low, accepted
 
-RUSTSEC-2026-0192 (informational, not a vulnerability). whiteboxed uses it only to
-measure its own embedded font; `resvg` depends on it too. Accepted in
-`.cargo/audit.toml` and `deny.toml` with this reason; revisit when `resvg` moves on.
+RUSTSEC-2026-0192 (informational, not a vulnerability). Since 0.6.3 whiteboxed measures
+its embedded font with skrifa ([wbx-1007](https://github.com/paxel/whiteboxed/issues/20));
+ttf-parser still comes through winit's Wayland window decorations (`sctk-adwaita` through
+`ab_glyph`), which draw the title. Accepted in `osv-scanner.toml` with this reason and a
+review date; revisit when winit moves on.
 
 ### S12 The token can leak through the client side — Low, documented
 
@@ -359,33 +366,40 @@ These scan lints are not enforced in CI (most hits are layout arithmetic).
 
 ### Lint policy (enforced)
 
-The same policy as sanshain-service, in `Cargo.toml` `[lints]` and `clippy.toml`, and
-enforced by `cargo clippy --all-targets --all-features -- -D warnings` in CI:
+The lint set of the gates standard, in `Cargo.toml` `[lints]` and `clippy.toml`, enforced
+by the Rust gate's two clippy runs in CI (shipped code with `-D warnings`; tests with the
+panicking lints allowed):
 
-| Lint                                  | Level  | Why                                 |
-|---------------------------------------|--------|-------------------------------------|
-| `unsafe_code`                         | forbid | Memory safety left to the compiler  |
-| `unwrap_used`, `expect_used`, `panic` | deny   | No panics from input (tests exempt) |
-| `todo`, `unimplemented`, `dbg_macro`  | deny   | No unfinished or debug code shipped |
-| `allow_attributes`                    | deny   | Lints are fixed, never silenced     |
+| Lint                                                                            | Level  | Why                                 |
+|---------------------------------------------------------------------------------|--------|-------------------------------------|
+| `unsafe_code`                                                                   | forbid | Memory safety left to the compiler  |
+| `unwrap_used`, `expect_used`, `panic`                                           | deny   | No panics from input (tests exempt) |
+| `unreachable`, `indexing_slicing`, `string_slice`, `arithmetic_side_effects`    | deny   | No panics from input (tests exempt) |
+| `todo`, `unimplemented`, `dbg_macro`                                            | deny   | No unfinished or debug code shipped |
+| `allow_attributes`                                                              | deny   | Lints are fixed, never silenced     |
 
 ## In CI
 
-- **Security** workflow (`.github/workflows/security.yml`), on every push, pull request
-  and daily at 05:17 UTC: `cargo audit` fails the run on any vulnerability advisory
-  for a crate in `Cargo.lock`; `cargo deny check` fails on advisories, disallowed
-  licences, unknown registries or git sources. Verified: a crate with a known CVE
-  (`smallvec 1.6.0`, RUSTSEC-2021-0003) makes `cargo audit` exit with an error.
-- The **Release** gate runs both before anything is built or published.
-- Accepted advisories are listed with their reason in `.cargo/audit.toml` and
-  `deny.toml`; only informational ones are accepted.
+whiteboxed follows the [paxel/gates](https://github.com/paxel/gates) standard
+([ADR 1](adr/0001-move-to-gates.md)):
+
+- **CI** (`.github/workflows/ci.yml`), on every pull request and push to summer: the OSV
+  gate fails on any known vulnerability or a licence outside the allowlist in `Cargo.lock`;
+  the Rust gate runs format, the lint set, clippy, the tests and the coverage ratchet;
+  SonarQube Cloud analyses the code.
+- **CodeQL** on every pull request, push to summer and weekly; **Scorecard** on summer;
+  the **Fuzz** targets weekly.
+- **Security** (`.github/workflows/security.yml`), weekly: the release gate, strict. It
+  fails on every open code-scanning or secret-scanning alert and SonarQube Cloud finding
+  not accepted in `code-scanning-ignores.toml`, on vulnerabilities and unmaintained crates
+  not accepted in `osv-scanner.toml`, and when an accepted finding's date has passed.
+- The **Release** runs the same gate, and the tests once more, before anything is built.
 
 ## Re-running the audit
 
 ```sh
-cargo install --locked cargo-audit cargo-deny cargo-geiger
-cargo audit
-cargo deny check
+cargo install --locked cargo-geiger
+osv-scanner scan source -L Cargo.lock   # reads osv-scanner.toml beside it
 cargo geiger --all-features
 cargo clippy --lib --bins --all-features -- \
   -W clippy::arithmetic_side_effects -W clippy::indexing_slicing -W clippy::string_slice \

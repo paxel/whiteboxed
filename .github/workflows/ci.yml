@@ -1,69 +1,63 @@
-# Gate for every push and pull request.
-#
-# Tiered: the Ubuntu lane is the full gate — formatting, clippy with zero
-# warnings and the test suite including the render tests, with software Vulkan
-# (lavapipe) installed so the window can be drawn headlessly. The Windows and
-# macOS lanes build and run the tests without rendering, catching platform
-# breakage early; fmt and clippy would only repeat the Linux result.
 name: CI
 
+# whiteboxed's gates. The standard's part comes from paxel/gates: the OSV gate, the Rust gate
+# on Linux x86_64 (format, lint set, clippy, tests with the render tests on software Vulkan,
+# coverage ratchet) and SonarQube Cloud. The Rust gate tests on Linux only, so the Windows and
+# macOS lanes, which build and run every test there, are whiteboxed's own
+# (docs/adr/0001-move-to-gates.md).
+# A branch gets its run through its pull request; a run per push as well would be the same
+# jobs twice, and SonarQube Cloud analyses only the default branch and pull requests.
 on:
   push:
+    branches: [summer]
   pull_request:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux:
-    name: Linux (full gate)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, 2026-10-08
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: System dependencies (software Vulkan for the render tests)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
-      - name: Format
-        run: cargo fmt --check
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Tests (with render tests)
-        run: cargo test --features render-tests
+  vulns:
+    uses: paxel/gates/.github/workflows/vulns.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
 
-  windows:
-    name: Windows (build + tests)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, 2026-10-08
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Build
-        run: cargo build
-      - name: Tests
-        run: cargo test
+  rust:
+    uses: paxel/gates/.github/workflows/rust.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
+    with:
+      # Software Vulkan (lavapipe), so the render tests can draw the window headlessly.
+      apt-packages: mesa-vulkan-drivers libvulkan1
 
-  macos:
-    name: macOS (build + tests)
-    runs-on: macos-latest
+  native:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (build + tests)
+            runner: windows-latest
+          - name: macOS (build + tests)
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch, 2026-10-08
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+          persist-credentials: false
+      # Keep in sync with rust-toolchain.toml; toolchain bumps are deliberate, separate commits.
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0 branch
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build
-        run: cargo build
+        run: cargo build --locked
+      # Without the render tests: these runners have no Vulkan device.
       - name: Tests
-        run: cargo test
+        run: cargo test --locked
+
+  sonar:
+    needs: rust
+    uses: paxel/gates/.github/workflows/sonar.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
+    secrets:
+      sonar-token: ${{ secrets.SQ_TOKEN }}

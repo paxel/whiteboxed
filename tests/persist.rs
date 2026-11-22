@@ -25,7 +25,7 @@ format: 1
 tags:
 - id: 2
   name: core
-  color: '#a8d5f7'
+  color: \"#a8d5f7\"
 blocks:
 - id: 1
   name: User

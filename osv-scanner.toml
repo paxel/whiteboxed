@@ -1,0 +1,51 @@
+# osv-scanner's exceptions, read by the OSV gate (paxel/gates vulns.yml). Each one says why
+# the repository is not exposed and why no update removes it, and carries a date; when the
+# date passes, the gate fails again: that is the review.
+#
+# An advisory:
+# [[IgnoredVulns]]
+# id = "RUSTSEC-2026-0000"
+# ignoreUntil = 2027-05-14
+# reason = "..."
+#
+# A licence outside the standard's allowlist (one package):
+# [[PackageOverrides]]
+# name = "some-crate"
+# ecosystem = "crates.io"
+# license.ignore = true
+# effectiveUntil = 2027-05-14
+# reason = "..."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-22
+reason = """An unmaintained notice, no vulnerability: chrono comes through rmcp and schemars, \
+which whiteboxed's MCP server needs; rmcp 3.11.0 still depends on it unconditionally."""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+ignoreUntil = 2027-02-22
+reason = """An unmaintained notice, no vulnerability: ttf-parser comes only through winit's Wayland \
+window decorations (sctk-adwaita through ab_glyph), which read the system font for the title; \
+winit 0.30.13 still pins that sctk-adwaita (docs/security-audit.md, S11)."""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+ignoreUntil = 2027-02-22
+reason = """An unmaintained notice, no vulnerability: zvariant comes through eframe's accesskit feature \
+(accesskit_unix on zbus 5). accesskit_unix and atspi have no release on zbus 6 yet, and dropping \
+the feature would take screen-reader support away."""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+ignoreUntil = 2027-02-22
+reason = """An unmaintained notice, no vulnerability: zbus_names comes through eframe's accesskit feature \
+(accesskit_unix on zbus 5). accesskit_unix and atspi have no release on zbus 6 yet, and dropping \
+the feature would take screen-reader support away."""
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+ignoreUntil = 2027-02-22
+reason = """An unmaintained notice, no vulnerability: zvariant_derive comes through eframe's accesskit feature \
+(accesskit_unix on zbus 5). accesskit_unix and atspi have no release on zbus 6 yet, and dropping \
+the feature would take screen-reader support away."""

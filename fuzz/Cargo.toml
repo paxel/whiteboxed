@@ -1,0 +1,36 @@
+# Fuzz targets for the parsers that read files from someone else: project files and the SVG
+# of a custom look (docs/security-audit.md, threat model). Run with cargo-fuzz on nightly:
+# `cargo +nightly fuzz run <target>`; .github/workflows/fuzz.yml runs every target weekly.
+[package]
+name = "whiteboxed-fuzz"
+version = "0.0.0"
+publish = false
+license = "MIT"
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.whiteboxed]
+path = ".."
+
+# Its own workspace, so the fuzz crate stays out of the main build.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "from_yaml"
+path = "fuzz_targets/from_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "look_sanitize"
+path = "fuzz_targets/look_sanitize.rs"
+test = false
+doc = false
+bench = false

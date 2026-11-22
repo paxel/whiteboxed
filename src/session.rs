@@ -68,13 +68,13 @@ impl Session {
     pub fn load(dir: &Path) -> Self {
         fs::read_to_string(dir.join(FILE))
             .ok()
-            .and_then(|t| serde_yaml_ng::from_str(&t).ok())
+            .and_then(|t| serde_saphyr::from_str(&t).ok())
             .unwrap_or_default()
     }
 
     pub fn save(&self, dir: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
-        let text = serde_yaml_ng::to_string(self).map_err(io::Error::other)?;
+        let text = serde_saphyr::to_string(self).map_err(io::Error::other)?;
         fs::write(dir.join(FILE), text)
     }
 

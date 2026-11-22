@@ -1,41 +1,24 @@
-# Fails when a crate we depend on has a known vulnerability (RustSec / CVE), and
-# checks licences and crate sources. Runs on every push and daily, because new
-# advisories appear without any change here. See docs/security-audit.md.
 name: Security
 
+# Weekly, and by hand: the release gate without a version, strict. It fails on every open
+# code-scanning or secret-scanning alert that code-scanning-ignores.toml does not accept, on a
+# known vulnerability, on an unmaintained dependency and on a licence outside the allowlist,
+# and when an accepted finding's date has passed: that is the review.
 on:
-  push:
-  pull_request:
   schedule:
-    - cron: "17 5 * * *"
+    - cron: "23 5 * * 1"
   workflow_dispatch:
 
-concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  audit:
-    name: Vulnerable dependencies (cargo audit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
-        with:
-          tool: cargo-audit
-      # Exits non-zero on any vulnerability advisory for a crate in Cargo.lock.
-      # The one accepted warning (unmaintained ttf-parser) is listed in
-      # .cargo/audit.toml with its reason.
-      - name: cargo audit
-        run: cargo audit
-
-  deny:
-    name: Advisories, licences, sources (cargo deny)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
-        with:
-          tool: cargo-deny
-      - name: cargo deny
-        run: cargo deny check
+  gate:
+    uses: paxel/gates/.github/workflows/release-gate.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
+    permissions:
+      contents: read
+      security-events: read
+    with:
+      strict: true
+    secrets:
+      alerts-token: ${{ secrets.GATES_ALERTS_TOKEN }}

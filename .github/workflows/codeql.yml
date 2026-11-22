@@ -1,0 +1,23 @@
+name: CodeQL
+
+# CodeQL on every push, pull request and weekly, from paxel/gates. languages lists what CodeQL
+# can analyse here (rust, python, javascript-typescript, java-kotlin, go); the workflows are
+# always analysed. CodeQL has no Dart: a Dart repository keeps '[]'.
+on:
+  push:
+    branches: [summer]
+  pull_request:
+  schedule:
+    - cron: "47 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    uses: paxel/gates/.github/workflows/codeql.yml@dbf6f6086174ef97fe465d3ffee31bf3985f5b81 # v1.4.1
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      languages: '["rust"]'

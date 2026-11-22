@@ -3,6 +3,9 @@
 
 use std::sync::OnceLock;
 
+use skrifa::instance::{LocationRef, Size};
+use skrifa::{FontRef, MetadataProvider};
+
 /// Font family name to put into SVG files.
 pub const FAMILY: &str = "Ubuntu";
 pub const WEIGHT: u16 = 300;
@@ -21,13 +24,14 @@ fn metrics() -> Option<&'static Metrics> {
     static METRICS: OnceLock<Option<Metrics>> = OnceLock::new();
     METRICS
         .get_or_init(|| {
-            let face = ttf_parser::Face::parse(font_data(), 0).ok()?;
-            let units_per_em = f32::from(face.units_per_em());
-            let advance = |c: char| {
-                face.glyph_index(c)
-                    .and_then(|g| face.glyph_hor_advance(g))
-                    .map(f32::from)
-            };
+            let font = FontRef::new(font_data()).ok()?;
+            let units_per_em = f32::from(
+                font.metrics(Size::unscaled(), LocationRef::default())
+                    .units_per_em,
+            );
+            let charmap = font.charmap();
+            let glyphs = font.glyph_metrics(Size::unscaled(), LocationRef::default());
+            let advance = |c: char| charmap.map(c).and_then(|g| glyphs.advance_width(g));
             let fallback = advance('n').unwrap_or(units_per_em * 0.5);
             let advances = (' '..='~')
                 .chain('\u{a0}'..='\u{17f}')
