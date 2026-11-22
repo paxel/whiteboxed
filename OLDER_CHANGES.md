@@ -2,6 +2,12 @@
 
 Releases before the current one. The current version is in [CHANGELOG.md](CHANGELOG.md).
 
+## [0.6.2] - 2026-10-24
+
+### Security
+
+- Updated tokio to 1.54.1 for an unsound file descriptor handling advisory (RUSTSEC-2026-0386).
+
 ## [0.6.1] - 2026-10-18
 
 ### Added
