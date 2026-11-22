@@ -11,9 +11,9 @@ which whiteboxed's MCP server needs; rmcp 3.11.0 still depends on it uncondition
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0192"
 ignoreUntil = 2027-02-22
-reason = """An unmaintained notice, no vulnerability: ttf-parser only measures whiteboxed's own \
-embedded font, and winit's Wayland window decorations (sctk-adwaita through ab_glyph) depend \
-on it too (docs/security-audit.md, S11)."""
+reason = """An unmaintained notice, no vulnerability: ttf-parser comes only through winit's Wayland \
+window decorations (sctk-adwaita through ab_glyph), which read the system font for the title; \
+winit 0.30.13 still pins that sctk-adwaita (docs/security-audit.md, S11)."""
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0370"

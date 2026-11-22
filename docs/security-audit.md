@@ -183,10 +183,11 @@ earlier versions load unchanged.
 
 ### S11 `ttf-parser` is unmaintained — Low, accepted
 
-RUSTSEC-2026-0192 (informational, not a vulnerability). whiteboxed uses it only to
-measure its own embedded font; winit's Wayland window decorations (`sctk-adwaita`
-through `ab_glyph`) depend on it too. Accepted in `osv-scanner.toml` with this reason
-and a review date; revisit when winit moves on.
+RUSTSEC-2026-0192 (informational, not a vulnerability). Since 0.6.3 whiteboxed measures
+its embedded font with skrifa ([wbx-1007](https://github.com/paxel/whiteboxed/issues/20));
+ttf-parser still comes through winit's Wayland window decorations (`sctk-adwaita` through
+`ab_glyph`), which draw the title. Accepted in `osv-scanner.toml` with this reason and a
+review date; revisit when winit moves on.
 
 ### S12 The token can leak through the client side — Low, documented
 

@@ -56,7 +56,7 @@ hour each, weekly ([wbx-1004](https://github.com/paxel/whiteboxed/issues/16)).
 ([wbx-1000](https://github.com/paxel/whiteboxed/issues/12)):
 
 - chrono (RUSTSEC-2026-0543), through rmcp and schemars; rmcp 3.11.0 still needs it.
-- ttf-parser (RUSTSEC-2026-0192), for the embedded font and winit's Wayland window decorations (audit finding S11).
+- ttf-parser (RUSTSEC-2026-0192), through winit's Wayland window decorations (audit finding S11).
 - zvariant, zbus_names and zvariant_derive (RUSTSEC-2026-0370, -0371, -0372), through
   eframe's accesskit feature, which makes the UI visible to screen readers. No release of
   accesskit_unix on zbus 6 exists; dropping the feature was rejected, as in pixpixpix.
