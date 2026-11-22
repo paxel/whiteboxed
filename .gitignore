@@ -2,3 +2,6 @@ target
 
 # local packaging output
 dist/
+
+# coverage of the gates ratchet
+/coverage

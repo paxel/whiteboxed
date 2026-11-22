@@ -11,12 +11,18 @@ repository = "https://github.com/paxel/whiteboxed"
 unsafe_code = "forbid"
 
 [lints.clippy]
-# No-panic policy, as in sanshain-service. Test code is exempt via clippy.toml.
+# The lint set of the gates standard (paxel/gates configs/rust/lints.toml): shipped code may
+# not panic. Tests are exempt: CI lints them with the panicking lints allowed, and
+# clippy.toml allows unwrap, expect and panic in them.
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+arithmetic_side_effects = "deny"
 dbg_macro = "deny"
 # No-`#[allow]` policy: fix the lint instead of silencing it.
 allow_attributes = "deny"
